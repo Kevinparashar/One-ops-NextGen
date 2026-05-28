@@ -1,0 +1,2808 @@
+[
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005001",
+    "title": "Fix VPN disconnects on Wi-Fi handoff",
+    "summary": "Apply VPN client profile v2.3 to fix tunnel drops when roaming between APs.",
+    "content": "Symptom: VPN tunnel drops when laptop roams between SSIDs or APs.\n\nCause: Keepalive mismatch between client v2.2 and gateway profile.\n\nResolution:\n1. Confirm client version is v2.2 or earlier.\n2. Push v2.3 client profile via Intune.\n3. Reboot endpoint.\n4. Verify reconnect during AP handoff.",
+    "category": "network",
+    "tags": [
+      "vpn",
+      "wifi",
+      "disconnect",
+      "handoff"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00003",
+    "created_at": "2026-04-01T10:00:00Z",
+    "updated_at": "2026-04-01T10:00:00Z",
+    "views": 1820,
+    "helpful_votes": 412,
+    "related_ci_ids": [
+      "CI0000001",
+      "CI0000002"
+    ],
+    "related_incidents": [
+      "INC0001001",
+      "INC0001002",
+      "INC0001019",
+      "INC0001029"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005002",
+    "title": "Troubleshoot VPN error 809",
+    "summary": "Resolve VPN error 809 by enabling NAT-T on the client and home router.",
+    "content": "Symptom: VPN client returns error 809 on connect.\n\nCause: NAT-T (UDP 4500) blocked by home router or local firewall.\n\nResolution:\n1. Confirm client and gateway support NAT-T.\n2. On Windows: enable AssumeUDPEncapsulationContextOnSendRule registry key (value 2).\n3. On home router: ensure UDP 500 and 4500 are allowed outbound.\n4. Restart client and retry connection.",
+    "category": "network",
+    "tags": [
+      "vpn",
+      "error-809",
+      "nat-t"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR00003",
+    "created_at": "2026-04-01T11:00:00Z",
+    "updated_at": "2026-04-01T11:00:00Z",
+    "views": 940,
+    "helpful_votes": 280,
+    "related_ci_ids": [
+      "CI0000001"
+    ],
+    "related_incidents": [
+      "INC0001003",
+      "INC0001018"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005003",
+    "title": "Outlook sync delay checklist",
+    "summary": "Validate transport queue depth and Outlook cache mode when emails arrive late.",
+    "content": "Symptom: Outlook receives emails with significant delay.\n\nResolution checklist:\n1. Check transport queue depth on Exchange.\n2. Confirm Outlook is in cached mode.\n3. Validate sync interval settings.\n4. Force a manual send/receive.\n5. Restart Outlook if backlog persists.",
+    "category": "email",
+    "tags": [
+      "outlook",
+      "sync",
+      "delay"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR00014",
+    "created_at": "2026-04-01T12:00:00Z",
+    "updated_at": "2026-04-01T12:00:00Z",
+    "views": 612,
+    "helpful_votes": 178,
+    "related_ci_ids": [
+      "CI0000003"
+    ],
+    "related_incidents": [
+      "INC0001004"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005004",
+    "title": "HR portal 500 error first response",
+    "summary": "Capture correlation ID and verify backend health when HR portal returns 500.",
+    "content": "Symptom: HR portal returns HTTP 500 after SSO redirect.\n\nFirst response:\n1. Capture the X-Correlation-ID header.\n2. Verify HR Portal app pool health.\n3. Check SAML assertion clock skew between IdP and portal.\n4. Retry the SSO token exchange.\n5. If correlation ID points at SAML rejection, escalate to GRP-SECOPS.",
+    "category": "application",
+    "tags": [
+      "hr-portal",
+      "500",
+      "sso",
+      "saml"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00013",
+    "created_at": "2026-04-01T13:00:00Z",
+    "updated_at": "2026-04-01T13:00:00Z",
+    "views": 524,
+    "helpful_votes": 161,
+    "related_ci_ids": [
+      "CI0000004"
+    ],
+    "related_incidents": [
+      "INC0001006",
+      "INC0001030"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005005",
+    "title": "Payroll DB deadlock mitigation",
+    "summary": "Run payroll reports against the read-only replica to avoid deadlocks during posting.",
+    "content": "Symptom: Payroll report generation times out due to deadlocks with posting jobs.\n\nWorkaround:\n1. Switch report execution to read-only replica.\n2. Schedule reports outside of posting windows.\n3. Apply CHG0004003 (composite index) for permanent fix.\n\nValidation: report should complete in under 2 minutes.",
+    "category": "database",
+    "tags": [
+      "payroll",
+      "deadlock",
+      "oracle"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00004",
+    "created_at": "2026-04-02T08:00:00Z",
+    "updated_at": "2026-04-02T08:00:00Z",
+    "views": 318,
+    "helpful_votes": 102,
+    "related_ci_ids": [
+      "CI0000005"
+    ],
+    "related_incidents": [
+      "INC0001007",
+      "INC0001024"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005006",
+    "title": "Salesforce sync lag troubleshooting",
+    "summary": "Inspect Kafka consumer lag and restart failed partitions.",
+    "content": "Symptom: Salesforce records not syncing to ERP for 20+ minutes.\n\nDiagnosis:\n1. Check Kafka consumer lag for sf-sync group.\n2. Identify failed partitions.\n3. Restart consumer process.\n4. Verify catch-up rate.",
+    "category": "integration",
+    "tags": [
+      "salesforce",
+      "sync",
+      "kafka"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00012",
+    "created_at": "2026-04-02T09:00:00Z",
+    "updated_at": "2026-04-02T09:00:00Z",
+    "views": 245,
+    "helpful_votes": 71,
+    "related_ci_ids": [
+      "CI0000006"
+    ],
+    "related_incidents": [
+      "INC0001008"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005007",
+    "title": "Wi-Fi floor outage triage",
+    "summary": "Run RF scan and check channel overlap before rebooting APs.",
+    "content": "Symptom: Multiple users on one floor report Wi-Fi disconnects.\n\nTriage:\n1. Run RF scan for affected floor.\n2. Identify overlapping channels.\n3. Pin channels manually if auto-channel is fighting itself.\n4. Validate stability for 30 minutes before closing.",
+    "category": "network",
+    "tags": [
+      "wifi",
+      "ap",
+      "rf"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00003",
+    "created_at": "2026-04-02T10:00:00Z",
+    "updated_at": "2026-04-02T10:00:00Z",
+    "views": 401,
+    "helpful_votes": 118,
+    "related_ci_ids": [
+      "CI0000007"
+    ],
+    "related_incidents": [
+      "INC0001009",
+      "INC0001022"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005008",
+    "title": "MFA reset propagation guide",
+    "summary": "Force user sync after MFA reset to clear stale tokens.",
+    "content": "Symptom: After password/MFA reset the old token is still required at login.\n\nResolution:\n1. Force user object sync from IdP.\n2. Clear stale session tokens.\n3. Ask user to re-enroll MFA via portal.",
+    "category": "security",
+    "tags": [
+      "mfa",
+      "sso",
+      "okta"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR00011",
+    "created_at": "2026-04-02T11:00:00Z",
+    "updated_at": "2026-04-02T11:00:00Z",
+    "views": 528,
+    "helpful_votes": 165,
+    "related_ci_ids": [
+      "CI0000008"
+    ],
+    "related_incidents": [
+      "INC0001010",
+      "INC0001021"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005009",
+    "title": "ITSM portal slowness quick checks",
+    "summary": "Validate API latency and attachment queue backlog when portal is slow.",
+    "content": "Symptom: Service desk portal pages load slowly.\n\nQuick checks:\n1. Check API latency dashboard.\n2. Check attachment upload queue depth.\n3. Restart upload worker if backlog > 500 items.",
+    "category": "application",
+    "tags": [
+      "itsm",
+      "portal",
+      "performance"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00013",
+    "created_at": "2026-04-02T12:00:00Z",
+    "updated_at": "2026-04-02T12:00:00Z",
+    "views": 180,
+    "helpful_votes": 51,
+    "related_ci_ids": [
+      "CI0000009"
+    ],
+    "related_incidents": [
+      "INC0001011",
+      "INC0001023"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005010",
+    "title": "Monitoring alert delay playbook",
+    "summary": "Verify collector health and ingestion broker lag.",
+    "content": "Symptom: Monitoring alerts arrive late.\n\nPlaybook:\n1. Check collector health.\n2. Inspect ingestion broker lag.\n3. Scale collectors if scrape interval is being missed.",
+    "category": "platform",
+    "tags": [
+      "monitoring",
+      "alerts",
+      "prometheus"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00012",
+    "created_at": "2026-04-02T13:00:00Z",
+    "updated_at": "2026-04-02T13:00:00Z",
+    "views": 132,
+    "helpful_votes": 38,
+    "related_ci_ids": [
+      "CI0000010"
+    ],
+    "related_incidents": [
+      "INC0001012",
+      "INC0001027"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005011",
+    "title": "Laptop patch failure remediation",
+    "summary": "Repair installer cache and rerun endpoint patch task.",
+    "content": "Symptom: Endpoint patch fails with code 1603.\n\nRemediation:\n1. Stop Windows Installer service.\n2. Clear %windir%\\Installer cache for failed package.\n3. Restart service.\n4. Trigger patch rerun via Intune.",
+    "category": "endpoint",
+    "tags": [
+      "patch",
+      "laptop",
+      "intune"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00015",
+    "created_at": "2026-04-03T08:00:00Z",
+    "updated_at": "2026-04-03T08:00:00Z",
+    "views": 94,
+    "helpful_votes": 28,
+    "related_ci_ids": [
+      "CI0000011"
+    ],
+    "related_incidents": [
+      "INC0001013"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005012",
+    "title": "ERP export memory incident response",
+    "summary": "Increase worker memory and stagger export concurrency.",
+    "content": "Symptom: ERP nightly export aborts with out-of-memory error.\n\nResponse:\n1. Increase app pool memory reservation.\n2. Stagger export concurrency.\n3. Apply CHG0004007 for permanent fix.",
+    "category": "application",
+    "tags": [
+      "erp",
+      "export",
+      "memory"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00014",
+    "created_at": "2026-04-03T09:00:00Z",
+    "updated_at": "2026-04-03T09:00:00Z",
+    "views": 67,
+    "helpful_votes": 21,
+    "related_ci_ids": [
+      "CI0000012"
+    ],
+    "related_incidents": [
+      "INC0001014",
+      "INC0001025"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005013",
+    "title": "Change calendar outage fallback",
+    "summary": "Use API endpoint for calendar data while UI recovers.",
+    "content": "When the change calendar UI returns 503:\n1. Use the /api/v2/calendar endpoint directly.\n2. Filter by date range.\n3. Notify GRP-APPS to investigate.",
+    "category": "itsm",
+    "tags": [
+      "change",
+      "calendar"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00005",
+    "created_at": "2026-04-03T10:00:00Z",
+    "updated_at": "2026-04-03T10:00:00Z",
+    "views": 41,
+    "helpful_votes": 13,
+    "related_ci_ids": [
+      "CI0000013"
+    ],
+    "related_incidents": [
+      "INC0001015"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005014",
+    "title": "CMDB probe certificate renewal",
+    "summary": "Renew cert chain and restart probe agent service.",
+    "content": "Symptom: CMDB discovery probe fails authentication.\n\nFix:\n1. Generate new certs from internal CA.\n2. Replace cert files on probe host.\n3. Restart probe agent service.\n4. Verify discovery resumes.",
+    "category": "cmdb",
+    "tags": [
+      "cmdb",
+      "discovery",
+      "certificate"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00015",
+    "created_at": "2026-04-03T11:00:00Z",
+    "updated_at": "2026-04-03T11:00:00Z",
+    "views": 38,
+    "helpful_votes": 11,
+    "related_ci_ids": [
+      "CI0000014"
+    ],
+    "related_incidents": [
+      "INC0001016",
+      "INC0001026"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005015",
+    "title": "Knowledge search ranking tuning",
+    "summary": "Lower age bias and increase semantic relevance weight.",
+    "content": "When KB search returns stale results:\n1. Lower the age boost weight in the rank profile.\n2. Increase semantic relevance weight.\n3. Retrain on recent feedback.\n4. Validate top-5 results for known queries.",
+    "category": "knowledge",
+    "tags": [
+      "kb",
+      "search",
+      "ranking"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00017",
+    "created_at": "2026-04-03T12:00:00Z",
+    "updated_at": "2026-04-03T12:00:00Z",
+    "views": 22,
+    "helpful_votes": 9,
+    "related_ci_ids": [
+      "CI0000015"
+    ],
+    "related_incidents": [
+      "INC0001017",
+      "INC0001028"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005016",
+    "title": "VPN duplicate incident detection tips",
+    "summary": "Compare CI, symptom phrases, and recency before merging duplicate VPN incidents.",
+    "content": "Draft: guidance for service desk on identifying VPN duplicates.",
+    "category": "network",
+    "tags": [
+      "vpn",
+      "duplicate",
+      "incident"
+    ],
+    "state": "draft",
+    "audience": "technician",
+    "created_by": "USR00017",
+    "created_at": "2026-04-04T09:00:00Z",
+    "updated_at": "2026-04-04T09:00:00Z",
+    "views": 0,
+    "helpful_votes": 0,
+    "related_ci_ids": [
+      "CI0000001",
+      "CI0000002"
+    ],
+    "related_incidents": [
+      "INC9010089",
+      "INC9010113"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005017",
+    "title": "M365 mailbox quota policy",
+    "summary": "Quota threshold and escalation matrix for mailbox growth.",
+    "content": "Draft: tenant-wide quota policy and escalation matrix.",
+    "category": "email",
+    "tags": [
+      "mailbox",
+      "quota"
+    ],
+    "state": "draft",
+    "audience": "all",
+    "created_by": "USR00014",
+    "created_at": "2026-04-04T10:00:00Z",
+    "updated_at": "2026-04-04T10:00:00Z",
+    "views": 0,
+    "helpful_votes": 0,
+    "related_ci_ids": [
+      "CI0000003"
+    ],
+    "related_incidents": [
+      "INC9010009",
+      "INC9010013",
+      "INC9010023",
+      "INC9010106"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005018",
+    "title": "ERP login slow known issue",
+    "summary": "Login latency increases during quarter-end heavy jobs.",
+    "content": "Retired: superseded by KB0005012.",
+    "category": "application",
+    "tags": [
+      "erp",
+      "latency"
+    ],
+    "state": "retired",
+    "audience": "all",
+    "created_by": "USR00014",
+    "created_at": "2026-03-20T09:00:00Z",
+    "updated_at": "2026-03-20T09:00:00Z",
+    "views": 1500,
+    "helpful_votes": 420,
+    "related_ci_ids": [
+      "CI0000012"
+    ],
+    "related_incidents": [
+      "INC0001010",
+      "INC9010077"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005019",
+    "title": "Old VPN client troubleshooting v1",
+    "summary": "Legacy steps for VPN client v1 — no longer recommended.",
+    "content": "Retired: superseded by KB0005001 and KB0005002.",
+    "category": "network",
+    "tags": [
+      "vpn",
+      "legacy"
+    ],
+    "state": "retired",
+    "audience": "all",
+    "created_by": "USR00003",
+    "created_at": "2026-02-15T08:00:00Z",
+    "updated_at": "2026-02-15T08:00:00Z",
+    "views": 2100,
+    "helpful_votes": 510,
+    "related_ci_ids": [
+      "CI0000001"
+    ],
+    "related_incidents": [
+      "INC9010067"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB0005020",
+    "title": "KB authoring standards",
+    "summary": "Template for writing issue, impact, and resolution sections.",
+    "content": "Draft: KB authoring template and review checklist.",
+    "category": "knowledge",
+    "tags": [
+      "kb",
+      "authoring"
+    ],
+    "state": "draft",
+    "audience": "technician",
+    "created_by": "USR00017",
+    "created_at": "2026-04-04T11:00:00Z",
+    "updated_at": "2026-04-04T11:00:00Z",
+    "views": 0,
+    "helpful_votes": 0,
+    "related_ci_ids": [
+      "CI0000015"
+    ],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9001001",
+    "title": "SAP ERP peak-hour login workaround",
+    "summary": "Stagger login times to avoid connection pool exhaustion during 09:00-10:00 HKT.",
+    "content": "Symptom: SAP S/4HANA login times out between 09:00 and 10:00 HKT on weekdays.\n\nRoot Cause: Application server connection pool is exhausted at peak login times (240+ concurrent vs 200 pool limit).\n\nWorkaround:\n- Users with surnames A-M: log in before 09:15 HKT\n- Users with surnames N-Z: log in after 09:30 HKT\n\nPermanent fix: CHG9001001 will increase the pool to 500. ETA: 2026-04-12 maintenance window.",
+    "category": "application",
+    "tags": [
+      "sap",
+      "erp",
+      "login",
+      "peak-hours",
+      "connection-pool"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR90002",
+    "created_at": "2026-04-06T12:00:00Z",
+    "updated_at": "2026-04-08T09:00:00Z",
+    "views": 312,
+    "helpful_votes": 87,
+    "related_ci_ids": [
+      "CI9000002"
+    ],
+    "related_incidents": [
+      "INC9001001",
+      "INC9001002"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9001002",
+    "title": "GlobalCorp email delivery troubleshooting guide",
+    "summary": "Steps to diagnose and resolve outbound email delivery delays from Exchange Server.",
+    "content": "Symptom: Outbound emails to external recipients delayed by 10-30 minutes.\n\nDiagnosis steps:\n1. Check Exchange message tracking logs for delayed queues.\n2. Verify SPF/DKIM/DMARC records are valid.\n3. Check recipient MX server reputation and delivery logs.\n4. Check smart host relay configuration.\n\nWorkaround: Use OWA (web mail) for time-sensitive external messages.\n\nEscalation: If delays persist > 1 hour, raise incident against CI9000003.",
+    "category": "email",
+    "tags": [
+      "email",
+      "exchange",
+      "delivery",
+      "delay",
+      "troubleshooting"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR90002",
+    "created_at": "2026-04-10T11:00:00Z",
+    "updated_at": "2026-04-10T11:00:00Z",
+    "views": 45,
+    "helpful_votes": 12,
+    "related_ci_ids": [
+      "CI9000003"
+    ],
+    "related_incidents": [
+      "INC9001003"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB8001001",
+    "title": "Kong API Gateway rate limit configuration for internal services",
+    "summary": "How to configure Kong consumer groups to exempt internal microservices from external rate limits.",
+    "content": "Problem: Internal microservices receive HTTP 429 errors from Kong API Gateway because they are subject to the same global rate limit policy as external clients.\n\nSolution: Tag internal service consumer accounts with the 'internal-services' consumer group, then configure the rate-limit plugin to apply only to external consumer groups.\n\nSteps:\n1. Log in to Kong Admin API.\n2. For each internal service consumer: PATCH /consumers/{consumer_id} with tag 'internal-services'.\n3. Update rate-limit plugin to exclude 'internal-services' tag: set config.consumer_groups = ['external'].\n4. Test: call internal service — should receive 200, not 429.\n5. Verify external client still receives 429 after rate limit threshold.\n\nRelated: PBM8001001, CHG8001001.",
+    "category": "network",
+    "tags": [
+      "kong",
+      "api-gateway",
+      "rate-limit",
+      "microservices",
+      "consumer-groups"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR80001",
+    "created_at": "2026-04-09T17:00:00Z",
+    "updated_at": "2026-04-09T17:00:00Z",
+    "views": 28,
+    "helpful_votes": 9,
+    "related_ci_ids": [
+      "CI8000001"
+    ],
+    "related_incidents": [
+      "INC8001001",
+      "INC8001002"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010001",
+    "title": "Handle replication lag [9010001]",
+    "summary": "Bring a lagging read replica back in sync.",
+    "content": "Check replica I/O and CPU, pause heavy read traffic, and let the replica catch up. Investigate long-running transactions on the primary.",
+    "category": "database",
+    "tags": [
+      "database",
+      "replication"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100036",
+    "created_at": "2026-04-24T17:15:00Z",
+    "updated_at": "2026-05-07T17:15:00Z",
+    "views": 2019,
+    "helpful_votes": 469,
+    "related_ci_ids": [
+      "CI9010098"
+    ],
+    "related_incidents": [
+      "INC9010012",
+      "INC9010077"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010002",
+    "title": "Clean up duplicate CI records [9010002]",
+    "summary": "Merge duplicate configuration items.",
+    "content": "Identify duplicates from discovery, choose the authoritative CI, re-point relationships, and retire the duplicate. Re-run discovery to confirm.",
+    "category": "cmdb",
+    "tags": [
+      "cmdb",
+      "data-quality"
+    ],
+    "state": "retired",
+    "audience": "end_user",
+    "created_by": "USR100076",
+    "created_at": "2026-03-05T03:30:00Z",
+    "updated_at": "2026-03-19T03:30:00Z",
+    "views": 1904,
+    "helpful_votes": 454,
+    "related_ci_ids": [
+      "CI9010053"
+    ],
+    "related_incidents": [
+      "INC0001026",
+      "INC9010014",
+      "INC9010067",
+      "INC9010106"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010003",
+    "title": "Clean up duplicate CI records [9010003]",
+    "summary": "Merge duplicate configuration items.",
+    "content": "Identify duplicates from discovery, choose the authoritative CI, re-point relationships, and retire the duplicate. Re-run discovery to confirm.",
+    "category": "cmdb",
+    "tags": [
+      "cmdb",
+      "data-quality"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100008",
+    "created_at": "2026-04-22T21:45:00Z",
+    "updated_at": "2026-05-01T21:45:00Z",
+    "views": 2533,
+    "helpful_votes": 339,
+    "related_ci_ids": [
+      "CI9010026",
+      "CI9010089"
+    ],
+    "related_incidents": [
+      "INC0001026",
+      "INC9010011",
+      "INC9010076"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010004",
+    "title": "Replace an expired TLS certificate [9010004]",
+    "summary": "Restore service after a certificate expiry.",
+    "content": "Issue a new certificate, deploy it to all endpoints, and reload services. Verify the chain and add an expiry alert.",
+    "category": "security",
+    "tags": [
+      "security",
+      "tls"
+    ],
+    "state": "draft",
+    "audience": "technician",
+    "created_by": "USR100077",
+    "created_at": "2026-01-09T02:30:00Z",
+    "updated_at": "2026-01-31T02:30:00Z",
+    "views": 2208,
+    "helpful_votes": 322,
+    "related_ci_ids": [],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010005",
+    "title": "Resolve VPN disconnects when roaming [9010005]",
+    "summary": "Fix VPN tunnel drops during AP roaming.",
+    "content": "Update the VPN client profile to the latest version and enable persistent keepalive. Confirm the firewall keepalive interval matches the client. Reconnect and verify the tunnel is stable across roaming events.",
+    "category": "network",
+    "tags": [
+      "vpn",
+      "wifi",
+      "roaming"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100003",
+    "created_at": "2026-01-28T10:00:00Z",
+    "updated_at": "2026-02-10T10:00:00Z",
+    "views": 433,
+    "helpful_votes": 148,
+    "related_ci_ids": [
+      "CI9010041"
+    ],
+    "related_incidents": [
+      "INC9010105",
+      "INC9010111"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010006",
+    "title": "Recover pods from CrashLoopBackOff [9010006]",
+    "summary": "Fix continuously restarting Kubernetes pods.",
+    "content": "Inspect pod logs and events, correct the failing config or resource limits, and roll the deployment. Confirm pods reach a ready state.",
+    "category": "platform",
+    "tags": [
+      "kubernetes",
+      "platform"
+    ],
+    "state": "retired",
+    "audience": "technician",
+    "created_by": "USR100007",
+    "created_at": "2026-03-30T07:15:00Z",
+    "updated_at": "2026-04-04T07:15:00Z",
+    "views": 2744,
+    "helpful_votes": 496,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC0001026",
+      "INC9010002",
+      "INC9010077"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010007",
+    "title": "Respond to a suspicious login [9010007]",
+    "summary": "Contain and review an anomalous sign-in.",
+    "content": "Lock the account, review recent sessions and tokens, force a credential reset, and enable step-up MFA. Document the timeline.",
+    "category": "security",
+    "tags": [
+      "security",
+      "iam"
+    ],
+    "state": "draft",
+    "audience": "all",
+    "created_by": "USR90001",
+    "created_at": "2026-01-16T17:15:00Z",
+    "updated_at": "2026-01-31T17:15:00Z",
+    "views": 210,
+    "helpful_votes": 86,
+    "related_ci_ids": [
+      "CI9010061"
+    ],
+    "related_incidents": [
+      "INC9010051"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010008",
+    "title": "Recover from a failed deployment [9010008]",
+    "summary": "Roll back and recover after a bad release.",
+    "content": "Identify the failing release, roll back to the last known-good version, clear caches, and re-run smoke checks. Communicate status to affected users.",
+    "category": "application",
+    "tags": [
+      "deployment",
+      "rollback"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100049",
+    "created_at": "2026-04-03T05:15:00Z",
+    "updated_at": "2026-04-30T05:15:00Z",
+    "views": 2699,
+    "helpful_votes": 29,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010031",
+      "INC9010098"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010009",
+    "title": "Replace an expired TLS certificate [9010009]",
+    "summary": "Restore service after a certificate expiry.",
+    "content": "Issue a new certificate, deploy it to all endpoints, and reload services. Verify the chain and add an expiry alert.",
+    "category": "security",
+    "tags": [
+      "security",
+      "tls"
+    ],
+    "state": "draft",
+    "audience": "end_user",
+    "created_by": "USR100058",
+    "created_at": "2026-02-26T20:15:00Z",
+    "updated_at": "2026-03-15T20:15:00Z",
+    "views": 511,
+    "helpful_votes": 520,
+    "related_ci_ids": [
+      "CI9010099",
+      "CI9010019"
+    ],
+    "related_incidents": [
+      "INC0001012",
+      "INC9010079"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010010",
+    "title": "Clear an outbound mail queue [9010010]",
+    "summary": "Resolve delayed outgoing email.",
+    "content": "Inspect the mail queue, identify the blocking destination, and verify DNS and reputation. Release the queue once delivery resumes.",
+    "category": "email",
+    "tags": [
+      "email",
+      "smtp"
+    ],
+    "state": "retired",
+    "audience": "end_user",
+    "created_by": "USR100055",
+    "created_at": "2026-03-03T01:00:00Z",
+    "updated_at": "2026-03-30T01:00:00Z",
+    "views": 1799,
+    "helpful_votes": 143,
+    "related_ci_ids": [
+      "CI9010010",
+      "CI9010031"
+    ],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010011",
+    "title": "Improve knowledge search relevance [9010011]",
+    "summary": "Tune KB search to surface current articles.",
+    "content": "Re-index the knowledge base, exclude retired articles, and review tag coverage. Validate search results for common queries.",
+    "category": "knowledge",
+    "tags": [
+      "knowledge",
+      "search"
+    ],
+    "state": "draft",
+    "audience": "technician",
+    "created_by": "USR100050",
+    "created_at": "2026-04-03T23:00:00Z",
+    "updated_at": "2026-04-09T23:00:00Z",
+    "views": 236,
+    "helpful_votes": 223,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010036",
+      "INC9010056",
+      "INC9010094"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010012",
+    "title": "Clean up duplicate CI records [9010012]",
+    "summary": "Merge duplicate configuration items.",
+    "content": "Identify duplicates from discovery, choose the authoritative CI, re-point relationships, and retire the duplicate. Re-run discovery to confirm.",
+    "category": "cmdb",
+    "tags": [
+      "cmdb",
+      "data-quality"
+    ],
+    "state": "retired",
+    "audience": "all",
+    "created_by": "USR100023",
+    "created_at": "2026-02-10T04:30:00Z",
+    "updated_at": "2026-03-06T04:30:00Z",
+    "views": 1185,
+    "helpful_votes": 156,
+    "related_ci_ids": [
+      "CI9010045"
+    ],
+    "related_incidents": [
+      "INC9010046",
+      "INC9010104"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010013",
+    "title": "Recover from a failed deployment [9010013]",
+    "summary": "Roll back and recover after a bad release.",
+    "content": "Identify the failing release, roll back to the last known-good version, clear caches, and re-run smoke checks. Communicate status to affected users.",
+    "category": "application",
+    "tags": [
+      "deployment",
+      "rollback"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100015",
+    "created_at": "2026-03-29T23:30:00Z",
+    "updated_at": "2026-04-28T23:30:00Z",
+    "views": 534,
+    "helpful_votes": 71,
+    "related_ci_ids": [
+      "CI9010070",
+      "CI9010032"
+    ],
+    "related_incidents": [
+      "INC9010104",
+      "INC9010116"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010014",
+    "title": "Handle replication lag [9010014]",
+    "summary": "Bring a lagging read replica back in sync.",
+    "content": "Check replica I/O and CPU, pause heavy read traffic, and let the replica catch up. Investigate long-running transactions on the primary.",
+    "category": "database",
+    "tags": [
+      "database",
+      "replication"
+    ],
+    "state": "retired",
+    "audience": "all",
+    "created_by": "USR00007",
+    "created_at": "2026-04-06T20:30:00Z",
+    "updated_at": "2026-04-09T20:30:00Z",
+    "views": 426,
+    "helpful_votes": 187,
+    "related_ci_ids": [
+      "CI9010014"
+    ],
+    "related_incidents": [
+      "INC0001008",
+      "INC9010035"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010015",
+    "title": "Diagnose Wi-Fi dead zones [9010015]",
+    "summary": "Steps to diagnose and fix Wi-Fi coverage gaps.",
+    "content": "Map signal strength per floor, check AP placement and channel overlap, and reseat or replace unresponsive access points. Validate coverage after changes.",
+    "category": "network",
+    "tags": [
+      "wifi",
+      "coverage",
+      "ap"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100065",
+    "created_at": "2026-01-05T14:00:00Z",
+    "updated_at": "2026-01-20T14:00:00Z",
+    "views": 2430,
+    "helpful_votes": 368,
+    "related_ci_ids": [
+      "CI9010021"
+    ],
+    "related_incidents": [
+      "INC8001002",
+      "INC9010030"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010016",
+    "title": "Recover pods from CrashLoopBackOff [9010016]",
+    "summary": "Fix continuously restarting Kubernetes pods.",
+    "content": "Inspect pod logs and events, correct the failing config or resource limits, and roll the deployment. Confirm pods reach a ready state.",
+    "category": "platform",
+    "tags": [
+      "kubernetes",
+      "platform"
+    ],
+    "state": "draft",
+    "audience": "end_user",
+    "created_by": "USR100086",
+    "created_at": "2026-02-04T10:15:00Z",
+    "updated_at": "2026-03-03T10:15:00Z",
+    "views": 2311,
+    "helpful_votes": 14,
+    "related_ci_ids": [
+      "CI9010028"
+    ],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010017",
+    "title": "Respond to a suspicious login [9010017]",
+    "summary": "Contain and review an anomalous sign-in.",
+    "content": "Lock the account, review recent sessions and tokens, force a credential reset, and enable step-up MFA. Document the timeline.",
+    "category": "security",
+    "tags": [
+      "security",
+      "iam"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100011",
+    "created_at": "2026-01-18T15:00:00Z",
+    "updated_at": "2026-02-01T15:00:00Z",
+    "views": 1987,
+    "helpful_votes": 35,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010039",
+      "INC9010053",
+      "INC9010064",
+      "INC9010081"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010018",
+    "title": "Reduce database query latency [9010018]",
+    "summary": "Tune slow queries on the primary database.",
+    "content": "Identify slow queries from pg_stat_statements, add or correct indexes, and review connection-pool sizing. Re-measure latency after each change.",
+    "category": "database",
+    "tags": [
+      "database",
+      "performance"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR90001",
+    "created_at": "2026-04-14T13:45:00Z",
+    "updated_at": "2026-04-14T13:45:00Z",
+    "views": 2131,
+    "helpful_votes": 353,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9001002",
+      "INC9010046"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010019",
+    "title": "Handle replication lag [9010019]",
+    "summary": "Bring a lagging read replica back in sync.",
+    "content": "Check replica I/O and CPU, pause heavy read traffic, and let the replica catch up. Investigate long-running transactions on the primary.",
+    "category": "database",
+    "tags": [
+      "database",
+      "replication"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100078",
+    "created_at": "2026-02-11T14:00:00Z",
+    "updated_at": "2026-02-26T14:00:00Z",
+    "views": 1971,
+    "helpful_votes": 242,
+    "related_ci_ids": [
+      "CI9010071"
+    ],
+    "related_incidents": [
+      "INC9010043",
+      "INC9010071",
+      "INC9010101"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010020",
+    "title": "Improve knowledge search relevance [9010020]",
+    "summary": "Tune KB search to surface current articles.",
+    "content": "Re-index the knowledge base, exclude retired articles, and review tag coverage. Validate search results for common queries.",
+    "category": "knowledge",
+    "tags": [
+      "knowledge",
+      "search"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR00021",
+    "created_at": "2026-02-01T21:45:00Z",
+    "updated_at": "2026-02-10T21:45:00Z",
+    "views": 1362,
+    "helpful_votes": 484,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010037",
+      "INC9010099"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010021",
+    "title": "Resolve VPN disconnects when roaming [9010021]",
+    "summary": "Fix VPN tunnel drops during AP roaming.",
+    "content": "Update the VPN client profile to the latest version and enable persistent keepalive. Confirm the firewall keepalive interval matches the client. Reconnect and verify the tunnel is stable across roaming events.",
+    "category": "network",
+    "tags": [
+      "vpn",
+      "wifi",
+      "roaming"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100024",
+    "created_at": "2026-01-27T04:45:00Z",
+    "updated_at": "2026-02-04T04:45:00Z",
+    "views": 1868,
+    "helpful_votes": 537,
+    "related_ci_ids": [
+      "CI9010042",
+      "CI9010025"
+    ],
+    "related_incidents": [
+      "INC9010005",
+      "INC9010026",
+      "INC9010074",
+      "INC9010101"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010022",
+    "title": "Improve knowledge search relevance [9010022]",
+    "summary": "Tune KB search to surface current articles.",
+    "content": "Re-index the knowledge base, exclude retired articles, and review tag coverage. Validate search results for common queries.",
+    "category": "knowledge",
+    "tags": [
+      "knowledge",
+      "search"
+    ],
+    "state": "retired",
+    "audience": "technician",
+    "created_by": "USR100033",
+    "created_at": "2026-05-04T08:30:00Z",
+    "updated_at": "2026-05-25T08:30:00Z",
+    "views": 1840,
+    "helpful_votes": 26,
+    "related_ci_ids": [
+      "CI0000013"
+    ],
+    "related_incidents": [
+      "INC0001003",
+      "INC9010044",
+      "INC9010057",
+      "INC9010089"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010023",
+    "title": "Clean up duplicate CI records [9010023]",
+    "summary": "Merge duplicate configuration items.",
+    "content": "Identify duplicates from discovery, choose the authoritative CI, re-point relationships, and retire the duplicate. Re-run discovery to confirm.",
+    "category": "cmdb",
+    "tags": [
+      "cmdb",
+      "data-quality"
+    ],
+    "state": "draft",
+    "audience": "technician",
+    "created_by": "USR100082",
+    "created_at": "2026-02-07T21:30:00Z",
+    "updated_at": "2026-03-05T21:30:00Z",
+    "views": 1386,
+    "helpful_votes": 86,
+    "related_ci_ids": [],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010024",
+    "title": "Clear an outbound mail queue [9010024]",
+    "summary": "Resolve delayed outgoing email.",
+    "content": "Inspect the mail queue, identify the blocking destination, and verify DNS and reputation. Release the queue once delivery resumes.",
+    "category": "email",
+    "tags": [
+      "email",
+      "smtp"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100090",
+    "created_at": "2026-01-11T03:15:00Z",
+    "updated_at": "2026-01-18T03:15:00Z",
+    "views": 492,
+    "helpful_votes": 434,
+    "related_ci_ids": [
+      "CI9010058"
+    ],
+    "related_incidents": [
+      "INC9001003",
+      "INC9001004",
+      "INC9010060",
+      "INC9010112"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010025",
+    "title": "Fix missing ticket notifications [9010025]",
+    "summary": "Restore assignment notifications.",
+    "content": "Verify the notification channel configuration, check the outbound queue, and re-test assignment. Confirm agents receive alerts.",
+    "category": "itsm",
+    "tags": [
+      "itsm",
+      "notifications"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00003",
+    "created_at": "2026-02-26T08:30:00Z",
+    "updated_at": "2026-03-23T08:30:00Z",
+    "views": 2530,
+    "helpful_votes": 176,
+    "related_ci_ids": [
+      "CI9010016",
+      "CI9010060"
+    ],
+    "related_incidents": [
+      "INC9010040"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010026",
+    "title": "Recover from a failed deployment [9010026]",
+    "summary": "Roll back and recover after a bad release.",
+    "content": "Identify the failing release, roll back to the last known-good version, clear caches, and re-run smoke checks. Communicate status to affected users.",
+    "category": "application",
+    "tags": [
+      "deployment",
+      "rollback"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100092",
+    "created_at": "2026-05-02T15:30:00Z",
+    "updated_at": "2026-05-19T15:30:00Z",
+    "views": 2423,
+    "helpful_votes": 465,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC0001007"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010027",
+    "title": "Improve knowledge search relevance [9010027]",
+    "summary": "Tune KB search to surface current articles.",
+    "content": "Re-index the knowledge base, exclude retired articles, and review tag coverage. Validate search results for common queries.",
+    "category": "knowledge",
+    "tags": [
+      "knowledge",
+      "search"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100080",
+    "created_at": "2026-04-10T05:30:00Z",
+    "updated_at": "2026-05-07T05:30:00Z",
+    "views": 2126,
+    "helpful_votes": 317,
+    "related_ci_ids": [],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010028",
+    "title": "Clean up duplicate CI records [9010028]",
+    "summary": "Merge duplicate configuration items.",
+    "content": "Identify duplicates from discovery, choose the authoritative CI, re-point relationships, and retire the duplicate. Re-run discovery to confirm.",
+    "category": "cmdb",
+    "tags": [
+      "cmdb",
+      "data-quality"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100030",
+    "created_at": "2026-02-02T14:15:00Z",
+    "updated_at": "2026-02-22T14:15:00Z",
+    "views": 1610,
+    "helpful_votes": 229,
+    "related_ci_ids": [
+      "CI9010004"
+    ],
+    "related_incidents": [
+      "INC8001001",
+      "INC9010036",
+      "INC9010083"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010029",
+    "title": "Improve knowledge search relevance [9010029]",
+    "summary": "Tune KB search to surface current articles.",
+    "content": "Re-index the knowledge base, exclude retired articles, and review tag coverage. Validate search results for common queries.",
+    "category": "knowledge",
+    "tags": [
+      "knowledge",
+      "search"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100088",
+    "created_at": "2026-04-04T00:30:00Z",
+    "updated_at": "2026-05-02T00:30:00Z",
+    "views": 474,
+    "helpful_votes": 445,
+    "related_ci_ids": [],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010030",
+    "title": "Reduce database query latency [9010030]",
+    "summary": "Tune slow queries on the primary database.",
+    "content": "Identify slow queries from pg_stat_statements, add or correct indexes, and review connection-pool sizing. Re-measure latency after each change.",
+    "category": "database",
+    "tags": [
+      "database",
+      "performance"
+    ],
+    "state": "draft",
+    "audience": "technician",
+    "created_by": "USR100043",
+    "created_at": "2026-03-02T06:15:00Z",
+    "updated_at": "2026-03-28T06:15:00Z",
+    "views": 347,
+    "helpful_votes": 134,
+    "related_ci_ids": [
+      "CI9010024",
+      "CI8000001"
+    ],
+    "related_incidents": [
+      "INC9010004",
+      "INC9010063"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010031",
+    "title": "Recover from a failed deployment [9010031]",
+    "summary": "Roll back and recover after a bad release.",
+    "content": "Identify the failing release, roll back to the last known-good version, clear caches, and re-run smoke checks. Communicate status to affected users.",
+    "category": "application",
+    "tags": [
+      "deployment",
+      "rollback"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100023",
+    "created_at": "2026-04-15T14:00:00Z",
+    "updated_at": "2026-04-19T14:00:00Z",
+    "views": 1314,
+    "helpful_votes": 564,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010098",
+      "INC9010116"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010032",
+    "title": "Fix missing ticket notifications [9010032]",
+    "summary": "Restore assignment notifications.",
+    "content": "Verify the notification channel configuration, check the outbound queue, and re-test assignment. Confirm agents receive alerts.",
+    "category": "itsm",
+    "tags": [
+      "itsm",
+      "notifications"
+    ],
+    "state": "draft",
+    "audience": "end_user",
+    "created_by": "USR100079",
+    "created_at": "2026-02-22T14:30:00Z",
+    "updated_at": "2026-03-05T14:30:00Z",
+    "views": 1705,
+    "helpful_votes": 44,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010116"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010033",
+    "title": "Clean up duplicate CI records [9010033]",
+    "summary": "Merge duplicate configuration items.",
+    "content": "Identify duplicates from discovery, choose the authoritative CI, re-point relationships, and retire the duplicate. Re-run discovery to confirm.",
+    "category": "cmdb",
+    "tags": [
+      "cmdb",
+      "data-quality"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100007",
+    "created_at": "2026-02-08T08:00:00Z",
+    "updated_at": "2026-03-10T08:00:00Z",
+    "views": 390,
+    "helpful_votes": 73,
+    "related_ci_ids": [
+      "CI0000007"
+    ],
+    "related_incidents": [
+      "INC0001011",
+      "INC9010034",
+      "INC9010100",
+      "INC9010106"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010034",
+    "title": "Improve knowledge search relevance [9010034]",
+    "summary": "Tune KB search to surface current articles.",
+    "content": "Re-index the knowledge base, exclude retired articles, and review tag coverage. Validate search results for common queries.",
+    "category": "knowledge",
+    "tags": [
+      "knowledge",
+      "search"
+    ],
+    "state": "draft",
+    "audience": "end_user",
+    "created_by": "USR100022",
+    "created_at": "2026-02-10T01:45:00Z",
+    "updated_at": "2026-02-18T01:45:00Z",
+    "views": 2657,
+    "helpful_votes": 288,
+    "related_ci_ids": [
+      "CI9010071",
+      "CI9010093"
+    ],
+    "related_incidents": [
+      "INC9010059",
+      "INC9010061",
+      "INC9010104",
+      "INC9010108"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010035",
+    "title": "Repair an endpoint that fails to boot [9010035]",
+    "summary": "Recover a laptop stuck after an update.",
+    "content": "Boot into recovery, roll back the failed update, and verify disk encryption state. Re-enrol the device if needed.",
+    "category": "endpoint",
+    "tags": [
+      "endpoint",
+      "boot"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100015",
+    "created_at": "2026-02-24T10:15:00Z",
+    "updated_at": "2026-03-10T10:15:00Z",
+    "views": 1228,
+    "helpful_votes": 328,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010055"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010036",
+    "title": "Repair an endpoint that fails to boot [9010036]",
+    "summary": "Recover a laptop stuck after an update.",
+    "content": "Boot into recovery, roll back the failed update, and verify disk encryption state. Re-enrol the device if needed.",
+    "category": "endpoint",
+    "tags": [
+      "endpoint",
+      "boot"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100084",
+    "created_at": "2026-01-04T15:30:00Z",
+    "updated_at": "2026-01-14T15:30:00Z",
+    "views": 2018,
+    "helpful_votes": 485,
+    "related_ci_ids": [],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010037",
+    "title": "Reduce database query latency [9010037]",
+    "summary": "Tune slow queries on the primary database.",
+    "content": "Identify slow queries from pg_stat_statements, add or correct indexes, and review connection-pool sizing. Re-measure latency after each change.",
+    "category": "database",
+    "tags": [
+      "database",
+      "performance"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100063",
+    "created_at": "2026-04-08T12:45:00Z",
+    "updated_at": "2026-04-08T12:45:00Z",
+    "views": 165,
+    "helpful_votes": 386,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010013",
+      "INC9010113"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010038",
+    "title": "Recover pods from CrashLoopBackOff [9010038]",
+    "summary": "Fix continuously restarting Kubernetes pods.",
+    "content": "Inspect pod logs and events, correct the failing config or resource limits, and roll the deployment. Confirm pods reach a ready state.",
+    "category": "platform",
+    "tags": [
+      "kubernetes",
+      "platform"
+    ],
+    "state": "draft",
+    "audience": "end_user",
+    "created_by": "USR100092",
+    "created_at": "2026-01-19T11:30:00Z",
+    "updated_at": "2026-02-01T11:30:00Z",
+    "views": 1564,
+    "helpful_votes": 597,
+    "related_ci_ids": [],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010039",
+    "title": "Fix missing ticket notifications [9010039]",
+    "summary": "Restore assignment notifications.",
+    "content": "Verify the notification channel configuration, check the outbound queue, and re-test assignment. Confirm agents receive alerts.",
+    "category": "itsm",
+    "tags": [
+      "itsm",
+      "notifications"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100038",
+    "created_at": "2026-02-18T10:30:00Z",
+    "updated_at": "2026-03-16T10:30:00Z",
+    "views": 455,
+    "helpful_votes": 217,
+    "related_ci_ids": [],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010040",
+    "title": "Resolve VPN disconnects when roaming [9010040]",
+    "summary": "Fix VPN tunnel drops during AP roaming.",
+    "content": "Update the VPN client profile to the latest version and enable persistent keepalive. Confirm the firewall keepalive interval matches the client. Reconnect and verify the tunnel is stable across roaming events.",
+    "category": "network",
+    "tags": [
+      "vpn",
+      "wifi",
+      "roaming"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100036",
+    "created_at": "2026-04-18T12:30:00Z",
+    "updated_at": "2026-05-01T12:30:00Z",
+    "views": 208,
+    "helpful_votes": 332,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC0001006",
+      "INC9010040",
+      "INC9010117"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010041",
+    "title": "Recover pods from CrashLoopBackOff [9010041]",
+    "summary": "Fix continuously restarting Kubernetes pods.",
+    "content": "Inspect pod logs and events, correct the failing config or resource limits, and roll the deployment. Confirm pods reach a ready state.",
+    "category": "platform",
+    "tags": [
+      "kubernetes",
+      "platform"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR00004",
+    "created_at": "2026-04-10T11:00:00Z",
+    "updated_at": "2026-04-22T11:00:00Z",
+    "views": 689,
+    "helpful_votes": 516,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC0001009",
+      "INC9010034",
+      "INC9010102"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010042",
+    "title": "Repair an endpoint that fails to boot [9010042]",
+    "summary": "Recover a laptop stuck after an update.",
+    "content": "Boot into recovery, roll back the failed update, and verify disk encryption state. Re-enrol the device if needed.",
+    "category": "endpoint",
+    "tags": [
+      "endpoint",
+      "boot"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR80003",
+    "created_at": "2026-05-12T12:15:00Z",
+    "updated_at": "2026-05-22T12:15:00Z",
+    "views": 1559,
+    "helpful_votes": 143,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010030",
+      "INC9010036"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010043",
+    "title": "Recover pods from CrashLoopBackOff [9010043]",
+    "summary": "Fix continuously restarting Kubernetes pods.",
+    "content": "Inspect pod logs and events, correct the failing config or resource limits, and roll the deployment. Confirm pods reach a ready state.",
+    "category": "platform",
+    "tags": [
+      "kubernetes",
+      "platform"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100052",
+    "created_at": "2026-03-14T04:00:00Z",
+    "updated_at": "2026-03-29T04:00:00Z",
+    "views": 2093,
+    "helpful_votes": 294,
+    "related_ci_ids": [
+      "CI9010019"
+    ],
+    "related_incidents": [
+      "INC0001005",
+      "INC9010076",
+      "INC9010079",
+      "INC9010109"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010044",
+    "title": "Fix missing ticket notifications [9010044]",
+    "summary": "Restore assignment notifications.",
+    "content": "Verify the notification channel configuration, check the outbound queue, and re-test assignment. Confirm agents receive alerts.",
+    "category": "itsm",
+    "tags": [
+      "itsm",
+      "notifications"
+    ],
+    "state": "retired",
+    "audience": "all",
+    "created_by": "USR100069",
+    "created_at": "2026-02-13T22:00:00Z",
+    "updated_at": "2026-03-07T22:00:00Z",
+    "views": 2183,
+    "helpful_votes": 530,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010008"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010045",
+    "title": "Reduce database query latency [9010045]",
+    "summary": "Tune slow queries on the primary database.",
+    "content": "Identify slow queries from pg_stat_statements, add or correct indexes, and review connection-pool sizing. Re-measure latency after each change.",
+    "category": "database",
+    "tags": [
+      "database",
+      "performance"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100080",
+    "created_at": "2026-04-28T19:00:00Z",
+    "updated_at": "2026-05-07T19:00:00Z",
+    "views": 876,
+    "helpful_votes": 188,
+    "related_ci_ids": [],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010046",
+    "title": "Repair an endpoint that fails to boot [9010046]",
+    "summary": "Recover a laptop stuck after an update.",
+    "content": "Boot into recovery, roll back the failed update, and verify disk encryption state. Re-enrol the device if needed.",
+    "category": "endpoint",
+    "tags": [
+      "endpoint",
+      "boot"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100009",
+    "created_at": "2026-01-08T00:30:00Z",
+    "updated_at": "2026-01-16T00:30:00Z",
+    "views": 982,
+    "helpful_votes": 541,
+    "related_ci_ids": [
+      "CI9010078",
+      "CI9010043"
+    ],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010047",
+    "title": "Repair an endpoint that fails to boot [9010047]",
+    "summary": "Recover a laptop stuck after an update.",
+    "content": "Boot into recovery, roll back the failed update, and verify disk encryption state. Re-enrol the device if needed.",
+    "category": "endpoint",
+    "tags": [
+      "endpoint",
+      "boot"
+    ],
+    "state": "draft",
+    "audience": "technician",
+    "created_by": "USR100020",
+    "created_at": "2026-02-18T19:15:00Z",
+    "updated_at": "2026-03-18T19:15:00Z",
+    "views": 1551,
+    "helpful_votes": 149,
+    "related_ci_ids": [
+      "CI9010060"
+    ],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010048",
+    "title": "Reduce database query latency [9010048]",
+    "summary": "Tune slow queries on the primary database.",
+    "content": "Identify slow queries from pg_stat_statements, add or correct indexes, and review connection-pool sizing. Re-measure latency after each change.",
+    "category": "database",
+    "tags": [
+      "database",
+      "performance"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100084",
+    "created_at": "2026-04-28T04:30:00Z",
+    "updated_at": "2026-04-29T04:30:00Z",
+    "views": 1853,
+    "helpful_votes": 468,
+    "related_ci_ids": [
+      "CI0000005",
+      "CI0000013"
+    ],
+    "related_incidents": [
+      "INC0001032",
+      "INC9010037",
+      "INC9010052",
+      "INC9010122"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010049",
+    "title": "Clean up duplicate CI records [9010049]",
+    "summary": "Merge duplicate configuration items.",
+    "content": "Identify duplicates from discovery, choose the authoritative CI, re-point relationships, and retire the duplicate. Re-run discovery to confirm.",
+    "category": "cmdb",
+    "tags": [
+      "cmdb",
+      "data-quality"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100066",
+    "created_at": "2026-03-07T17:00:00Z",
+    "updated_at": "2026-03-13T17:00:00Z",
+    "views": 2910,
+    "helpful_votes": 5,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC0001017"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010050",
+    "title": "Reduce database query latency [9010050]",
+    "summary": "Tune slow queries on the primary database.",
+    "content": "Identify slow queries from pg_stat_statements, add or correct indexes, and review connection-pool sizing. Re-measure latency after each change.",
+    "category": "database",
+    "tags": [
+      "database",
+      "performance"
+    ],
+    "state": "retired",
+    "audience": "technician",
+    "created_by": "USR100060",
+    "created_at": "2026-03-15T20:00:00Z",
+    "updated_at": "2026-03-25T20:00:00Z",
+    "views": 700,
+    "helpful_votes": 558,
+    "related_ci_ids": [
+      "CI9000002"
+    ],
+    "related_incidents": [
+      "INC9010015",
+      "INC9010104"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010051",
+    "title": "Repair an endpoint that fails to boot [9010051]",
+    "summary": "Recover a laptop stuck after an update.",
+    "content": "Boot into recovery, roll back the failed update, and verify disk encryption state. Re-enrol the device if needed.",
+    "category": "endpoint",
+    "tags": [
+      "endpoint",
+      "boot"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR00021",
+    "created_at": "2026-01-09T08:45:00Z",
+    "updated_at": "2026-01-17T08:45:00Z",
+    "views": 862,
+    "helpful_votes": 376,
+    "related_ci_ids": [
+      "CI9010040"
+    ],
+    "related_incidents": [
+      "INC0001008",
+      "INC9010109"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010052",
+    "title": "Improve knowledge search relevance [9010052]",
+    "summary": "Tune KB search to surface current articles.",
+    "content": "Re-index the knowledge base, exclude retired articles, and review tag coverage. Validate search results for common queries.",
+    "category": "knowledge",
+    "tags": [
+      "knowledge",
+      "search"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100051",
+    "created_at": "2026-01-13T02:45:00Z",
+    "updated_at": "2026-02-01T02:45:00Z",
+    "views": 1606,
+    "helpful_votes": 515,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9001001",
+      "INC9010103"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010053",
+    "title": "Replace an expired TLS certificate [9010053]",
+    "summary": "Restore service after a certificate expiry.",
+    "content": "Issue a new certificate, deploy it to all endpoints, and reload services. Verify the chain and add an expiry alert.",
+    "category": "security",
+    "tags": [
+      "security",
+      "tls"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR00011",
+    "created_at": "2026-04-18T01:00:00Z",
+    "updated_at": "2026-05-10T01:00:00Z",
+    "views": 2271,
+    "helpful_votes": 302,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010064",
+      "INC9010096"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010054",
+    "title": "Clear an outbound mail queue [9010054]",
+    "summary": "Resolve delayed outgoing email.",
+    "content": "Inspect the mail queue, identify the blocking destination, and verify DNS and reputation. Release the queue once delivery resumes.",
+    "category": "email",
+    "tags": [
+      "email",
+      "smtp"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100055",
+    "created_at": "2026-01-09T19:30:00Z",
+    "updated_at": "2026-01-20T19:30:00Z",
+    "views": 2411,
+    "helpful_votes": 470,
+    "related_ci_ids": [],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010055",
+    "title": "Replace an expired TLS certificate [9010055]",
+    "summary": "Restore service after a certificate expiry.",
+    "content": "Issue a new certificate, deploy it to all endpoints, and reload services. Verify the chain and add an expiry alert.",
+    "category": "security",
+    "tags": [
+      "security",
+      "tls"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100070",
+    "created_at": "2026-02-22T07:30:00Z",
+    "updated_at": "2026-03-19T07:30:00Z",
+    "views": 2904,
+    "helpful_votes": 600,
+    "related_ci_ids": [
+      "CI9010035"
+    ],
+    "related_incidents": [
+      "INC0001017",
+      "INC0001021",
+      "INC9010016",
+      "INC9010053"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010056",
+    "title": "Repair an endpoint that fails to boot [9010056]",
+    "summary": "Recover a laptop stuck after an update.",
+    "content": "Boot into recovery, roll back the failed update, and verify disk encryption state. Re-enrol the device if needed.",
+    "category": "endpoint",
+    "tags": [
+      "endpoint",
+      "boot"
+    ],
+    "state": "retired",
+    "audience": "all",
+    "created_by": "USR100070",
+    "created_at": "2026-05-09T14:00:00Z",
+    "updated_at": "2026-05-17T14:00:00Z",
+    "views": 394,
+    "helpful_votes": 346,
+    "related_ci_ids": [
+      "CI0000001"
+    ],
+    "related_incidents": [
+      "INC9010003"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010057",
+    "title": "Improve knowledge search relevance [9010057]",
+    "summary": "Tune KB search to surface current articles.",
+    "content": "Re-index the knowledge base, exclude retired articles, and review tag coverage. Validate search results for common queries.",
+    "category": "knowledge",
+    "tags": [
+      "knowledge",
+      "search"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100005",
+    "created_at": "2026-02-18T21:00:00Z",
+    "updated_at": "2026-03-18T21:00:00Z",
+    "views": 1850,
+    "helpful_votes": 521,
+    "related_ci_ids": [
+      "CI0000001"
+    ],
+    "related_incidents": [
+      "INC0001017",
+      "INC9010013",
+      "INC9010023",
+      "INC9010070"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010058",
+    "title": "Recover pods from CrashLoopBackOff [9010058]",
+    "summary": "Fix continuously restarting Kubernetes pods.",
+    "content": "Inspect pod logs and events, correct the failing config or resource limits, and roll the deployment. Confirm pods reach a ready state.",
+    "category": "platform",
+    "tags": [
+      "kubernetes",
+      "platform"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR80002",
+    "created_at": "2026-03-24T18:45:00Z",
+    "updated_at": "2026-04-23T18:45:00Z",
+    "views": 1971,
+    "helpful_votes": 487,
+    "related_ci_ids": [
+      "CI9010094"
+    ],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010059",
+    "title": "Clear an outbound mail queue [9010059]",
+    "summary": "Resolve delayed outgoing email.",
+    "content": "Inspect the mail queue, identify the blocking destination, and verify DNS and reputation. Release the queue once delivery resumes.",
+    "category": "email",
+    "tags": [
+      "email",
+      "smtp"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100075",
+    "created_at": "2026-02-25T23:00:00Z",
+    "updated_at": "2026-03-12T23:00:00Z",
+    "views": 28,
+    "helpful_votes": 513,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010022"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010060",
+    "title": "Diagnose Wi-Fi dead zones [9010060]",
+    "summary": "Steps to diagnose and fix Wi-Fi coverage gaps.",
+    "content": "Map signal strength per floor, check AP placement and channel overlap, and reseat or replace unresponsive access points. Validate coverage after changes.",
+    "category": "network",
+    "tags": [
+      "wifi",
+      "coverage",
+      "ap"
+    ],
+    "state": "draft",
+    "audience": "end_user",
+    "created_by": "USR100013",
+    "created_at": "2026-03-09T05:00:00Z",
+    "updated_at": "2026-03-13T05:00:00Z",
+    "views": 1801,
+    "helpful_votes": 41,
+    "related_ci_ids": [
+      "CI0000006"
+    ],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010061",
+    "title": "Diagnose Wi-Fi dead zones [9010061]",
+    "summary": "Steps to diagnose and fix Wi-Fi coverage gaps.",
+    "content": "Map signal strength per floor, check AP placement and channel overlap, and reseat or replace unresponsive access points. Validate coverage after changes.",
+    "category": "network",
+    "tags": [
+      "wifi",
+      "coverage",
+      "ap"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR90001",
+    "created_at": "2026-02-28T04:00:00Z",
+    "updated_at": "2026-03-08T04:00:00Z",
+    "views": 377,
+    "helpful_votes": 500,
+    "related_ci_ids": [
+      "CI9010003"
+    ],
+    "related_incidents": [
+      "INC9001002",
+      "INC9010071",
+      "INC9010082"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010062",
+    "title": "Recover pods from CrashLoopBackOff [9010062]",
+    "summary": "Fix continuously restarting Kubernetes pods.",
+    "content": "Inspect pod logs and events, correct the failing config or resource limits, and roll the deployment. Confirm pods reach a ready state.",
+    "category": "platform",
+    "tags": [
+      "kubernetes",
+      "platform"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100073",
+    "created_at": "2026-01-08T13:45:00Z",
+    "updated_at": "2026-02-03T13:45:00Z",
+    "views": 853,
+    "helpful_votes": 263,
+    "related_ci_ids": [
+      "CI9010028"
+    ],
+    "related_incidents": [
+      "INC9010036",
+      "INC9010038",
+      "INC9010115",
+      "INC9010120"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010063",
+    "title": "Clear an outbound mail queue [9010063]",
+    "summary": "Resolve delayed outgoing email.",
+    "content": "Inspect the mail queue, identify the blocking destination, and verify DNS and reputation. Release the queue once delivery resumes.",
+    "category": "email",
+    "tags": [
+      "email",
+      "smtp"
+    ],
+    "state": "draft",
+    "audience": "all",
+    "created_by": "USR100023",
+    "created_at": "2026-02-27T01:45:00Z",
+    "updated_at": "2026-03-15T01:45:00Z",
+    "views": 2794,
+    "helpful_votes": 14,
+    "related_ci_ids": [
+      "CI9010003"
+    ],
+    "related_incidents": [
+      "INC9010005",
+      "INC9010107"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010064",
+    "title": "Recover failed webhook deliveries [9010064]",
+    "summary": "Restore outbound webhook delivery.",
+    "content": "Check the endpoint health, inspect failed payloads, and replay the dead-letter queue. Add retry with backoff.",
+    "category": "integration",
+    "tags": [
+      "integration",
+      "webhook"
+    ],
+    "state": "retired",
+    "audience": "end_user",
+    "created_by": "USR100025",
+    "created_at": "2026-05-07T09:30:00Z",
+    "updated_at": "2026-05-21T09:30:00Z",
+    "views": 1544,
+    "helpful_votes": 465,
+    "related_ci_ids": [
+      "CI9010059"
+    ],
+    "related_incidents": [
+      "INC9010091"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010065",
+    "title": "Recover failed webhook deliveries [9010065]",
+    "summary": "Restore outbound webhook delivery.",
+    "content": "Check the endpoint health, inspect failed payloads, and replay the dead-letter queue. Add retry with backoff.",
+    "category": "integration",
+    "tags": [
+      "integration",
+      "webhook"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100039",
+    "created_at": "2026-02-04T17:45:00Z",
+    "updated_at": "2026-02-19T17:45:00Z",
+    "views": 2473,
+    "helpful_votes": 76,
+    "related_ci_ids": [
+      "CI9010011",
+      "CI9010028"
+    ],
+    "related_incidents": [
+      "INC8001001"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010066",
+    "title": "Fix CRM 500 errors [9010066]",
+    "summary": "Triage and resolve CRM server errors.",
+    "content": "Check application logs for the failing request, verify database connectivity, and restart unhealthy app instances. Confirm the dashboard loads.",
+    "category": "application",
+    "tags": [
+      "crm",
+      "errors"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100029",
+    "created_at": "2026-02-23T14:15:00Z",
+    "updated_at": "2026-03-10T14:15:00Z",
+    "views": 2710,
+    "helpful_votes": 545,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC0001022",
+      "INC9010016",
+      "INC9010041"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010067",
+    "title": "Recover from a failed deployment [9010067]",
+    "summary": "Roll back and recover after a bad release.",
+    "content": "Identify the failing release, roll back to the last known-good version, clear caches, and re-run smoke checks. Communicate status to affected users.",
+    "category": "application",
+    "tags": [
+      "deployment",
+      "rollback"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100048",
+    "created_at": "2026-05-10T01:15:00Z",
+    "updated_at": "2026-06-08T01:15:00Z",
+    "views": 2747,
+    "helpful_votes": 498,
+    "related_ci_ids": [
+      "CI9010006",
+      "CI9010015"
+    ],
+    "related_incidents": [
+      "INC9010005",
+      "INC9010060",
+      "INC9010104"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010068",
+    "title": "Repair an endpoint that fails to boot [9010068]",
+    "summary": "Recover a laptop stuck after an update.",
+    "content": "Boot into recovery, roll back the failed update, and verify disk encryption state. Re-enrol the device if needed.",
+    "category": "endpoint",
+    "tags": [
+      "endpoint",
+      "boot"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100030",
+    "created_at": "2026-02-23T12:00:00Z",
+    "updated_at": "2026-03-12T12:00:00Z",
+    "views": 1097,
+    "helpful_votes": 433,
+    "related_ci_ids": [
+      "CI9010031"
+    ],
+    "related_incidents": [
+      "INC9010021",
+      "INC9010038"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010069",
+    "title": "Resolve VPN disconnects when roaming [9010069]",
+    "summary": "Fix VPN tunnel drops during AP roaming.",
+    "content": "Update the VPN client profile to the latest version and enable persistent keepalive. Confirm the firewall keepalive interval matches the client. Reconnect and verify the tunnel is stable across roaming events.",
+    "category": "network",
+    "tags": [
+      "vpn",
+      "wifi",
+      "roaming"
+    ],
+    "state": "retired",
+    "audience": "end_user",
+    "created_by": "USR100051",
+    "created_at": "2026-04-19T12:15:00Z",
+    "updated_at": "2026-05-18T12:15:00Z",
+    "views": 2490,
+    "helpful_votes": 104,
+    "related_ci_ids": [
+      "CI9010100"
+    ],
+    "related_incidents": [
+      "INC9010026",
+      "INC9010059"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010070",
+    "title": "Fix CRM 500 errors [9010070]",
+    "summary": "Triage and resolve CRM server errors.",
+    "content": "Check application logs for the failing request, verify database connectivity, and restart unhealthy app instances. Confirm the dashboard loads.",
+    "category": "application",
+    "tags": [
+      "crm",
+      "errors"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100007",
+    "created_at": "2026-03-11T05:45:00Z",
+    "updated_at": "2026-03-15T05:45:00Z",
+    "views": 379,
+    "helpful_votes": 216,
+    "related_ci_ids": [
+      "CI0000011",
+      "CI9010057"
+    ],
+    "related_incidents": [
+      "INC9010097",
+      "INC9010117"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010071",
+    "title": "Clean up duplicate CI records [9010071]",
+    "summary": "Merge duplicate configuration items.",
+    "content": "Identify duplicates from discovery, choose the authoritative CI, re-point relationships, and retire the duplicate. Re-run discovery to confirm.",
+    "category": "cmdb",
+    "tags": [
+      "cmdb",
+      "data-quality"
+    ],
+    "state": "retired",
+    "audience": "end_user",
+    "created_by": "USR100079",
+    "created_at": "2026-04-27T23:30:00Z",
+    "updated_at": "2026-05-09T23:30:00Z",
+    "views": 793,
+    "helpful_votes": 511,
+    "related_ci_ids": [
+      "CI9010045",
+      "CI9010061"
+    ],
+    "related_incidents": [
+      "INC9010026",
+      "INC9010043"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010072",
+    "title": "Fix missing ticket notifications [9010072]",
+    "summary": "Restore assignment notifications.",
+    "content": "Verify the notification channel configuration, check the outbound queue, and re-test assignment. Confirm agents receive alerts.",
+    "category": "itsm",
+    "tags": [
+      "itsm",
+      "notifications"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100090",
+    "created_at": "2026-01-07T01:15:00Z",
+    "updated_at": "2026-01-26T01:15:00Z",
+    "views": 1696,
+    "helpful_votes": 599,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010026",
+      "INC9010060",
+      "INC9010071",
+      "INC9010105"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010073",
+    "title": "Recover failed webhook deliveries [9010073]",
+    "summary": "Restore outbound webhook delivery.",
+    "content": "Check the endpoint health, inspect failed payloads, and replay the dead-letter queue. Add retry with backoff.",
+    "category": "integration",
+    "tags": [
+      "integration",
+      "webhook"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR00005",
+    "created_at": "2026-05-15T19:45:00Z",
+    "updated_at": "2026-05-21T19:45:00Z",
+    "views": 1707,
+    "helpful_votes": 466,
+    "related_ci_ids": [
+      "CI9010096"
+    ],
+    "related_incidents": [
+      "INC0001012"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010074",
+    "title": "Fix CRM 500 errors [9010074]",
+    "summary": "Triage and resolve CRM server errors.",
+    "content": "Check application logs for the failing request, verify database connectivity, and restart unhealthy app instances. Confirm the dashboard loads.",
+    "category": "application",
+    "tags": [
+      "crm",
+      "errors"
+    ],
+    "state": "retired",
+    "audience": "end_user",
+    "created_by": "USR90003",
+    "created_at": "2026-02-13T00:15:00Z",
+    "updated_at": "2026-02-17T00:15:00Z",
+    "views": 2273,
+    "helpful_votes": 419,
+    "related_ci_ids": [
+      "CI9010091"
+    ],
+    "related_incidents": [
+      "INC9010005",
+      "INC9010098",
+      "INC9010112"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010075",
+    "title": "Fix missing ticket notifications [9010075]",
+    "summary": "Restore assignment notifications.",
+    "content": "Verify the notification channel configuration, check the outbound queue, and re-test assignment. Confirm agents receive alerts.",
+    "category": "itsm",
+    "tags": [
+      "itsm",
+      "notifications"
+    ],
+    "state": "retired",
+    "audience": "technician",
+    "created_by": "USR00018",
+    "created_at": "2026-04-07T16:15:00Z",
+    "updated_at": "2026-04-11T16:15:00Z",
+    "views": 745,
+    "helpful_votes": 65,
+    "related_ci_ids": [],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010076",
+    "title": "Fix missing ticket notifications [9010076]",
+    "summary": "Restore assignment notifications.",
+    "content": "Verify the notification channel configuration, check the outbound queue, and re-test assignment. Confirm agents receive alerts.",
+    "category": "itsm",
+    "tags": [
+      "itsm",
+      "notifications"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100030",
+    "created_at": "2026-05-13T01:30:00Z",
+    "updated_at": "2026-06-09T01:30:00Z",
+    "views": 1615,
+    "helpful_votes": 102,
+    "related_ci_ids": [
+      "CI9010012"
+    ],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010077",
+    "title": "Reduce database query latency [9010077]",
+    "summary": "Tune slow queries on the primary database.",
+    "content": "Identify slow queries from pg_stat_statements, add or correct indexes, and review connection-pool sizing. Re-measure latency after each change.",
+    "category": "database",
+    "tags": [
+      "database",
+      "performance"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100052",
+    "created_at": "2026-01-16T11:15:00Z",
+    "updated_at": "2026-02-02T11:15:00Z",
+    "views": 440,
+    "helpful_votes": 71,
+    "related_ci_ids": [
+      "CI9010076"
+    ],
+    "related_incidents": [
+      "INC9010014",
+      "INC9010058",
+      "INC9010092"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010078",
+    "title": "Fix missing ticket notifications [9010078]",
+    "summary": "Restore assignment notifications.",
+    "content": "Verify the notification channel configuration, check the outbound queue, and re-test assignment. Confirm agents receive alerts.",
+    "category": "itsm",
+    "tags": [
+      "itsm",
+      "notifications"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100062",
+    "created_at": "2026-01-04T03:30:00Z",
+    "updated_at": "2026-01-07T03:30:00Z",
+    "views": 295,
+    "helpful_votes": 504,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010017",
+      "INC9010036"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010079",
+    "title": "Repair an endpoint that fails to boot [9010079]",
+    "summary": "Recover a laptop stuck after an update.",
+    "content": "Boot into recovery, roll back the failed update, and verify disk encryption state. Re-enrol the device if needed.",
+    "category": "endpoint",
+    "tags": [
+      "endpoint",
+      "boot"
+    ],
+    "state": "retired",
+    "audience": "technician",
+    "created_by": "USR100083",
+    "created_at": "2026-01-19T20:30:00Z",
+    "updated_at": "2026-01-19T20:30:00Z",
+    "views": 818,
+    "helpful_votes": 188,
+    "related_ci_ids": [
+      "CI9010038"
+    ],
+    "related_incidents": [
+      "INC9010016",
+      "INC9010037",
+      "INC9010085",
+      "INC9010113"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010080",
+    "title": "Clean up duplicate CI records [9010080]",
+    "summary": "Merge duplicate configuration items.",
+    "content": "Identify duplicates from discovery, choose the authoritative CI, re-point relationships, and retire the duplicate. Re-run discovery to confirm.",
+    "category": "cmdb",
+    "tags": [
+      "cmdb",
+      "data-quality"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100055",
+    "created_at": "2026-01-05T17:30:00Z",
+    "updated_at": "2026-01-17T17:30:00Z",
+    "views": 851,
+    "helpful_votes": 306,
+    "related_ci_ids": [
+      "CI9010024",
+      "CI9010020"
+    ],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010081",
+    "title": "Handle replication lag [9010081]",
+    "summary": "Bring a lagging read replica back in sync.",
+    "content": "Check replica I/O and CPU, pause heavy read traffic, and let the replica catch up. Investigate long-running transactions on the primary.",
+    "category": "database",
+    "tags": [
+      "database",
+      "replication"
+    ],
+    "state": "published",
+    "audience": "technician",
+    "created_by": "USR100015",
+    "created_at": "2026-03-26T14:00:00Z",
+    "updated_at": "2026-03-27T14:00:00Z",
+    "views": 6,
+    "helpful_votes": 478,
+    "related_ci_ids": [],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010082",
+    "title": "Recover from a failed deployment [9010082]",
+    "summary": "Roll back and recover after a bad release.",
+    "content": "Identify the failing release, roll back to the last known-good version, clear caches, and re-run smoke checks. Communicate status to affected users.",
+    "category": "application",
+    "tags": [
+      "deployment",
+      "rollback"
+    ],
+    "state": "published",
+    "audience": "all",
+    "created_by": "USR100021",
+    "created_at": "2026-01-23T19:45:00Z",
+    "updated_at": "2026-02-03T19:45:00Z",
+    "views": 123,
+    "helpful_votes": 322,
+    "related_ci_ids": [
+      "CI9010090",
+      "CI9010066"
+    ],
+    "related_incidents": [
+      "INC9010028"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010083",
+    "title": "Handle replication lag [9010083]",
+    "summary": "Bring a lagging read replica back in sync.",
+    "content": "Check replica I/O and CPU, pause heavy read traffic, and let the replica catch up. Investigate long-running transactions on the primary.",
+    "category": "database",
+    "tags": [
+      "database",
+      "replication"
+    ],
+    "state": "retired",
+    "audience": "all",
+    "created_by": "USR100060",
+    "created_at": "2026-03-12T01:45:00Z",
+    "updated_at": "2026-03-14T01:45:00Z",
+    "views": 2676,
+    "helpful_votes": 508,
+    "related_ci_ids": [],
+    "related_incidents": [
+      "INC9010046",
+      "INC9010051"
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "kb_id": "KB9010084",
+    "title": "Fix missing ticket notifications [9010084]",
+    "summary": "Restore assignment notifications.",
+    "content": "Verify the notification channel configuration, check the outbound queue, and re-test assignment. Confirm agents receive alerts.",
+    "category": "itsm",
+    "tags": [
+      "itsm",
+      "notifications"
+    ],
+    "state": "retired",
+    "audience": "technician",
+    "created_by": "USR90001",
+    "created_at": "2026-01-18T06:00:00Z",
+    "updated_at": "2026-01-22T06:00:00Z",
+    "views": 68,
+    "helpful_votes": 453,
+    "related_ci_ids": [
+      "CI9010086",
+      "CI9010037"
+    ],
+    "related_incidents": []
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010085",
+    "title": "Recover pods from CrashLoopBackOff [9010085]",
+    "summary": "Fix continuously restarting Kubernetes pods.",
+    "content": "Inspect pod logs and events, correct the failing config or resource limits, and roll the deployment. Confirm pods reach a ready state.",
+    "category": "platform",
+    "tags": [
+      "kubernetes",
+      "platform"
+    ],
+    "state": "retired",
+    "audience": "all",
+    "created_by": "USR100077",
+    "created_at": "2026-02-03T07:15:00Z",
+    "updated_at": "2026-03-05T07:15:00Z",
+    "views": 695,
+    "helpful_votes": 40,
+    "related_ci_ids": [
+      "CI9010011"
+    ],
+    "related_incidents": [
+      "INC9010115"
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "kb_id": "KB9010086",
+    "title": "Recover from a failed deployment [9010086]",
+    "summary": "Roll back and recover after a bad release.",
+    "content": "Identify the failing release, roll back to the last known-good version, clear caches, and re-run smoke checks. Communicate status to affected users.",
+    "category": "application",
+    "tags": [
+      "deployment",
+      "rollback"
+    ],
+    "state": "draft",
+    "audience": "end_user",
+    "created_by": "USR100037",
+    "created_at": "2026-03-26T06:45:00Z",
+    "updated_at": "2026-04-06T06:45:00Z",
+    "views": 2211,
+    "helpful_votes": 436,
+    "related_ci_ids": [
+      "CI0000002"
+    ],
+    "related_incidents": [
+      "INC0001021",
+      "INC9010092",
+      "INC9010122"
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "kb_id": "KB9010087",
+    "title": "Clean up duplicate CI records [9010087]",
+    "summary": "Merge duplicate configuration items.",
+    "content": "Identify duplicates from discovery, choose the authoritative CI, re-point relationships, and retire the duplicate. Re-run discovery to confirm.",
+    "category": "cmdb",
+    "tags": [
+      "cmdb",
+      "data-quality"
+    ],
+    "state": "published",
+    "audience": "end_user",
+    "created_by": "USR100043",
+    "created_at": "2026-01-18T03:45:00Z",
+    "updated_at": "2026-02-17T03:45:00Z",
+    "views": 2526,
+    "helpful_votes": 8,
+    "related_ci_ids": [
+      "CI9010004"
+    ],
+    "related_incidents": [
+      "INC9010021",
+      "INC9010075"
+    ]
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "entity_type": "cmdb_ci",
+  "version": 1,
+  "rows": [
+    {"label": "Operational Status", "source_field": "operational_status", "kind": "enum", "optional": false},
+    {"label": "CI Class", "source_field": "ci_class", "kind": "enum"},
+    {"label": "Environment", "source_field": "environment", "kind": "enum"},
+    {"label": "Business Service", "source_field": "business_service", "kind": "id_ref"},
+    {"label": "Owner Group", "source_field": "owner_group", "kind": "id_ref"},
+    {"label": "Dependencies", "source_field": "dependencies_count", "kind": "metric"},
+    {"label": "Location", "source_field": "location", "kind": "text"},
+    {"label": "Created At", "source_field": "created_at", "kind": "date"},
+    {"label": "Updated At", "source_field": "updated_at", "kind": "date"}
+  ]
+}

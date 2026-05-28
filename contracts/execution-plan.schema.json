@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-services.local/poc/contracts/execution-plan.schema.json",
+  "title": "ExecutionPlan",
+  "description": "Planner output: ordered steps, flags for clarification or no_match, and optional unsupported subqueries. Aligns with architecture §5.2. PlanStep.parameters holds step-scoped data; merge with AIServiceRequest fields for step_run_state (parameters win on duplicate keys). Same field name as orchestrator-agent-input.plan_item.parameters.",
+  "type": "object",
+  "$defs": {
+    "PlanStep": {
+      "type": "object",
+      "required": [
+        "step_id",
+        "agent_id",
+        "capability_id",
+        "service_id",
+        "execution_type",
+        "tool_ids",
+        "parameters",
+        "order_hint",
+        "depends_on"
+      ],
+      "properties": {
+        "step_id": {
+          "type": "string",
+          "description": "Unique ID for this step, e.g. step_1"
+        },
+        "agent_id": {
+          "type": "string",
+          "description": "Specialist agent from agent-catalog-registry.json"
+        },
+        "capability_id": {
+          "type": "string",
+          "description": "Capability from capability-registry.json (e.g. summary, triage, kb_search)"
+        },
+        "service_id": {
+          "type": "string",
+          "description": "ITSM entity type from service-registry.json (e.g. incident, request, problem, change)"
+        },
+        "execution_type": {
+          "type": "string",
+          "enum": [
+            "read",
+            "action"
+          ]
+        },
+        "tool_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Allowlisted tools for this step (subset/order may be refined by executor from agent-tool-mapping.json)."
+        },
+        "parameters": {
+          "type": "object",
+          "description": "Step-scoped parameters (e.g. ticket_id, service_id). Do not require message here; omit to use session message.",
+          "additionalProperties": true
+        },
+        "order_hint": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Execution order — lower runs first (aligned with orchestrator-agent-input.schema.json)."
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "step_ids that must complete before this step",
+          "default": []
+        },
+        "dependency_type": {
+          "type": "string",
+          "enum": [
+            "hard",
+            "soft"
+          ],
+          "description": "hard = executor blocks dependent steps until this step succeeds; soft = executor proceeds with dependent steps even if this step fails (best-effort pre-check). When omitted, defaults to hard."
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Optional planner confidence (POC / studio extension)."
+        },
+        "requires_approval": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, executor must not run mutating tools for this step until explicit user confirmation or platform approval signal is received. Step result is blocked until resolved."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "request_id",
+    "steps"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "description": "Same correlation id as AIServiceRequest.request_id"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PlanStep"
+      },
+      "description": "Ordered plan steps; may be empty when needs_clarification or no_match is true."
+    },
+    "needs_clarification": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, pipeline should not execute steps; surface clarification_question (maps to TeamRunOutput.final_status clarification_required)."
+    },
+    "clarification_question": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Must be a non-empty string when needs_clarification is true. Use plain language the chat UI can show as-is — one clear question, optionally with examples."
+    },
+    "no_match": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, intent could not be routed (maps to TeamRunOutput.final_status no_match)."
+    },
+    "fallback_message": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Optional user-visible copy when clarifying or no_match."
+    },
+    "unsupported_subqueries": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "description": "Sub-intents the planner declined to plan (may be echoed on TeamRunOutput)."
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "request_id": "req-20260318-001",
+      "steps": [
+        {
+          "step_id": "step_1",
+          "agent_id": "summarization_agent",
+          "capability_id": "summary",
+          "service_id": "incident",
+          "execution_type": "read",
+          "tool_ids": [
+            "get_cached_summary",
+            "get_ticket_details",
+            "summarize_entity"
+          ],
+          "parameters": {
+            "ticket_id": "INC001"
+          },
+          "order_hint": 1,
+          "depends_on": []
+        }
+      ],
+      "needs_clarification": false,
+      "clarification_question": null,
+      "no_match": false,
+      "fallback_message": null,
+      "unsupported_subqueries": null
+    },
+    {
+      "request_id": "req-ambiguous-001",
+      "steps": [],
+      "needs_clarification": true,
+      "clarification_question": "Which ticket should I summarize? I found INC001 and REQ042.",
+      "no_match": false,
+      "fallback_message": null,
+      "unsupported_subqueries": null
+    }
+  ]
+}

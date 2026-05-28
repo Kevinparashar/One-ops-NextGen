@@ -1,0 +1,3035 @@
+[
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG0004001",
+    "title": "Deploy VPN client profile v2.3",
+    "description": "Roll out keepalive fix for VPN disconnect issue affecting remote users.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00005",
+      "USR00006"
+    ],
+    "requested_by": "USR00003",
+    "assigned_to": "USR00003",
+    "assignment_group": "GRP-NETOPS",
+    "affected_ci": [
+      "CI0000001",
+      "CI0000002"
+    ],
+    "related_problem": "PBM0003001",
+    "planned_start": "2026-04-03T22:00:00Z",
+    "planned_end": "2026-04-04T00:00:00Z",
+    "actual_start": "2026-04-03T22:05:00Z",
+    "actual_end": "2026-04-03T23:40:00Z",
+    "created_at": "2026-04-02T16:00:00Z",
+    "updated_at": "2026-04-04T00:30:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG0004002",
+    "title": "Tune Exchange transport queues",
+    "description": "Queue and cache tuning for sync latency.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00005"
+    ],
+    "requested_by": "USR00014",
+    "assigned_to": "USR00014",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI0000003"
+    ],
+    "related_problem": "PBM0003002",
+    "planned_start": "2026-04-04T21:00:00Z",
+    "planned_end": "2026-04-04T23:00:00Z",
+    "actual_start": "2026-04-04T21:10:00Z",
+    "actual_end": "2026-04-04T22:30:00Z",
+    "created_at": "2026-04-03T13:00:00Z",
+    "updated_at": "2026-04-04T23:00:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG0004003",
+    "title": "Add payroll DB composite index",
+    "description": "Index to reduce deadlock frequency on payroll_transactions table.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "high",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00005",
+      "USR00006",
+      "USR00020"
+    ],
+    "requested_by": "USR00004",
+    "assigned_to": "USR00004",
+    "assignment_group": "GRP-DBA",
+    "affected_ci": [
+      "CI0000005"
+    ],
+    "related_problem": "PBM0003003",
+    "planned_start": "2026-04-07T00:30:00Z",
+    "planned_end": "2026-04-07T01:30:00Z",
+    "actual_start": null,
+    "actual_end": null,
+    "created_at": "2026-04-04T10:00:00Z",
+    "updated_at": "2026-04-05T11:00:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG0004004",
+    "title": "Wi-Fi channel plan correction",
+    "description": "Apply channel pinning for floor 5 APs.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00005"
+    ],
+    "requested_by": "USR00003",
+    "assigned_to": "USR00003",
+    "assignment_group": "GRP-NETOPS",
+    "affected_ci": [
+      "CI0000007"
+    ],
+    "related_problem": "PBM0003004",
+    "planned_start": "2026-04-04T02:00:00Z",
+    "planned_end": "2026-04-04T03:00:00Z",
+    "actual_start": "2026-04-04T02:00:00Z",
+    "actual_end": "2026-04-04T02:45:00Z",
+    "created_at": "2026-04-04T01:00:00Z",
+    "updated_at": "2026-04-04T03:00:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG0004005",
+    "title": "Identity replication tuning",
+    "description": "Tune replication worker batch size for MFA resets.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00005",
+      "USR00011"
+    ],
+    "requested_by": "USR00011",
+    "assigned_to": "USR00011",
+    "assignment_group": "GRP-SECOPS",
+    "affected_ci": [
+      "CI0000008"
+    ],
+    "related_problem": "PBM0003005",
+    "planned_start": "2026-04-06T22:00:00Z",
+    "planned_end": "2026-04-07T00:00:00Z",
+    "actual_start": "2026-04-06T22:05:00Z",
+    "actual_end": "2026-04-06T23:30:00Z",
+    "created_at": "2026-04-05T10:00:00Z",
+    "updated_at": "2026-04-07T00:00:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG0004006",
+    "title": "Portal attachment retry patch",
+    "description": "Deploy retry backoff fix for ITSM portal attachment uploads.",
+    "state": "scheduled",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00005",
+      "USR00013"
+    ],
+    "requested_by": "USR00013",
+    "assigned_to": "USR00013",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI0000009"
+    ],
+    "related_problem": "PBM0003006",
+    "planned_start": "2026-04-08T03:00:00Z",
+    "planned_end": "2026-04-08T04:00:00Z",
+    "actual_start": null,
+    "actual_end": null,
+    "created_at": "2026-04-05T12:00:00Z",
+    "updated_at": "2026-04-05T12:00:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG0004007",
+    "title": "ERP app pool memory increase",
+    "description": "Increase memory reservation for ERP login service.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00005",
+      "USR00014"
+    ],
+    "requested_by": "USR00014",
+    "assigned_to": "USR00014",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI0000012"
+    ],
+    "related_problem": "PBM0003007",
+    "planned_start": "2026-04-06T01:00:00Z",
+    "planned_end": "2026-04-06T02:00:00Z",
+    "actual_start": "2026-04-06T01:05:00Z",
+    "actual_end": "2026-04-06T01:50:00Z",
+    "created_at": "2026-04-05T14:00:00Z",
+    "updated_at": "2026-04-06T02:00:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG0004008",
+    "title": "Renew CMDB probe certificates",
+    "description": "Replace expiring cert chain and restart CMDB probe service.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00015"
+    ],
+    "requested_by": "USR00015",
+    "assigned_to": "USR00015",
+    "assignment_group": "GRP-CMDB",
+    "affected_ci": [
+      "CI0000014"
+    ],
+    "related_problem": "PBM0003008",
+    "planned_start": "2026-04-06T04:00:00Z",
+    "planned_end": "2026-04-06T05:00:00Z",
+    "actual_start": "2026-04-06T04:00:00Z",
+    "actual_end": "2026-04-06T04:30:00Z",
+    "created_at": "2026-04-05T16:00:00Z",
+    "updated_at": "2026-04-06T05:00:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG0004009",
+    "title": "Scale monitoring collectors",
+    "description": "Add two collectors for network pipelines.",
+    "state": "scheduled",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00005",
+      "USR00012"
+    ],
+    "requested_by": "USR00012",
+    "assigned_to": "USR00012",
+    "assignment_group": "GRP-PLATFORM",
+    "affected_ci": [
+      "CI0000010"
+    ],
+    "related_problem": "PBM0003009",
+    "planned_start": "2026-04-08T01:00:00Z",
+    "planned_end": "2026-04-08T02:00:00Z",
+    "actual_start": null,
+    "actual_end": null,
+    "created_at": "2026-04-06T13:00:00Z",
+    "updated_at": "2026-04-06T13:00:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG0004010",
+    "title": "Adjust KB ranking weights",
+    "description": "Reduce stale-content boost and retrain rank profile.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00017"
+    ],
+    "requested_by": "USR00017",
+    "assigned_to": "USR00017",
+    "assignment_group": "GRP-KNOWLEDGE",
+    "affected_ci": [
+      "CI0000015"
+    ],
+    "related_problem": "PBM0003010",
+    "planned_start": "2026-04-06T18:00:00Z",
+    "planned_end": "2026-04-06T19:00:00Z",
+    "actual_start": "2026-04-06T18:00:00Z",
+    "actual_end": "2026-04-06T18:45:00Z",
+    "created_at": "2026-04-06T15:00:00Z",
+    "updated_at": "2026-04-06T19:00:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9001001",
+    "title": "Increase SAP application server connection pool to 500",
+    "description": "Increase the SAP S/4HANA application server JDBC connection pool from 200 to 500 to handle peak morning login load and resolve PBM9001001.",
+    "state": "scheduled",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR90001"
+    ],
+    "requested_by": "USR90002",
+    "assigned_to": "USR90002",
+    "assignment_group": "GRP-T002-APPS",
+    "affected_ci": [
+      "CI9000002"
+    ],
+    "related_problem": "PBM9001001",
+    "planned_start": "2026-04-12T22:00:00Z",
+    "planned_end": "2026-04-12T23:00:00Z",
+    "actual_start": null,
+    "actual_end": null,
+    "created_at": "2026-04-08T10:00:00Z",
+    "updated_at": "2026-04-09T14:00:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG8001001",
+    "title": "Add consumer group tags to internal service accounts in Kong",
+    "description": "Tag all internal microservice consumer accounts in Kong API Gateway with the 'internal-services' consumer group to exempt them from the global rate-limit policy. Resolves PBM8001001.",
+    "state": "in_progress",
+    "change_type": "emergency",
+    "risk_level": "low",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR80001"
+    ],
+    "requested_by": "USR80001",
+    "assigned_to": "USR80002",
+    "assignment_group": "GRP-T003-PLATFORM",
+    "affected_ci": [
+      "CI8000001"
+    ],
+    "related_problem": "PBM8001001",
+    "planned_start": "2026-04-09T15:00:00Z",
+    "planned_end": "2026-04-09T16:00:00Z",
+    "actual_start": "2026-04-09T15:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-09T14:30:00Z",
+    "updated_at": "2026-04-09T15:05:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010001",
+    "title": "Planned change 9010001 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100002"
+    ],
+    "requested_by": "USR100081",
+    "assigned_to": "USR100077",
+    "assignment_group": "GRP-T003-ENG",
+    "affected_ci": [
+      "CI8000002",
+      "CI9010079"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-05-01T01:30:00Z",
+    "planned_end": "2026-05-01T03:30:00Z",
+    "actual_start": "2026-05-01T01:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-30T21:30:00Z",
+    "updated_at": "2026-05-01T01:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010002",
+    "title": "Planned change 9010002 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100085"
+    ],
+    "requested_by": "USR100053",
+    "assigned_to": "USR100047",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI9010059"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-03-09T07:45:00Z",
+    "planned_end": "2026-03-09T09:45:00Z",
+    "actual_start": "2026-03-09T07:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-09T03:45:00Z",
+    "updated_at": "2026-03-09T07:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010003",
+    "title": "Planned change 9010003 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100052"
+    ],
+    "requested_by": "USR100076",
+    "assigned_to": "USR100092",
+    "assignment_group": "GRP-SERVICEDESK",
+    "affected_ci": [
+      "CI9010066",
+      "CI9010098"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-01-20T09:15:00Z",
+    "planned_end": "2026-01-20T11:15:00Z",
+    "actual_start": "2026-01-20T09:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-20T05:15:00Z",
+    "updated_at": "2026-01-20T09:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010004",
+    "title": "Planned change 9010004 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00020"
+    ],
+    "requested_by": "USR100083",
+    "assigned_to": "USR00018",
+    "assignment_group": "GRP-CMDB",
+    "affected_ci": [
+      "CI9010087",
+      "CI9010016"
+    ],
+    "related_problem": "PBM9010070",
+    "planned_start": "2026-01-02T06:15:00Z",
+    "planned_end": "2026-01-02T08:15:00Z",
+    "actual_start": "2026-01-02T06:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-02T02:15:00Z",
+    "updated_at": "2026-01-02T06:20:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010005",
+    "title": "Planned change 9010005 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100090"
+    ],
+    "requested_by": "USR100090",
+    "assigned_to": "USR100059",
+    "assignment_group": "GRP-T002-APPS",
+    "affected_ci": [
+      "CI9000003",
+      "CI9010049"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-12T09:45:00Z",
+    "planned_end": "2026-02-12T11:45:00Z",
+    "actual_start": "2026-02-12T09:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-12T05:45:00Z",
+    "updated_at": "2026-02-12T09:50:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010006",
+    "title": "Planned change 9010006 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100061"
+    ],
+    "requested_by": "USR100035",
+    "assigned_to": "USR100051",
+    "assignment_group": "GRP-T002-NETOPS",
+    "affected_ci": [
+      "CI9010092",
+      "CI9010093"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-13T08:00:00Z",
+    "planned_end": "2026-02-13T10:00:00Z",
+    "actual_start": "2026-02-13T08:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-13T04:00:00Z",
+    "updated_at": "2026-02-13T08:05:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010007",
+    "title": "Planned change 9010007 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "low",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100090"
+    ],
+    "requested_by": "USR100061",
+    "assigned_to": "USR100049",
+    "assignment_group": "GRP-T002-APPS",
+    "affected_ci": [
+      "CI9010100",
+      "CI9010055"
+    ],
+    "related_problem": "PBM9010007",
+    "planned_start": "2026-04-13T13:00:00Z",
+    "planned_end": "2026-04-13T15:00:00Z",
+    "actual_start": "2026-04-13T13:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-13T09:00:00Z",
+    "updated_at": "2026-04-13T13:05:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010008",
+    "title": "Planned change 9010008 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00017"
+    ],
+    "requested_by": "USR00010",
+    "assigned_to": "USR100040",
+    "assignment_group": "GRP-KNOWLEDGE",
+    "affected_ci": [
+      "CI9010084",
+      "CI9010095"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-01-20T02:00:00Z",
+    "planned_end": "2026-01-20T04:00:00Z",
+    "actual_start": "2026-01-20T02:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-19T22:00:00Z",
+    "updated_at": "2026-01-20T02:05:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010009",
+    "title": "Planned change 9010009 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00005"
+    ],
+    "requested_by": "USR100067",
+    "assigned_to": "USR100036",
+    "assignment_group": "GRP-SERVICEDESK",
+    "affected_ci": [
+      "CI0000010"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-03-23T03:45:00Z",
+    "planned_end": "2026-03-23T05:45:00Z",
+    "actual_start": "2026-03-23T03:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-22T23:45:00Z",
+    "updated_at": "2026-03-23T03:50:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010010",
+    "title": "Planned change 9010010 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100088"
+    ],
+    "requested_by": "USR100050",
+    "assigned_to": "USR80002",
+    "assignment_group": "GRP-T003-PLATFORM",
+    "affected_ci": [
+      "CI9010094"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-03-17T08:00:00Z",
+    "planned_end": "2026-03-17T10:00:00Z",
+    "actual_start": "2026-03-17T08:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-17T04:00:00Z",
+    "updated_at": "2026-03-17T08:05:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010011",
+    "title": "Planned change 9010011 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "low",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100076"
+    ],
+    "requested_by": "USR00020",
+    "assigned_to": "USR100028",
+    "assignment_group": "GRP-ASSET",
+    "affected_ci": [
+      "CI9010095",
+      "CI9010081"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-04-18T00:00:00Z",
+    "planned_end": "2026-04-18T02:00:00Z",
+    "actual_start": "2026-04-18T00:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-17T20:00:00Z",
+    "updated_at": "2026-04-18T00:05:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010012",
+    "title": "Planned change 9010012 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100009"
+    ],
+    "requested_by": "USR100084",
+    "assigned_to": "USR100038",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI9010057",
+      "CI0000003"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-05-10T11:30:00Z",
+    "planned_end": "2026-05-10T13:30:00Z",
+    "actual_start": "2026-05-10T11:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-10T07:30:00Z",
+    "updated_at": "2026-05-10T11:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010013",
+    "title": "Planned change 9010013 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100034"
+    ],
+    "requested_by": "USR100020",
+    "assigned_to": "USR100069",
+    "assignment_group": "GRP-NETOPS",
+    "affected_ci": [
+      "CI9010083"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-04-06T14:30:00Z",
+    "planned_end": "2026-04-06T16:30:00Z",
+    "actual_start": "2026-04-06T14:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-06T10:30:00Z",
+    "updated_at": "2026-04-06T14:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010014",
+    "title": "Planned change 9010014 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100021"
+    ],
+    "requested_by": "USR100063",
+    "assigned_to": "USR100070",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI0000010",
+      "CI0000001"
+    ],
+    "related_problem": "PBM9010054",
+    "planned_start": "2026-02-13T13:00:00Z",
+    "planned_end": "2026-02-13T15:00:00Z",
+    "actual_start": "2026-02-13T13:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-13T09:00:00Z",
+    "updated_at": "2026-02-13T13:05:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010015",
+    "title": "Planned change 9010015 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100071"
+    ],
+    "requested_by": "USR100067",
+    "assigned_to": "USR100069",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI0000014",
+      "CI9010098"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-04-08T23:30:00Z",
+    "planned_end": "2026-04-09T01:30:00Z",
+    "actual_start": "2026-04-08T23:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-08T19:30:00Z",
+    "updated_at": "2026-04-08T23:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010016",
+    "title": "Planned change 9010016 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00021"
+    ],
+    "requested_by": "USR00006",
+    "assigned_to": "USR100006",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI9010087"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-01-18T04:30:00Z",
+    "planned_end": "2026-01-18T06:30:00Z",
+    "actual_start": "2026-01-18T04:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-18T00:30:00Z",
+    "updated_at": "2026-01-18T04:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010017",
+    "title": "Planned change 9010017 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100074"
+    ],
+    "requested_by": "USR100025",
+    "assigned_to": "USR100021",
+    "assignment_group": "GRP-DBA",
+    "affected_ci": [
+      "CI9010038"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-01-24T10:30:00Z",
+    "planned_end": "2026-01-24T12:30:00Z",
+    "actual_start": "2026-01-24T10:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-24T06:30:00Z",
+    "updated_at": "2026-01-24T10:35:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010018",
+    "title": "Planned change 9010018 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100044"
+    ],
+    "requested_by": "USR100015",
+    "assigned_to": "USR100075",
+    "assignment_group": "GRP-T002-APPS",
+    "affected_ci": [
+      "CI9010100"
+    ],
+    "related_problem": "PBM9001001",
+    "planned_start": "2026-01-24T13:15:00Z",
+    "planned_end": "2026-01-24T15:15:00Z",
+    "actual_start": "2026-01-24T13:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-24T09:15:00Z",
+    "updated_at": "2026-01-24T13:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010019",
+    "title": "Planned change 9010019 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100040"
+    ],
+    "requested_by": "USR100083",
+    "assigned_to": "USR100084",
+    "assignment_group": "GRP-SECOPS",
+    "affected_ci": [
+      "CI9010007"
+    ],
+    "related_problem": "PBM9010024",
+    "planned_start": "2026-02-10T23:15:00Z",
+    "planned_end": "2026-02-11T01:15:00Z",
+    "actual_start": "2026-02-10T23:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-10T19:15:00Z",
+    "updated_at": "2026-02-10T23:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010020",
+    "title": "Planned change 9010020 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100070"
+    ],
+    "requested_by": "USR00016",
+    "assigned_to": "USR100013",
+    "assignment_group": "GRP-SERVICEDESK",
+    "affected_ci": [
+      "CI9010088",
+      "CI9010043"
+    ],
+    "related_problem": "PBM9010059",
+    "planned_start": "2026-05-06T16:15:00Z",
+    "planned_end": "2026-05-06T18:15:00Z",
+    "actual_start": "2026-05-06T16:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-06T12:15:00Z",
+    "updated_at": "2026-05-06T16:20:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010021",
+    "title": "Planned change 9010021 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100051"
+    ],
+    "requested_by": "USR90003",
+    "assigned_to": "USR100049",
+    "assignment_group": "GRP-T002-APPS",
+    "affected_ci": [
+      "CI9010045",
+      "CI9010051"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-01-21T13:30:00Z",
+    "planned_end": "2026-01-21T15:30:00Z",
+    "actual_start": "2026-01-21T13:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-21T09:30:00Z",
+    "updated_at": "2026-01-21T13:35:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010022",
+    "title": "Planned change 9010022 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR80003"
+    ],
+    "requested_by": "USR100010",
+    "assigned_to": "USR80001",
+    "assignment_group": "GRP-T003-PLATFORM",
+    "affected_ci": [
+      "CI8000001",
+      "CI9010021"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-04-03T06:00:00Z",
+    "planned_end": "2026-04-03T08:00:00Z",
+    "actual_start": "2026-04-03T06:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-03T02:00:00Z",
+    "updated_at": "2026-04-03T06:05:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010023",
+    "title": "Planned change 9010023 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100059"
+    ],
+    "requested_by": "USR100054",
+    "assigned_to": "USR100057",
+    "assignment_group": "GRP-T002-INFRA",
+    "affected_ci": [
+      "CI9010025"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-04-06T21:15:00Z",
+    "planned_end": "2026-04-06T23:15:00Z",
+    "actual_start": "2026-04-06T21:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-06T17:15:00Z",
+    "updated_at": "2026-04-06T21:20:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010024",
+    "title": "Planned change 9010024 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100010"
+    ],
+    "requested_by": "USR100055",
+    "assigned_to": "USR100019",
+    "assignment_group": "GRP-T003-ENG",
+    "affected_ci": [
+      "CI8000002",
+      "CI9010011"
+    ],
+    "related_problem": "PBM9010062",
+    "planned_start": "2026-04-04T14:00:00Z",
+    "planned_end": "2026-04-04T16:00:00Z",
+    "actual_start": "2026-04-04T14:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-04T10:00:00Z",
+    "updated_at": "2026-04-04T14:05:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010025",
+    "title": "Planned change 9010025 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100008"
+    ],
+    "requested_by": "USR100041",
+    "assigned_to": "USR00015",
+    "assignment_group": "GRP-SERVICEDESK",
+    "affected_ci": [
+      "CI9010078",
+      "CI9010083"
+    ],
+    "related_problem": "PBM9010019",
+    "planned_start": "2026-01-21T11:15:00Z",
+    "planned_end": "2026-01-21T13:15:00Z",
+    "actual_start": "2026-01-21T11:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-21T07:15:00Z",
+    "updated_at": "2026-01-21T11:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010026",
+    "title": "Planned change 9010026 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100021"
+    ],
+    "requested_by": "USR00001",
+    "assigned_to": "USR100029",
+    "assignment_group": "GRP-NETOPS",
+    "affected_ci": [
+      "CI9010038",
+      "CI9010034"
+    ],
+    "related_problem": "PBM9010044",
+    "planned_start": "2026-04-09T06:45:00Z",
+    "planned_end": "2026-04-09T08:45:00Z",
+    "actual_start": "2026-04-09T06:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-09T02:45:00Z",
+    "updated_at": "2026-04-09T06:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010027",
+    "title": "Planned change 9010027 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100020"
+    ],
+    "requested_by": "USR100091",
+    "assigned_to": "USR100009",
+    "assignment_group": "GRP-ASSET",
+    "affected_ci": [
+      "CI9010065",
+      "CI9010017"
+    ],
+    "related_problem": "PBM9010059",
+    "planned_start": "2026-02-15T08:30:00Z",
+    "planned_end": "2026-02-15T10:30:00Z",
+    "actual_start": "2026-02-15T08:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-15T04:30:00Z",
+    "updated_at": "2026-02-15T08:35:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010028",
+    "title": "Planned change 9010028 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100080"
+    ],
+    "requested_by": "USR100073",
+    "assigned_to": "USR100050",
+    "assignment_group": "GRP-T003-PLATFORM",
+    "affected_ci": [
+      "CI9010064"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-03-05T15:45:00Z",
+    "planned_end": "2026-03-05T17:45:00Z",
+    "actual_start": "2026-03-05T15:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-05T11:45:00Z",
+    "updated_at": "2026-03-05T15:50:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010029",
+    "title": "Planned change 9010029 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100078"
+    ],
+    "requested_by": "USR100016",
+    "assigned_to": "USR100059",
+    "assignment_group": "GRP-T002-INFRA",
+    "affected_ci": [
+      "CI9010092"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-04-15T12:45:00Z",
+    "planned_end": "2026-04-15T14:45:00Z",
+    "actual_start": "2026-04-15T12:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-15T08:45:00Z",
+    "updated_at": "2026-04-15T12:50:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010030",
+    "title": "Planned change 9010030 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100044"
+    ],
+    "requested_by": "USR90001",
+    "assigned_to": "USR100054",
+    "assignment_group": "GRP-T002-NETOPS",
+    "affected_ci": [
+      "CI9010032",
+      "CI9010045"
+    ],
+    "related_problem": "PBM9010008",
+    "planned_start": "2026-03-17T23:15:00Z",
+    "planned_end": "2026-03-18T01:15:00Z",
+    "actual_start": "2026-03-17T23:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-17T19:15:00Z",
+    "updated_at": "2026-03-17T23:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010031",
+    "title": "Planned change 9010031 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100072"
+    ],
+    "requested_by": "USR100028",
+    "assigned_to": "USR00020",
+    "assignment_group": "GRP-NETOPS",
+    "affected_ci": [
+      "CI9010065"
+    ],
+    "related_problem": "PBM9010074",
+    "planned_start": "2026-05-09T18:15:00Z",
+    "planned_end": "2026-05-09T20:15:00Z",
+    "actual_start": "2026-05-09T18:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-09T14:15:00Z",
+    "updated_at": "2026-05-09T18:20:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010032",
+    "title": "Planned change 9010032 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "normal",
+    "risk_level": "low",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100017"
+    ],
+    "requested_by": "USR100081",
+    "assigned_to": "USR100086",
+    "assignment_group": "GRP-T003-ENG",
+    "affected_ci": [
+      "CI9010022"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-03-11T20:30:00Z",
+    "planned_end": "2026-03-11T22:30:00Z",
+    "actual_start": "2026-03-11T20:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-11T16:30:00Z",
+    "updated_at": "2026-03-11T20:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010033",
+    "title": "Planned change 9010033 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100066"
+    ],
+    "requested_by": "USR100001",
+    "assigned_to": "USR100033",
+    "assignment_group": "GRP-NETOPS",
+    "affected_ci": [
+      "CI9010018"
+    ],
+    "related_problem": "PBM9010051",
+    "planned_start": "2026-03-02T09:30:00Z",
+    "planned_end": "2026-03-02T11:30:00Z",
+    "actual_start": "2026-03-02T09:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-02T05:30:00Z",
+    "updated_at": "2026-03-02T09:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010034",
+    "title": "Planned change 9010034 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100005"
+    ],
+    "requested_by": "USR100027",
+    "assigned_to": "USR100034",
+    "assignment_group": "GRP-SERVICEDESK",
+    "affected_ci": [
+      "CI9010095",
+      "CI9010081"
+    ],
+    "related_problem": "PBM9010064",
+    "planned_start": "2026-04-18T04:45:00Z",
+    "planned_end": "2026-04-18T06:45:00Z",
+    "actual_start": "2026-04-18T04:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-18T00:45:00Z",
+    "updated_at": "2026-04-18T04:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010035",
+    "title": "Planned change 9010035 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "emergency",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00015"
+    ],
+    "requested_by": "USR00017",
+    "assigned_to": "USR100008",
+    "assignment_group": "GRP-DBA",
+    "affected_ci": [
+      "CI9010097",
+      "CI9010035"
+    ],
+    "related_problem": "PBM9010079",
+    "planned_start": "2026-01-28T04:30:00Z",
+    "planned_end": "2026-01-28T06:30:00Z",
+    "actual_start": "2026-01-28T04:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-28T00:30:00Z",
+    "updated_at": "2026-01-28T04:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010036",
+    "title": "Planned change 9010036 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00001"
+    ],
+    "requested_by": "USR00021",
+    "assigned_to": "USR100005",
+    "assignment_group": "GRP-DBA",
+    "affected_ci": [
+      "CI9010030"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-20T07:30:00Z",
+    "planned_end": "2026-02-20T09:30:00Z",
+    "actual_start": "2026-02-20T07:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-20T03:30:00Z",
+    "updated_at": "2026-02-20T07:35:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010037",
+    "title": "Planned change 9010037 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100016"
+    ],
+    "requested_by": "USR100051",
+    "assigned_to": "USR90003",
+    "assignment_group": "GRP-T002-NETOPS",
+    "affected_ci": [
+      "CI9010052",
+      "CI9010058"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-03-13T18:15:00Z",
+    "planned_end": "2026-03-13T20:15:00Z",
+    "actual_start": "2026-03-13T18:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-13T14:15:00Z",
+    "updated_at": "2026-03-13T18:20:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010038",
+    "title": "Planned change 9010038 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100088"
+    ],
+    "requested_by": "USR100017",
+    "assigned_to": "USR100062",
+    "assignment_group": "GRP-T003-PLATFORM",
+    "affected_ci": [
+      "CI9010020"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-05-03T12:30:00Z",
+    "planned_end": "2026-05-03T14:30:00Z",
+    "actual_start": "2026-05-03T12:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-03T08:30:00Z",
+    "updated_at": "2026-05-03T12:35:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010039",
+    "title": "Planned change 9010039 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100061"
+    ],
+    "requested_by": "USR100057",
+    "assigned_to": "USR100048",
+    "assignment_group": "GRP-T002-INFRA",
+    "affected_ci": [
+      "CI9010052",
+      "CI9010042"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-25T10:45:00Z",
+    "planned_end": "2026-02-25T12:45:00Z",
+    "actual_start": "2026-02-25T10:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-25T06:45:00Z",
+    "updated_at": "2026-02-25T10:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010040",
+    "title": "Planned change 9010040 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "medium",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100038"
+    ],
+    "requested_by": "USR00016",
+    "assigned_to": "USR100020",
+    "assignment_group": "GRP-SECOPS",
+    "affected_ci": [
+      "CI0000015"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-01-30T12:30:00Z",
+    "planned_end": "2026-01-30T14:30:00Z",
+    "actual_start": "2026-01-30T12:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-30T08:30:00Z",
+    "updated_at": "2026-01-30T12:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010041",
+    "title": "Planned change 9010041 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "low",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100036"
+    ],
+    "requested_by": "USR100087",
+    "assigned_to": "USR00014",
+    "assignment_group": "GRP-PLATFORM",
+    "affected_ci": [
+      "CI9010066"
+    ],
+    "related_problem": "PBM9010042",
+    "planned_start": "2026-03-12T23:30:00Z",
+    "planned_end": "2026-03-13T01:30:00Z",
+    "actual_start": "2026-03-12T23:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-12T19:30:00Z",
+    "updated_at": "2026-03-12T23:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010042",
+    "title": "Planned change 9010042 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "medium",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100007"
+    ],
+    "requested_by": "USR100072",
+    "assigned_to": "USR00014",
+    "assignment_group": "GRP-PLATFORM",
+    "affected_ci": [
+      "CI0000012"
+    ],
+    "related_problem": "PBM9010023",
+    "planned_start": "2026-03-31T10:30:00Z",
+    "planned_end": "2026-03-31T12:30:00Z",
+    "actual_start": "2026-03-31T10:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-31T06:30:00Z",
+    "updated_at": "2026-03-31T10:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010043",
+    "title": "Planned change 9010043 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100074"
+    ],
+    "requested_by": "USR00013",
+    "assigned_to": "USR100053",
+    "assignment_group": "GRP-SERVICEDESK",
+    "affected_ci": [
+      "CI9010067",
+      "CI9010047"
+    ],
+    "related_problem": "PBM9010064",
+    "planned_start": "2026-02-27T10:30:00Z",
+    "planned_end": "2026-02-27T12:30:00Z",
+    "actual_start": "2026-02-27T10:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-27T06:30:00Z",
+    "updated_at": "2026-02-27T10:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010044",
+    "title": "Planned change 9010044 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100009"
+    ],
+    "requested_by": "USR00007",
+    "assigned_to": "USR100041",
+    "assignment_group": "GRP-SECOPS",
+    "affected_ci": [
+      "CI9010077"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-04-29T11:45:00Z",
+    "planned_end": "2026-04-29T13:45:00Z",
+    "actual_start": "2026-04-29T11:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-29T07:45:00Z",
+    "updated_at": "2026-04-29T11:50:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010045",
+    "title": "Planned change 9010045 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100039"
+    ],
+    "requested_by": "USR100080",
+    "assigned_to": "USR100017",
+    "assignment_group": "GRP-T003-ENG",
+    "affected_ci": [
+      "CI8000002"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-05-01T04:15:00Z",
+    "planned_end": "2026-05-01T06:15:00Z",
+    "actual_start": "2026-05-01T04:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-01T00:15:00Z",
+    "updated_at": "2026-05-01T04:20:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010046",
+    "title": "Planned change 9010046 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "standard",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100061"
+    ],
+    "requested_by": "USR100044",
+    "assigned_to": "USR100079",
+    "assignment_group": "GRP-T002-NETOPS",
+    "affected_ci": [
+      "CI9010008",
+      "CI9010061"
+    ],
+    "related_problem": "PBM9010008",
+    "planned_start": "2026-05-12T06:30:00Z",
+    "planned_end": "2026-05-12T08:30:00Z",
+    "actual_start": "2026-05-12T06:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-12T02:30:00Z",
+    "updated_at": "2026-05-12T06:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010047",
+    "title": "Planned change 9010047 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100001"
+    ],
+    "requested_by": "USR100052",
+    "assigned_to": "USR100008",
+    "assignment_group": "GRP-NETOPS",
+    "affected_ci": [
+      "CI9010046"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-16T08:15:00Z",
+    "planned_end": "2026-02-16T10:15:00Z",
+    "actual_start": "2026-02-16T08:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-16T04:15:00Z",
+    "updated_at": "2026-02-16T08:20:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010048",
+    "title": "Planned change 9010048 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100078"
+    ],
+    "requested_by": "USR90004",
+    "assigned_to": "USR100064",
+    "assignment_group": "GRP-T002-APPS",
+    "affected_ci": [
+      "CI9010072",
+      "CI9010033"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-04-08T13:45:00Z",
+    "planned_end": "2026-04-08T15:45:00Z",
+    "actual_start": "2026-04-08T13:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-08T09:45:00Z",
+    "updated_at": "2026-04-08T13:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010049",
+    "title": "Planned change 9010049 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100001"
+    ],
+    "requested_by": "USR100027",
+    "assigned_to": "USR00021",
+    "assignment_group": "GRP-SERVICEDESK",
+    "affected_ci": [
+      "CI0000004",
+      "CI9010027"
+    ],
+    "related_problem": "PBM0003009",
+    "planned_start": "2026-05-07T07:30:00Z",
+    "planned_end": "2026-05-07T09:30:00Z",
+    "actual_start": "2026-05-07T07:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-07T03:30:00Z",
+    "updated_at": "2026-05-07T07:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010050",
+    "title": "Planned change 9010050 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100091"
+    ],
+    "requested_by": "USR100025",
+    "assigned_to": "USR100034",
+    "assignment_group": "GRP-PLATFORM",
+    "affected_ci": [
+      "CI9010085",
+      "CI0000006"
+    ],
+    "related_problem": "PBM9010026",
+    "planned_start": "2026-04-18T12:00:00Z",
+    "planned_end": "2026-04-18T14:00:00Z",
+    "actual_start": "2026-04-18T12:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-18T08:00:00Z",
+    "updated_at": "2026-04-18T12:05:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010051",
+    "title": "Planned change 9010051 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100027"
+    ],
+    "requested_by": "USR100005",
+    "assigned_to": "USR00004",
+    "assignment_group": "GRP-SERVICEDESK",
+    "affected_ci": [
+      "CI9010040"
+    ],
+    "related_problem": "PBM9010026",
+    "planned_start": "2026-05-13T12:00:00Z",
+    "planned_end": "2026-05-13T14:00:00Z",
+    "actual_start": "2026-05-13T12:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-13T08:00:00Z",
+    "updated_at": "2026-05-13T12:05:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010052",
+    "title": "Planned change 9010052 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100073"
+    ],
+    "requested_by": "USR100077",
+    "assigned_to": "USR100050",
+    "assignment_group": "GRP-T003-PLATFORM",
+    "affected_ci": [
+      "CI9010011"
+    ],
+    "related_problem": "PBM9010083",
+    "planned_start": "2026-01-13T14:15:00Z",
+    "planned_end": "2026-01-13T16:15:00Z",
+    "actual_start": "2026-01-13T14:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-13T10:15:00Z",
+    "updated_at": "2026-01-13T14:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010053",
+    "title": "Planned change 9010053 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100066"
+    ],
+    "requested_by": "USR100045",
+    "assigned_to": "USR100052",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI9010029"
+    ],
+    "related_problem": "PBM9010070",
+    "planned_start": "2026-03-12T08:45:00Z",
+    "planned_end": "2026-03-12T10:45:00Z",
+    "actual_start": "2026-03-12T08:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-12T04:45:00Z",
+    "updated_at": "2026-03-12T08:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010054",
+    "title": "Planned change 9010054 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100013"
+    ],
+    "requested_by": "USR100034",
+    "assigned_to": "USR100037",
+    "assignment_group": "GRP-NETOPS",
+    "affected_ci": [
+      "CI9010016"
+    ],
+    "related_problem": "PBM9010023",
+    "planned_start": "2026-01-28T01:30:00Z",
+    "planned_end": "2026-01-28T03:30:00Z",
+    "actual_start": "2026-01-28T01:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-27T21:30:00Z",
+    "updated_at": "2026-01-28T01:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010055",
+    "title": "Planned change 9010055 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100008"
+    ],
+    "requested_by": "USR100001",
+    "assigned_to": "USR100087",
+    "assignment_group": "GRP-PLATFORM",
+    "affected_ci": [
+      "CI9010075"
+    ],
+    "related_problem": "PBM9010086",
+    "planned_start": "2026-04-13T03:45:00Z",
+    "planned_end": "2026-04-13T05:45:00Z",
+    "actual_start": "2026-04-13T03:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-12T23:45:00Z",
+    "updated_at": "2026-04-13T03:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010056",
+    "title": "Planned change 9010056 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "normal",
+    "risk_level": "low",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100020"
+    ],
+    "requested_by": "USR100052",
+    "assigned_to": "USR100070",
+    "assignment_group": "GRP-ASSET",
+    "affected_ci": [
+      "CI9010074"
+    ],
+    "related_problem": "PBM0003007",
+    "planned_start": "2026-04-25T07:30:00Z",
+    "planned_end": "2026-04-25T09:30:00Z",
+    "actual_start": "2026-04-25T07:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-25T03:30:00Z",
+    "updated_at": "2026-04-25T07:35:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010057",
+    "title": "Planned change 9010057 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100035"
+    ],
+    "requested_by": "USR100075",
+    "assigned_to": "USR100035",
+    "assignment_group": "GRP-T002-APPS",
+    "affected_ci": [
+      "CI9010072"
+    ],
+    "related_problem": "PBM9010048",
+    "planned_start": "2026-03-02T18:45:00Z",
+    "planned_end": "2026-03-02T20:45:00Z",
+    "actual_start": "2026-03-02T18:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-02T14:45:00Z",
+    "updated_at": "2026-03-02T18:50:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010058",
+    "title": "Planned change 9010058 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100039"
+    ],
+    "requested_by": "USR100030",
+    "assigned_to": "USR100081",
+    "assignment_group": "GRP-T003-PLATFORM",
+    "affected_ci": [
+      "CI9010069",
+      "CI9010011"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-01-13T16:15:00Z",
+    "planned_end": "2026-01-13T18:15:00Z",
+    "actual_start": "2026-01-13T16:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-13T12:15:00Z",
+    "updated_at": "2026-01-13T16:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010059",
+    "title": "Planned change 9010059 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100037"
+    ],
+    "requested_by": "USR100025",
+    "assigned_to": "USR100032",
+    "assignment_group": "GRP-CMDB",
+    "affected_ci": [
+      "CI0000002",
+      "CI0000015"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-01-14T08:00:00Z",
+    "planned_end": "2026-01-14T10:00:00Z",
+    "actual_start": "2026-01-14T08:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-14T04:00:00Z",
+    "updated_at": "2026-01-14T08:05:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010060",
+    "title": "Planned change 9010060 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100005"
+    ],
+    "requested_by": "USR100018",
+    "assigned_to": "USR100001",
+    "assignment_group": "GRP-CMDB",
+    "affected_ci": [
+      "CI9010076",
+      "CI9010044"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-05-05T05:15:00Z",
+    "planned_end": "2026-05-05T07:15:00Z",
+    "actual_start": "2026-05-05T05:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-05T01:15:00Z",
+    "updated_at": "2026-05-05T05:20:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010061",
+    "title": "Planned change 9010061 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100030"
+    ],
+    "requested_by": "USR100081",
+    "assigned_to": "USR100089",
+    "assignment_group": "GRP-T003-PLATFORM",
+    "affected_ci": [
+      "CI9010079"
+    ],
+    "related_problem": "PBM9010034",
+    "planned_start": "2026-03-30T19:15:00Z",
+    "planned_end": "2026-03-30T21:15:00Z",
+    "actual_start": "2026-03-30T19:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-30T15:15:00Z",
+    "updated_at": "2026-03-30T19:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010062",
+    "title": "Planned change 9010062 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "low",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00008"
+    ],
+    "requested_by": "USR100040",
+    "assigned_to": "USR100032",
+    "assignment_group": "GRP-SECOPS",
+    "affected_ci": [
+      "CI9010083",
+      "CI9010046"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-04T10:15:00Z",
+    "planned_end": "2026-02-04T12:15:00Z",
+    "actual_start": "2026-02-04T10:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-04T06:15:00Z",
+    "updated_at": "2026-02-04T10:20:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010063",
+    "title": "Planned change 9010063 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "emergency",
+    "risk_level": "medium",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR90001"
+    ],
+    "requested_by": "USR100048",
+    "assigned_to": "USR100078",
+    "assignment_group": "GRP-T002-INFRA",
+    "affected_ci": [
+      "CI9010008",
+      "CI9010058"
+    ],
+    "related_problem": "PBM9010071",
+    "planned_start": "2026-04-02T18:15:00Z",
+    "planned_end": "2026-04-02T20:15:00Z",
+    "actual_start": "2026-04-02T18:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-02T14:15:00Z",
+    "updated_at": "2026-04-02T18:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010064",
+    "title": "Planned change 9010064 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100009"
+    ],
+    "requested_by": "USR100076",
+    "assigned_to": "USR100007",
+    "assignment_group": "GRP-SERVICEDESK",
+    "affected_ci": [
+      "CI0000001"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-14T09:45:00Z",
+    "planned_end": "2026-02-14T11:45:00Z",
+    "actual_start": "2026-02-14T09:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-14T05:45:00Z",
+    "updated_at": "2026-02-14T09:50:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010065",
+    "title": "Planned change 9010065 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100043"
+    ],
+    "requested_by": "USR100065",
+    "assigned_to": "USR80001",
+    "assignment_group": "GRP-T003-PLATFORM",
+    "affected_ci": [
+      "CI9010080",
+      "CI8000001"
+    ],
+    "related_problem": "PBM9010068",
+    "planned_start": "2026-05-03T11:15:00Z",
+    "planned_end": "2026-05-03T13:15:00Z",
+    "actual_start": "2026-05-03T11:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-03T07:15:00Z",
+    "updated_at": "2026-05-03T11:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010066",
+    "title": "Planned change 9010066 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100091"
+    ],
+    "requested_by": "USR100032",
+    "assigned_to": "USR100063",
+    "assignment_group": "GRP-NETOPS",
+    "affected_ci": [
+      "CI9010076"
+    ],
+    "related_problem": "PBM0003003",
+    "planned_start": "2026-02-02T10:30:00Z",
+    "planned_end": "2026-02-02T12:30:00Z",
+    "actual_start": "2026-02-02T10:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-02T06:30:00Z",
+    "updated_at": "2026-02-02T10:35:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010067",
+    "title": "Planned change 9010067 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100057"
+    ],
+    "requested_by": "USR100016",
+    "assigned_to": "USR90001",
+    "assignment_group": "GRP-T002-NETOPS",
+    "affected_ci": [
+      "CI9010032",
+      "CI9010052"
+    ],
+    "related_problem": "PBM9010047",
+    "planned_start": "2026-01-23T03:15:00Z",
+    "planned_end": "2026-01-23T05:15:00Z",
+    "actual_start": "2026-01-23T03:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-22T23:15:00Z",
+    "updated_at": "2026-01-23T03:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010068",
+    "title": "Planned change 9010068 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100026"
+    ],
+    "requested_by": "USR100009",
+    "assigned_to": "USR100008",
+    "assignment_group": "GRP-CMDB",
+    "affected_ci": [
+      "CI9010035"
+    ],
+    "related_problem": "PBM9010019",
+    "planned_start": "2026-04-14T14:45:00Z",
+    "planned_end": "2026-04-14T16:45:00Z",
+    "actual_start": "2026-04-14T14:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-14T10:45:00Z",
+    "updated_at": "2026-04-14T14:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010069",
+    "title": "Planned change 9010069 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100007"
+    ],
+    "requested_by": "USR100014",
+    "assigned_to": "USR100036",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI9010076",
+      "CI9010085"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-05-08T05:15:00Z",
+    "planned_end": "2026-05-08T07:15:00Z",
+    "actual_start": "2026-05-08T05:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-08T01:15:00Z",
+    "updated_at": "2026-05-08T05:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010070",
+    "title": "Planned change 9010070 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100091"
+    ],
+    "requested_by": "USR100063",
+    "assigned_to": "USR100020",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI9010044",
+      "CI0000009"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-05-01T01:45:00Z",
+    "planned_end": "2026-05-01T03:45:00Z",
+    "actual_start": "2026-05-01T01:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-30T21:45:00Z",
+    "updated_at": "2026-05-01T01:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010071",
+    "title": "Planned change 9010071 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100007"
+    ],
+    "requested_by": "USR100018",
+    "assigned_to": "USR100045",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI0000008",
+      "CI9010075"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-01-02T21:15:00Z",
+    "planned_end": "2026-01-02T23:15:00Z",
+    "actual_start": "2026-01-02T21:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-02T17:15:00Z",
+    "updated_at": "2026-01-02T21:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010072",
+    "title": "Planned change 9010072 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100092"
+    ],
+    "requested_by": "USR100004",
+    "assigned_to": "USR00008",
+    "assignment_group": "GRP-SERVICEDESK",
+    "affected_ci": [
+      "CI9010076",
+      "CI9010029"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-28T19:30:00Z",
+    "planned_end": "2026-02-28T21:30:00Z",
+    "actual_start": "2026-02-28T19:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-28T15:30:00Z",
+    "updated_at": "2026-02-28T19:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010073",
+    "title": "Planned change 9010073 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "low",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100067"
+    ],
+    "requested_by": "USR100082",
+    "assigned_to": "USR100066",
+    "assignment_group": "GRP-ASSET",
+    "affected_ci": [
+      "CI9010068",
+      "CI9010017"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-11T10:45:00Z",
+    "planned_end": "2026-02-11T12:45:00Z",
+    "actual_start": "2026-02-11T10:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-11T06:45:00Z",
+    "updated_at": "2026-02-11T10:50:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010074",
+    "title": "Planned change 9010074 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100051"
+    ],
+    "requested_by": "USR100079",
+    "assigned_to": "USR90002",
+    "assignment_group": "GRP-T002-INFRA",
+    "affected_ci": [
+      "CI9010091"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-01-11T16:45:00Z",
+    "planned_end": "2026-01-11T18:45:00Z",
+    "actual_start": "2026-01-11T16:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-11T12:45:00Z",
+    "updated_at": "2026-01-11T16:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010075",
+    "title": "Planned change 9010075 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "emergency",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00006"
+    ],
+    "requested_by": "USR100070",
+    "assigned_to": "USR100005",
+    "assignment_group": "GRP-ASSET",
+    "affected_ci": [
+      "CI9010098",
+      "CI9010053"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-05-04T01:30:00Z",
+    "planned_end": "2026-05-04T03:30:00Z",
+    "actual_start": "2026-05-04T01:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-03T21:30:00Z",
+    "updated_at": "2026-05-04T01:35:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010076",
+    "title": "Planned change 9010076 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100035"
+    ],
+    "requested_by": "USR100015",
+    "assigned_to": "USR100015",
+    "assignment_group": "GRP-T002-NETOPS",
+    "affected_ci": [
+      "CI9010005",
+      "CI9010070"
+    ],
+    "related_problem": "PBM9010006",
+    "planned_start": "2026-02-23T03:45:00Z",
+    "planned_end": "2026-02-23T05:45:00Z",
+    "actual_start": "2026-02-23T03:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-22T23:45:00Z",
+    "updated_at": "2026-02-23T03:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010077",
+    "title": "Planned change 9010077 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100001"
+    ],
+    "requested_by": "USR00012",
+    "assigned_to": "USR100029",
+    "assignment_group": "GRP-KNOWLEDGE",
+    "affected_ci": [
+      "CI9010036",
+      "CI0000008"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-16T08:45:00Z",
+    "planned_end": "2026-02-16T10:45:00Z",
+    "actual_start": "2026-02-16T08:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-16T04:45:00Z",
+    "updated_at": "2026-02-16T08:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010078",
+    "title": "Planned change 9010078 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00011"
+    ],
+    "requested_by": "USR100014",
+    "assigned_to": "USR100025",
+    "assignment_group": "GRP-SECOPS",
+    "affected_ci": [
+      "CI9010089",
+      "CI9010097"
+    ],
+    "related_problem": "PBM9010045",
+    "planned_start": "2026-01-11T12:15:00Z",
+    "planned_end": "2026-01-11T14:15:00Z",
+    "actual_start": "2026-01-11T12:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-11T08:15:00Z",
+    "updated_at": "2026-01-11T12:20:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010079",
+    "title": "Planned change 9010079 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR90001"
+    ],
+    "requested_by": "USR100024",
+    "assigned_to": "USR100023",
+    "assignment_group": "GRP-T002-NETOPS",
+    "affected_ci": [
+      "CI9000003",
+      "CI9010055"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-25T14:00:00Z",
+    "planned_end": "2026-02-25T16:00:00Z",
+    "actual_start": "2026-02-25T14:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-25T10:00:00Z",
+    "updated_at": "2026-02-25T14:05:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010080",
+    "title": "Planned change 9010080 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "low",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100024"
+    ],
+    "requested_by": "USR100016",
+    "assigned_to": "USR100060",
+    "assignment_group": "GRP-T002-APPS",
+    "affected_ci": [
+      "CI9000002"
+    ],
+    "related_problem": "PBM9001002",
+    "planned_start": "2026-01-01T18:15:00Z",
+    "planned_end": "2026-01-01T20:15:00Z",
+    "actual_start": "2026-01-01T18:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-01T14:15:00Z",
+    "updated_at": "2026-01-01T18:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010081",
+    "title": "Planned change 9010081 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "high",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100045"
+    ],
+    "requested_by": "USR100041",
+    "assigned_to": "USR00020",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI9010089"
+    ],
+    "related_problem": "PBM9010001",
+    "planned_start": "2026-02-27T02:45:00Z",
+    "planned_end": "2026-02-27T04:45:00Z",
+    "actual_start": "2026-02-27T02:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-26T22:45:00Z",
+    "updated_at": "2026-02-27T02:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010082",
+    "title": "Planned change 9010082 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100091"
+    ],
+    "requested_by": "USR100026",
+    "assigned_to": "USR00016",
+    "assignment_group": "GRP-PLATFORM",
+    "affected_ci": [
+      "CI9010099",
+      "CI9010076"
+    ],
+    "related_problem": "PBM9010033",
+    "planned_start": "2026-02-16T20:00:00Z",
+    "planned_end": "2026-02-16T22:00:00Z",
+    "actual_start": "2026-02-16T20:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-16T16:00:00Z",
+    "updated_at": "2026-02-16T20:05:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010083",
+    "title": "Planned change 9010083 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00002"
+    ],
+    "requested_by": "USR100005",
+    "assigned_to": "USR100052",
+    "assignment_group": "GRP-SECOPS",
+    "affected_ci": [
+      "CI0000009"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-01-21T22:00:00Z",
+    "planned_end": "2026-01-22T00:00:00Z",
+    "actual_start": "2026-01-21T22:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-21T18:00:00Z",
+    "updated_at": "2026-01-21T22:05:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010084",
+    "title": "Planned change 9010084 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "standard",
+    "risk_level": "high",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100024"
+    ],
+    "requested_by": "USR90003",
+    "assigned_to": "USR100012",
+    "assignment_group": "GRP-T002-INFRA",
+    "affected_ci": [
+      "CI9010072",
+      "CI9000003"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-04-20T21:45:00Z",
+    "planned_end": "2026-04-20T23:45:00Z",
+    "actual_start": "2026-04-20T21:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-20T17:45:00Z",
+    "updated_at": "2026-04-20T21:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010085",
+    "title": "Planned change 9010085 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00007"
+    ],
+    "requested_by": "USR100028",
+    "assigned_to": "USR00012",
+    "assignment_group": "GRP-SECOPS",
+    "affected_ci": [
+      "CI9010062",
+      "CI9010089"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-03-17T10:00:00Z",
+    "planned_end": "2026-03-17T12:00:00Z",
+    "actual_start": "2026-03-17T10:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-17T06:00:00Z",
+    "updated_at": "2026-03-17T10:05:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010086",
+    "title": "Planned change 9010086 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100044"
+    ],
+    "requested_by": "USR100059",
+    "assigned_to": "USR100048",
+    "assignment_group": "GRP-T002-NETOPS",
+    "affected_ci": [
+      "CI9000001",
+      "CI9000002"
+    ],
+    "related_problem": "PBM9010039",
+    "planned_start": "2026-01-13T23:30:00Z",
+    "planned_end": "2026-01-14T01:30:00Z",
+    "actual_start": "2026-01-13T23:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-13T19:30:00Z",
+    "updated_at": "2026-01-13T23:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010087",
+    "title": "Planned change 9010087 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100083"
+    ],
+    "requested_by": "USR100083",
+    "assigned_to": "USR100027",
+    "assignment_group": "GRP-APPS",
+    "affected_ci": [
+      "CI9010048",
+      "CI9010014"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-25T07:30:00Z",
+    "planned_end": "2026-02-25T09:30:00Z",
+    "actual_start": "2026-02-25T07:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-25T03:30:00Z",
+    "updated_at": "2026-02-25T07:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010088",
+    "title": "Planned change 9010088 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "normal",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR00006"
+    ],
+    "requested_by": "USR00017",
+    "assigned_to": "USR100009",
+    "assignment_group": "GRP-CMDB",
+    "affected_ci": [
+      "CI9010099"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-03-01T09:00:00Z",
+    "planned_end": "2026-03-01T11:00:00Z",
+    "actual_start": "2026-03-01T09:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-01T05:00:00Z",
+    "updated_at": "2026-03-01T09:05:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010089",
+    "title": "Planned change 9010089 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "low",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100007"
+    ],
+    "requested_by": "USR100076",
+    "assigned_to": "USR100034",
+    "assignment_group": "GRP-NETOPS",
+    "affected_ci": [
+      "CI9010019",
+      "CI9010009"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-04-29T18:30:00Z",
+    "planned_end": "2026-04-29T20:30:00Z",
+    "actual_start": "2026-04-29T18:35:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-29T14:30:00Z",
+    "updated_at": "2026-04-29T18:35:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010090",
+    "title": "Planned change 9010090 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "standard",
+    "risk_level": "low",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100004"
+    ],
+    "requested_by": "USR100058",
+    "assigned_to": "USR00001",
+    "assignment_group": "GRP-DBA",
+    "affected_ci": [
+      "CI9010083"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-03-13T16:45:00Z",
+    "planned_end": "2026-03-13T18:45:00Z",
+    "actual_start": "2026-03-13T16:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-13T12:45:00Z",
+    "updated_at": "2026-03-13T16:50:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010091",
+    "title": "Planned change 9010091 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "normal",
+    "risk_level": "medium",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100050"
+    ],
+    "requested_by": "USR100039",
+    "assigned_to": "USR100002",
+    "assignment_group": "GRP-T003-PLATFORM",
+    "affected_ci": [
+      "CI9010004",
+      "CI9010024"
+    ],
+    "related_problem": "PBM9010061",
+    "planned_start": "2026-03-19T01:15:00Z",
+    "planned_end": "2026-03-19T03:15:00Z",
+    "actual_start": "2026-03-19T01:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-03-18T21:15:00Z",
+    "updated_at": "2026-03-19T01:20:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010092",
+    "title": "Planned change 9010092 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "emergency",
+    "risk_level": "medium",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100047"
+    ],
+    "requested_by": "USR00006",
+    "assigned_to": "USR100087",
+    "assignment_group": "GRP-ASSET",
+    "affected_ci": [
+      "CI9010076"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-04-25T14:15:00Z",
+    "planned_end": "2026-04-25T16:15:00Z",
+    "actual_start": "2026-04-25T14:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-25T10:15:00Z",
+    "updated_at": "2026-04-25T14:20:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010093",
+    "title": "Planned change 9010093 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "in_progress",
+    "change_type": "normal",
+    "risk_level": "high",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100022"
+    ],
+    "requested_by": "USR100057",
+    "assigned_to": "USR100022",
+    "assignment_group": "GRP-T002-NETOPS",
+    "affected_ci": [
+      "CI9010045"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-01-22T06:45:00Z",
+    "planned_end": "2026-01-22T08:45:00Z",
+    "actual_start": "2026-01-22T06:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-01-22T02:45:00Z",
+    "updated_at": "2026-01-22T06:50:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010094",
+    "title": "Planned change 9010094 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "standard",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100041"
+    ],
+    "requested_by": "USR100041",
+    "assigned_to": "USR00008",
+    "assignment_group": "GRP-DBA",
+    "affected_ci": [
+      "CI9010038"
+    ],
+    "related_problem": "PBM9010036",
+    "planned_start": "2026-02-25T09:45:00Z",
+    "planned_end": "2026-02-25T11:45:00Z",
+    "actual_start": "2026-02-25T09:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-25T05:45:00Z",
+    "updated_at": "2026-02-25T09:50:00Z"
+  },
+  {
+    "tenant_id": "T003",
+    "change_id": "CHG9010095",
+    "title": "Planned change 9010095 for T003",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "emergency",
+    "risk_level": "high",
+    "impact": "high",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR80002"
+    ],
+    "requested_by": "USR100050",
+    "assigned_to": "USR80003",
+    "assignment_group": "GRP-T003-PLATFORM",
+    "affected_ci": [
+      "CI9010031",
+      "CI9010010"
+    ],
+    "related_problem": "PBM8001001",
+    "planned_start": "2026-05-07T17:15:00Z",
+    "planned_end": "2026-05-07T19:15:00Z",
+    "actual_start": "2026-05-07T17:20:00Z",
+    "actual_end": null,
+    "created_at": "2026-05-07T13:15:00Z",
+    "updated_at": "2026-05-07T17:20:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010096",
+    "title": "Planned change 9010096 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "closed",
+    "change_type": "emergency",
+    "risk_level": "medium",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100064"
+    ],
+    "requested_by": "USR90002",
+    "assigned_to": "USR100024",
+    "assignment_group": "GRP-T002-INFRA",
+    "affected_ci": [
+      "CI9010071",
+      "CI9010052"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-02-03T11:00:00Z",
+    "planned_end": "2026-02-03T13:00:00Z",
+    "actual_start": "2026-02-03T11:05:00Z",
+    "actual_end": null,
+    "created_at": "2026-02-03T07:00:00Z",
+    "updated_at": "2026-02-03T11:05:00Z"
+  },
+  {
+    "tenant_id": "T001",
+    "change_id": "CHG9010097",
+    "title": "Planned change 9010097 for T001",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "emergency",
+    "risk_level": "medium",
+    "impact": "medium",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100066"
+    ],
+    "requested_by": "USR100025",
+    "assigned_to": "USR100045",
+    "assignment_group": "GRP-NETOPS",
+    "affected_ci": [
+      "CI9010077",
+      "CI9010018"
+    ],
+    "related_problem": null,
+    "planned_start": "2026-04-13T19:45:00Z",
+    "planned_end": "2026-04-13T21:45:00Z",
+    "actual_start": "2026-04-13T19:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-13T15:45:00Z",
+    "updated_at": "2026-04-13T19:50:00Z"
+  },
+  {
+    "tenant_id": "T002",
+    "change_id": "CHG9010098",
+    "title": "Planned change 9010098 for T002",
+    "description": "Scheduled maintenance change to address a known issue.",
+    "state": "scheduled",
+    "change_type": "emergency",
+    "risk_level": "low",
+    "impact": "low",
+    "approval_status": "approved",
+    "approved_by": [
+      "USR100022"
+    ],
+    "requested_by": "USR90002",
+    "assigned_to": "USR100059",
+    "assignment_group": "GRP-T002-INFRA",
+    "affected_ci": [
+      "CI9010003"
+    ],
+    "related_problem": "PBM9010048",
+    "planned_start": "2026-04-27T20:45:00Z",
+    "planned_end": "2026-04-27T22:45:00Z",
+    "actual_start": "2026-04-27T20:50:00Z",
+    "actual_end": null,
+    "created_at": "2026-04-27T16:45:00Z",
+    "updated_at": "2026-04-27T20:50:00Z"
+  }
+]

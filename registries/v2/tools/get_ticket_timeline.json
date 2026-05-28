@@ -1,0 +1,55 @@
+{
+  "active_version": 1,
+  "id": "get_ticket_timeline",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "summary",
+          "field_read"
+        ]
+      },
+      "created_at": "2026-05-20T10:49:43.471347+00:00",
+      "description": "Fetch the chronological timeline of a work record \u2014 work notes, customer comments, and state transitions. Read-only.",
+      "execution_type": "read",
+      "handler_ref": "oneops.use_cases.uc01_summarization.tools:get_ticket_timeline",
+      "id": "get_ticket_timeline",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "data_classification": "internal",
+          "description": "Canonical work-record id (e.g. INC0048213).",
+          "name": "ticket_id",
+          "required": true,
+          "type": "str"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Tenant scope \u2014 supplied from the request envelope, never user text.",
+          "name": "tenant_id",
+          "required": true,
+          "type": "str"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Service module: incident | request | problem | change.",
+          "name": "service_id",
+          "required": true,
+          "type": "str"
+        }
+      ],
+      "requires_scopes": [
+        "read:ticket"
+      ],
+      "status": "active",
+      "timeout_ms": 15000,
+      "updated_at": "2026-05-20T10:49:43.471349+00:00",
+      "version": 1
+    }
+  }
+}

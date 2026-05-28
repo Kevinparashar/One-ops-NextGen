@@ -1,0 +1,193 @@
+{
+  "registry_name": "capability_registry",
+  "version": "1.0.0",
+  "capabilities": [
+    {
+      "capability_id": "summary",
+      "name": "Entity Summarization",
+      "capability_service_class": "SummaryService",
+      "description": "Delivers structured, user-facing summaries of ITSM entities so chat and ticket UI can show the same narrative quality. Covers incidents, requests, problems, changes, assets, and CMDB configuration items. Typical flow is read-heavy: optional retrieval from an AI summary cache, assembly of core fields, timeline, cross-links to related tickets and CIs, and attachment metadata (identifiers and names only—no binary payloads), then language-model synthesis and cache persistence when policy allows. Cache invalidation should track ticket mutations so stale summaries are not presented as current. Tenant isolation and record-level read permissions apply to every fetch. Tool order and allowlists for each service module are defined in agent-tool-mapping.json for the summarization agent.",
+      "supported_entity_types": [
+        "incident",
+        "request",
+        "problem",
+        "change",
+        "asset",
+        "cmdb_ci"
+      ],
+      "requires_domain_services": [
+        "IncidentService",
+        "RequestService",
+        "ProblemService",
+        "ChangeService",
+        "AssetService",
+        "CMDBService"
+      ],
+      "requires_infra_services": [
+        "LLMGateway"
+      ],
+      "operation_type": "read",
+      "version": "1.0"
+    },
+    {
+      "capability_id": "similar_entity",
+      "name": "Similar Entity Search",
+      "capability_service_class": "SimilarEntityService",
+      "description": "Finds and ranks tickets that resemble a seed record for duplicate awareness, pattern analysis, and resolution reuse across incidents, requests, problems, and changes. Implementations usually embed title, description, and recent customer-facing activity, run vector (and optionally keyword) retrieval, then post-filter on tenant, time window, category or service scope, and status preferences. A second-stage ranker can blend semantic score with metadata alignment and recency. Tool-level parameters such as minimum similarity and preferred status steer the result set toward near-duplicates versus broader analogues. Candidates the caller cannot view in the source system must be omitted from results rather than leaked.",
+      "supported_entity_types": [
+        "incident",
+        "request",
+        "problem",
+        "change"
+      ],
+      "requires_domain_services": [
+        "IncidentService",
+        "RequestService",
+        "ProblemService",
+        "ChangeService",
+        "AssetService"
+      ],
+      "requires_infra_services": [
+        "EmbeddingService",
+        "VectorSearchService"
+      ],
+      "operation_type": "read",
+      "version": "1.0"
+    },
+    {
+      "capability_id": "kb_lookup",
+      "name": "Knowledge Base Lookup",
+      "capability_service_class": "KBLookupService",
+      "description": "Surfaces ranked knowledge articles with excerpts suited to inline display or chat answers. Supports a natural-language question path, a ticket-grounded path that uses title, description, and classification signals, and direct fetch when an article id is already known. Default behavior favors published, non-archived content; filters for language and audience (end user versus technician) keep results appropriate to the channel. Hybrid lexical and semantic retrieval with a ranking stage is expected at implementation time. Rules that decide when to auto-suggest or banner-link an article from a ticket page—using confidence thresholds or whether the ticket is already linked—belong in workflow or policy above this capability boundary.",
+      "supported_entity_types": [
+        "knowledge"
+      ],
+      "requires_domain_services": [
+        "KnowledgeBaseService"
+      ],
+      "requires_infra_services": [
+        "EmbeddingService",
+        "VectorSearchService"
+      ],
+      "operation_type": "read",
+      "version": "1.0"
+    },
+    {
+      "capability_id": "sentiment",
+      "name": "Sentiment Analysis",
+      "capability_service_class": "SentimentService",
+      "description": "Infers how the end customer is feeling about an open incident or request from ticket text and, when available, threaded conversation. Outputs typically include discrete labels (e.g. frustrated, concerned, neutral, satisfied, appreciative), a numeric confidence, salient phrases, an escalation-risk signal, and a short-term trajectory (improving, stable, or deteriorating) across turns. By default only customer-originated content is scored; internal work notes and agent prose are excluded unless explicitly configured. Threshold-based alerting and routing live in workflow and policy layers. Source language may vary; normalized labels are usually emitted in a single canonical locale for dashboards and automation.",
+      "supported_entity_types": [
+        "incident",
+        "request"
+      ],
+      "requires_domain_services": [
+        "IncidentService",
+        "RequestService"
+      ],
+      "requires_infra_services": [
+        "LLMGateway"
+      ],
+      "operation_type": "read",
+      "version": "1.0"
+    },
+    {
+      "capability_id": "resolution_suggestion",
+      "name": "Resolution Suggestion",
+      "capability_service_class": "ResolutionSuggestionService",
+      "description": "Proposes concrete resolution steps by combining evidence from historically resolved tickets (often symptom-vector matched), relevant knowledge articles, and known-error or CI-scoped hints. The service should extract actionable steps, collapse duplicates, and distinguish what appears already attempted in work notes from net-new ideas. Ranking weighs resolution success patterns, semantic similarity, recency, and source authority; the UI or agent usually presents a small top set with hints for effort, invasiveness, and whether elevated privileges are required. When no strong precedents exist, the experience should degrade gracefully—typically emphasizing curated knowledge or safe generic guidance rather than inventing specifics. A companion action records per-rank helpful or not-helpful feedback so models and rankers can improve over time.",
+      "supported_entity_types": [
+        "incident",
+        "request"
+      ],
+      "requires_domain_services": [
+        "IncidentService",
+        "RequestService",
+        "KnowledgeBaseService"
+      ],
+      "requires_infra_services": [
+        "EmbeddingService",
+        "VectorSearchService",
+        "LLMGateway"
+      ],
+      "operation_type": ["read", "action"],
+      "version": "1.0"
+    },
+    {
+      "capability_id": "triage",
+      "name": "Ticket Triage",
+      "capability_service_class": "TriageService",
+      "description": "Automates classification, prioritization, near-duplicate review, and assignment for incidents and requests. A typical pipeline proposes category and subcategory with confidence, derives or suggests priority from impact and urgency mappings, compares the ticket against recently opened work for high-similarity duplicates inside a configurable time window, then recommends or applies assignment to a group or individual according to confidence and policy. Lower-confidence outcomes may flag the record for human triage rather than persisting changes. Further enrichment—linking configuration items, tagging, SLA adjustments, or correlating incident bursts—remains the responsibility of the ITSM or orchestration layer. Tool flags support advisory-only runs for chat and manual re-triage flows.",
+      "supported_entity_types": [
+        "incident",
+        "request"
+      ],
+      "requires_domain_services": [
+        "IncidentService",
+        "RequestService",
+        "AssetService",
+        "CMDBService"
+      ],
+      "requires_infra_services": [
+        "LLMGateway",
+        "EmbeddingService",
+        "VectorSearchService"
+      ],
+      "operation_type": ["read","action"],
+      "version": "1.0"
+    },
+    {
+      "capability_id": "lifecycle",
+      "name": "Ticket Lifecycle Management",
+      "capability_service_class": "LifecycleService",
+      "description": "Owns mutating operations on existing incidents and requests after they exist in the system of record. Covers explicit state transitions (close, reopen, resolve, cancel), customer-visible comments versus internal work notes, sparse field updates that change attributes without implying an undocumented state jump (priority, title, description, category, urgency, and similar—only supplied fields are written), and structural relationships between records (duplicate, related, parent, child) including cross-service links when target_service_id is provided. Every call is action-typed: integrations must enforce RBAC, segregation of duty, and any approval gates the platform requires before persisting side effects.",
+      "supported_entity_types": [
+        "incident",
+        "request"
+      ],
+      "requires_domain_services": [
+        "IncidentService",
+        "RequestService"
+      ],
+      "requires_infra_services": [],
+      "operation_type": "action",
+      "version": "1.0"
+    },
+    {
+      "capability_id": "creation",
+      "name": "Ticket Creation",
+      "capability_service_class": "CreationService",
+      "description": "Creates new incidents or service requests through conversational slot capture with guardrails for preview, confirmation, and duplicate suppression. Flows include multi-turn clarification with optional turn limits at orchestration level, fast-path creation with sensible defaults when the user asks to skip questions, on-behalf filing when the affected person differs from the caller, resumption of partially filled forms, attachment references carried into the payload, and a read-style check for open or duplicate work before final submit. Classification and routing after the record exists are handled by triage and workflow capabilities, not by this definition alone.",
+      "supported_entity_types": [
+        "incident",
+        "request"
+      ],
+      "requires_domain_services": [
+        "IncidentService",
+        "RequestService"
+      ],
+      "requires_infra_services": [],
+      "operation_type": ["read","action"],
+      "version": "1.0"
+    },
+    {
+      "capability_id": "fulfillment",
+      "name": "Request Fulfillment",
+      "capability_service_class": "FulfillmentService",
+      "description": "Coordinates end-to-end fulfillment for catalog items, standard requests, and onboarding journeys: breaking templates into ordered and parallel tasks, executing automatable steps, leaving explicit human tasks for technicians, and tracking SLA milestones with notifications. Implementations handle retries, alternate fulfillment paths when a step fails, escalation when deadlines slip, cancellation and rollback—including partial rollback when only some tasks completed—and surfacing blocked integration states to operators. Duplicate in-flight detection avoids spawning redundant fulfillment instances. Aggregated status supports requester-facing and manager-facing rollups. Manual completion of a checklist task updates the fulfillment graph and may unblock dependent tasks that were waiting on that step.",
+      "supported_entity_types": [
+        "request",
+        "catalog",
+        "onboarding"
+      ],
+      "requires_domain_services": [
+        "RequestService",
+        "CatalogService",
+        "OnboardingService"
+      ],
+      "requires_infra_services": [],
+      "operation_type": ["read","action"],
+      "version": "1.0"
+    }
+  ]
+}

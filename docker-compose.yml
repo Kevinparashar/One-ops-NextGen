@@ -1,0 +1,145 @@
+name: oneops-local
+
+services:
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    container_name: oneops-dragonfly
+    # Host 6380 → container 6379. Host 6379 may be held by another project's
+    # plain Redis container (e.g. oneops-redis-tmp); this remap keeps POC
+    # copy 5 collision-free without touching neighbor projects' infra.
+    ports: ["6380:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    ulimits:
+      memlock: -1
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: oneops-nats
+    # Monitor on container port 8223 so the bind matches the host port
+    # remap below (neighbor's `ai-service-nats` holds host 4222/8222).
+    # -V traces inbound msgs, -DV adds debug — surfaces per-message
+    # PUB/SUB activity on every subject so the log proves traffic.
+    command: ["-js", "-m", "8223", "-V", "-DV"]
+    ports:
+      - "4223:4222"   # host 4223 → container 4222 (client)
+      - "8223:8223"   # host 8223 → container 8223 (monitoring)
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8223/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: oneops-postgres
+    environment:
+      POSTGRES_USER: oneops
+      POSTGRES_PASSWORD: oneops
+      POSTGRES_DB: oneops
+    # Host 5435 → container 5432. 5432 is held by a system Postgres;
+    # 55432/55433 by neighbor-project DB containers.
+    ports: ["5435:5432"]
+    volumes:
+      - oneops-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oneops"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  tempo:
+    # Pin to 2.5.0 — `latest` image moved to a config schema that rejects
+    # the existing tempo.yaml. 2.5.0 accepts the in-repo config as-is.
+    image: grafana/tempo:2.5.0
+    container_name: oneops-tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "3201:3200"   # tempo UI (3200 may collide with neighbor projects)
+      - "4319:4318"   # OTLP HTTP (4318 held by another project's unhealthy collector)
+    volumes:
+      - ./ops/otel/tempo.yaml:/etc/tempo.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3200/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # OTel Collector — bridges app OTLP to Tempo (traces) + Prometheus (metrics).
+  # Closes gap G5: Tempo accepts only traces; the collector gives metrics a
+  # Prometheus-scrapable home. Host ports remapped to avoid neighbor-project
+  # collisions (4317/4318 may be held by another folder's collector).
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.109.0
+    container_name: oneops-otel-collector
+    command: ["--config=/etc/collector.yaml"]
+    ports:
+      - "4320:4318"   # OTLP HTTP   (host 4320 → container 4318)
+      - "4321:4317"   # OTLP gRPC   (host 4321 → container 4317)
+      - "8889:8889"   # Prometheus scrape endpoint
+    volumes:
+      - ./ops/otel/collector.yaml:/etc/collector.yaml:ro
+    depends_on:
+      - tempo
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: oneops-prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    ports:
+      - "9091:9090"   # Prometheus UI (9090 may collide; remapped to 9091)
+    volumes:
+      - ./ops/otel/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - otel-collector
+
+  grafana:
+    # SLO dashboards + alerting. Provisioned at boot from
+    # `ops/grafana/provisioning/` (datasources + dashboard loader) and
+    # `ops/grafana/dashboards/` (dashboard JSON, version-controlled).
+    image: grafana/grafana:11.2.0
+    container_name: oneops-grafana
+    ports:
+      - "3001:3000"   # 3000 collides with neighbor projects
+    environment:
+      GF_SECURITY_ADMIN_USER: oneops
+      GF_SECURITY_ADMIN_PASSWORD: oneops
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor"
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/etc/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - tempo
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-v1.52.0-stable
+    container_name: oneops-litellm
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    # Host 4001 → container 4000. Shifted from 4000 because neighbour project's
+    # ai-service-litellm holds host 4000. Decoupling 2026-05-28 — POC-5-MW-1
+    # now has its own LiteLLM, no cross-project dependency.
+    ports: ["4001:4000"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LITELLM_MASTER_KEY: sk-1234
+      # ⚠ DO NOT pass DATABASE_URL until LiteLLM has its OWN database
+      # (separate from app's Supabase). Prisma migration drops unknown
+      # tables and wiped the app schema on 2026-05-16. Restored from
+      # Supabase backup. When ready to re-enable spend tracking, point
+      # at the local `oneops-postgres` container or a new Supabase
+      # project — never the shared `pgjjuecccgzuwwfpzeip` project.
+      DISABLE_SCHEMA_UPDATE: "True"
+      STORE_MODEL_IN_DB: "False"
+    volumes:
+      - ./ops/litellm/config.yaml:/app/config.yaml:ro
+    depends_on:
+      - dragonfly
+
+volumes:
+  oneops-pg-data:

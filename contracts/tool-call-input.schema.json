@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Tool Call Input",
+  "type": "object",
+  "required": [
+    "request_id",
+    "tool_id",
+    "tenant_id",
+    "payload"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "tool_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "request_id": "req-demo-uc1-001",
+      "tool_id": "get_cached_summary",
+      "tenant_id": "T001",
+      "payload": {
+        "ticket_id": "INC001",
+        "service_id": "incident",
+        "user_id": "user-42",
+        "role": "service_desk_agent"
+      }
+    },
+    {
+      "request_id": "req-demo-uc1-001",
+      "tool_id": "summarize_entity",
+      "tenant_id": "T001",
+      "payload": {
+        "ticket_id": "INC001",
+        "service_id": "incident",
+        "language": "en",
+        "summary_length": "medium"
+      }
+    }
+  ]
+}

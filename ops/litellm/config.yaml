@@ -1,0 +1,48 @@
+# LiteLLM proxy config — the OneOps LLM Gateway
+# Run with: docker compose up litellm
+# Reachable at: http://localhost:4000
+#
+# ⚠ DO NOT add `database_url` / `store_model_in_db: true` until LiteLLM has
+# its OWN database (separate Supabase project, or the local `oneops-postgres`
+# container in docker-compose). When LiteLLM's Prisma migration runs against
+# a shared schema, it DROPS tables it doesn't recognize as part of "resetting"
+# the schema. This destroyed the app's incidents/assets/changes/cmdb_cis/etc
+# tables on 2026-05-16. Recovery: Supabase backup restore.
+
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: text-embedding-3-small
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: text-embedding-3-large
+    litellm_params:
+      model: openai/text-embedding-3-large
+      api_key: os.environ/OPENAI_API_KEY
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 3
+  timeout: 60
+  allowed_fails: 3
+  cooldown_time: 30
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # database_url and store_model_in_db DELIBERATELY OMITTED.
+  # File-only mode = no destructive migrations. Cost tracking is still
+  # available per-call via our app's gateway client (LLMResult.cost_usd
+  # + OTEL span attribute `llm.cost_usd`).
+
+litellm_settings:
+  set_verbose: false
+  drop_params: false
+  json_logs: true
+  request_timeout: 60

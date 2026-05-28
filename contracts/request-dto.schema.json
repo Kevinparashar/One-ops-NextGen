@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Service Ingress — NATS Bridge Envelope",
+  "type": "object",
+  "required": [
+    "request_id",
+    "message",
+    "context"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "description": "End-to-end correlation id (same as bridge / caller)."
+    },
+    "message": {
+      "type": "string",
+      "description": "Natural-language user utterance from Bridge."
+    },
+    "context": {
+      "type": "object",
+      "required": [
+        "tenant_id",
+        "user_id",
+        "role"
+      ],
+      "properties": {
+        "tenant_id": {
+          "type": "string"
+        },
+        "user_id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "locale": {
+          "type": "string",
+          "description": "BCP 47 / tenant locale; summary language should follow ticket or this when configured (UC-1.10)."
+        },
+        "ticket_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Active ticket from UI session; planner uses when message implies 'this ticket'."
+        },
+        "request_id_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Optional ITSM request number when distinct from AI request_id."
+        },
+        "conversation_history": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "request_id": "req-20260318-001",
+      "message": "Summarize INC001",
+      "context": {
+        "tenant_id": "T001",
+        "user_id": "user-42",
+        "role": "service_desk_agent",
+        "session_id": "sess-xyz",
+        "locale": "en",
+        "ticket_id": "INC001",
+        "request_id_ref": null,
+        "conversation_history": []
+      }
+    },
+    {
+      "request_id": "req-20260318-002",
+      "message": "Give me a summary of this ticket",
+      "context": {
+        "tenant_id": "T001",
+        "user_id": "user-42",
+        "role": "service_desk_agent",
+        "session_id": "sess-xyz",
+        "locale": "en",
+        "ticket_id": "INC001",
+        "request_id_ref": null,
+        "conversation_history": []
+      }
+    }
+  ]
+}

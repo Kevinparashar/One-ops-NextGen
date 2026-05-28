@@ -1,0 +1,33 @@
+{
+  "policy_name": "oneops_platform_policy",
+  "version": "1.0.0",
+  "description": "Structured, machine-evaluable policy rules (ADR-0003). The prose policy is docs/policies/updated_policy_v2.md; this file is its machine form — the deterministic engine evaluates these rules. A rule with effect 'canned' carries a pre-approved response used verbatim at compliance touchpoints (zero hallucination). Highest priority wins; no rule matching means allow.",
+  "rules": [
+    {
+      "id": "deny_credential_disclosure",
+      "description": "Credentials, secrets, and API keys are never disclosed through the assistant, regardless of role.",
+      "match": {"actions": ["credential_disclosure", "secret_disclosure"]},
+      "effect": "deny",
+      "reason": "Disclosure of credentials or secrets is prohibited by policy.",
+      "priority": 100
+    },
+    {
+      "id": "canned_pii_touchpoint",
+      "description": "Any step handling PII-classified data routes through a pre-approved response — no LLM-drafted text at a PII touchpoint.",
+      "match": {"data_classifications": ["pii"]},
+      "effect": "canned",
+      "canned_response": "For privacy and compliance reasons I can't surface personal data through this assistant. Please use the secure channel your administrator has set up for personal-data requests.",
+      "reason": "PII touchpoint — pre-approved response required.",
+      "priority": 80
+    },
+    {
+      "id": "canned_legal_surface",
+      "description": "Legal-hold and litigation surfaces return a pre-approved response; the assistant does not improvise on legal matters.",
+      "match": {"surfaces": ["legal"]},
+      "effect": "canned",
+      "canned_response": "This touches a legal-hold or litigation matter. I've routed it to the legal team — they will follow up through the appropriate channel.",
+      "reason": "Legal surface — pre-approved response required.",
+      "priority": 80
+    }
+  ]
+}

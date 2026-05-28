@@ -1,0 +1,823 @@
+[
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_LAPTOP_STD",
+    "name": "Standard developer laptop",
+    "description": "ThinkPad T14 with standard image, VPN client, and asset tag.",
+    "category": "hardware",
+    "owner_group": "GRP-ASSET",
+    "estimated_total_minutes": 1440,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Procurement: order laptop",
+        "type": "manual",
+        "owner_group": "GRP-ASSET",
+        "depends_on": [],
+        "estimated_minutes": 720
+      },
+      {
+        "task_id": "T2",
+        "name": "Imaging: apply standard image",
+        "type": "automated",
+        "owner_group": "GRP-ASSET",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 60
+      },
+      {
+        "task_id": "T3",
+        "name": "Asset register: assign tag and serial",
+        "type": "automated",
+        "owner_group": "GRP-ASSET",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 5
+      },
+      {
+        "task_id": "T4",
+        "name": "Delivery: ship to user location",
+        "type": "manual",
+        "owner_group": "GRP-ASSET",
+        "depends_on": [
+          "T3"
+        ],
+        "estimated_minutes": 480
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_VPN_LICENSE",
+    "name": "VPN client license assignment",
+    "description": "Assign a SecureConnect VPN license from the pool to a named user.",
+    "category": "software",
+    "owner_group": "GRP-SERVICE-DESK",
+    "estimated_total_minutes": 30,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate user is active and authorized",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 5
+      },
+      {
+        "task_id": "T2",
+        "name": "Assign license from pool",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 5
+      },
+      {
+        "task_id": "T3",
+        "name": "Send activation email",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 5
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_MAILBOX_INCREASE",
+    "name": "Mailbox quota increase",
+    "description": "Bump mailbox quota to a requested size (50/100/250 GB).",
+    "category": "email",
+    "owner_group": "GRP-APPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Manager approval",
+        "type": "manual",
+        "owner_group": "GRP-APPS",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Apply quota change in Exchange",
+        "type": "automated",
+        "owner_group": "GRP-APPS",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 5
+      },
+      {
+        "task_id": "T3",
+        "name": "Notify requester",
+        "type": "automated",
+        "owner_group": "GRP-APPS",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 1
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HR_PORTAL_ACCESS",
+    "name": "HR portal report access",
+    "description": "Grant read access to HR analytics dashboards.",
+    "category": "access",
+    "owner_group": "GRP-APPS",
+    "estimated_total_minutes": 45,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Manager approval",
+        "type": "manual",
+        "owner_group": "GRP-APPS",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Add user to HR-Reports group",
+        "type": "automated",
+        "owner_group": "GRP-APPS",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 5
+      },
+      {
+        "task_id": "T3",
+        "name": "Notify requester",
+        "type": "automated",
+        "owner_group": "GRP-APPS",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 1
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_ONBOARDING",
+    "name": "New employee onboarding",
+    "description": "Full onboarding bundle: AD account, email, laptop, VPN, GitHub, licenses, badge, desk, welcome kit.",
+    "category": "onboarding",
+    "owner_group": "GRP-SERVICE-DESK",
+    "estimated_total_minutes": 2880,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Create AD account",
+        "type": "automated",
+        "owner_group": "GRP-SECOPS",
+        "depends_on": [],
+        "estimated_minutes": 5
+      },
+      {
+        "task_id": "T2",
+        "name": "Create email and calendar",
+        "type": "automated",
+        "owner_group": "GRP-APPS",
+        "depends_on": [],
+        "estimated_minutes": 10
+      },
+      {
+        "task_id": "T3",
+        "name": "Order laptop",
+        "type": "manual",
+        "owner_group": "GRP-ASSET",
+        "depends_on": [],
+        "estimated_minutes": 720
+      },
+      {
+        "task_id": "T4",
+        "name": "Provision VPN access",
+        "type": "automated",
+        "owner_group": "GRP-NETOPS",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 5
+      },
+      {
+        "task_id": "T5",
+        "name": "Add to GitHub org",
+        "type": "automated",
+        "owner_group": "GRP-PLATFORM",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 5
+      },
+      {
+        "task_id": "T6",
+        "name": "License: IDE + Jira",
+        "type": "automated",
+        "owner_group": "GRP-PLATFORM",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 5
+      },
+      {
+        "task_id": "T7",
+        "name": "Create badge request",
+        "type": "manual",
+        "owner_group": "GRP-SECOPS",
+        "depends_on": [
+          "T1",
+          "T2",
+          "T3"
+        ],
+        "estimated_minutes": 240
+      },
+      {
+        "task_id": "T8",
+        "name": "Assign desk and workspace",
+        "type": "manual",
+        "owner_group": "GRP-ASSET",
+        "depends_on": [
+          "T1",
+          "T2",
+          "T3"
+        ],
+        "estimated_minutes": 60
+      },
+      {
+        "task_id": "T9",
+        "name": "Send welcome kit email",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T7",
+          "T8"
+        ],
+        "estimated_minutes": 5
+      }
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "catalog_item_id": "CAT_T002_LAPTOP_STD",
+    "name": "Standard employee laptop",
+    "description": "Dell Latitude 5540 with standard GlobalCorp image, VPN client, and SAP shortcut.",
+    "category": "hardware",
+    "owner_group": "GRP-T002-ASSET",
+    "estimated_total_minutes": 1200,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Procurement: order laptop",
+        "type": "manual",
+        "owner_group": "GRP-T002-ASSET",
+        "depends_on": [],
+        "estimated_minutes": 600
+      },
+      {
+        "task_id": "T2",
+        "name": "Imaging: apply GlobalCorp standard image",
+        "type": "automated",
+        "owner_group": "GRP-T002-ASSET",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 60
+      },
+      {
+        "task_id": "T3",
+        "name": "Asset register: assign tag and serial",
+        "type": "automated",
+        "owner_group": "GRP-T002-ASSET",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 5
+      },
+      {
+        "task_id": "T4",
+        "name": "Delivery: ship to user location",
+        "type": "manual",
+        "owner_group": "GRP-T002-ASSET",
+        "depends_on": [
+          "T3"
+        ],
+        "estimated_minutes": 480
+      }
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "catalog_item_id": "CAT_T002_VPN_ACCESS",
+    "name": "VPN access provisioning",
+    "description": "Provision GlobalCorp VPN credentials and client for remote access.",
+    "category": "access",
+    "owner_group": "GRP-T002-NETOPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Manager approval",
+        "type": "manual",
+        "owner_group": "GRP-T002-NETOPS",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Provision VPN credentials in firewall",
+        "type": "automated",
+        "owner_group": "GRP-T002-NETOPS",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 5
+      },
+      {
+        "task_id": "T3",
+        "name": "Send credentials to user",
+        "type": "automated",
+        "owner_group": "GRP-T002-NETOPS",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 1
+      }
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "catalog_item_id": "CAT_T003_K8S_NODE",
+    "name": "Kubernetes cluster node scaling",
+    "description": "Add compute nodes to an existing TechVentures Kubernetes cluster on GCP.",
+    "category": "platform",
+    "owner_group": "GRP-T003-PLATFORM",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Architecture review and approval",
+        "type": "manual",
+        "owner_group": "GRP-T003-PLATFORM",
+        "depends_on": [],
+        "estimated_minutes": 60
+      },
+      {
+        "task_id": "T2",
+        "name": "Provision nodes via GCP Terraform",
+        "type": "automated",
+        "owner_group": "GRP-T003-PLATFORM",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Join nodes to cluster and validate",
+        "type": "automated",
+        "owner_group": "GRP-T003-PLATFORM",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 20
+      },
+      {
+        "task_id": "T4",
+        "name": "Update CMDB with new node CIs",
+        "type": "automated",
+        "owner_group": "GRP-T003-PLATFORM",
+        "depends_on": [
+          "T3"
+        ],
+        "estimated_minutes": 5
+      }
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "catalog_item_id": "CAT_T002_CONFERENCE_MIC_8",
+    "name": "Conference Mic request",
+    "description": "Standard provisioning of: Conference Mic.",
+    "category": "access",
+    "owner_group": "GRP-T002-APPS",
+    "estimated_total_minutes": 1440,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Conference Mic",
+        "type": "manual",
+        "owner_group": "GRP-T002-NETOPS",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "catalog_item_id": "CAT_T002_EXTERNAL_SSD_9",
+    "name": "External SSD request",
+    "description": "Standard provisioning of: External SSD.",
+    "category": "hardware",
+    "owner_group": "GRP-T002-NETOPS",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision External SSD",
+        "type": "manual",
+        "owner_group": "GRP-T002-INFRA",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_T001_DATABASE_ACCESS_10",
+    "name": "Database Access request",
+    "description": "Standard provisioning of: Database Access.",
+    "category": "hardware",
+    "owner_group": "GRP-ASSET",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Database Access",
+        "type": "manual",
+        "owner_group": "GRP-NETOPS",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "catalog_item_id": "CAT_T003_GPU_WORKSTATION_11",
+    "name": "GPU Workstation request",
+    "description": "Standard provisioning of: GPU Workstation.",
+    "category": "access",
+    "owner_group": "GRP-T003-ENG",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision GPU Workstation",
+        "type": "manual",
+        "owner_group": "GRP-T003-ENG",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "catalog_item_id": "CAT_T002_VPN_ACCESS_12",
+    "name": "VPN Access request",
+    "description": "Standard provisioning of: VPN Access.",
+    "category": "hardware",
+    "owner_group": "GRP-T002-APPS",
+    "estimated_total_minutes": 240,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision VPN Access",
+        "type": "manual",
+        "owner_group": "GRP-T002-INFRA",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "catalog_item_id": "CAT_T002_MOBILE_PHONE_13",
+    "name": "Mobile Phone request",
+    "description": "Standard provisioning of: Mobile Phone.",
+    "category": "hardware",
+    "owner_group": "GRP-T002-NETOPS",
+    "estimated_total_minutes": 1440,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Mobile Phone",
+        "type": "manual",
+        "owner_group": "GRP-T002-INFRA",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "catalog_item_id": "CAT_T002_SOFTWARE_LICENSE_14",
+    "name": "Software License request",
+    "description": "Standard provisioning of: Software License.",
+    "category": "access",
+    "owner_group": "GRP-T002-NETOPS",
+    "estimated_total_minutes": 240,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Software License",
+        "type": "manual",
+        "owner_group": "GRP-T002-APPS",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_T001_MOBILE_PHONE_15",
+    "name": "Mobile Phone request",
+    "description": "Standard provisioning of: Mobile Phone.",
+    "category": "hardware",
+    "owner_group": "GRP-NETOPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Mobile Phone",
+        "type": "manual",
+        "owner_group": "GRP-CMDB",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "catalog_item_id": "CAT_T002_SOFTWARE_LICENSE_16",
+    "name": "Software License request",
+    "description": "Standard provisioning of: Software License.",
+    "category": "hardware",
+    "owner_group": "GRP-T002-APPS",
+    "estimated_total_minutes": 480,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Software License",
+        "type": "manual",
+        "owner_group": "GRP-T002-NETOPS",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "catalog_item_id": "CAT_T002_SOFTWARE_LICENSE_17",
+    "name": "Software License request",
+    "description": "Standard provisioning of: Software License.",
+    "category": "software",
+    "owner_group": "GRP-T002-NETOPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Software License",
+        "type": "manual",
+        "owner_group": "GRP-T002-INFRA",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "catalog_item_id": "CAT_T002_CLOUD_SANDBOX_18",
+    "name": "Cloud Sandbox request",
+    "description": "Standard provisioning of: Cloud Sandbox.",
+    "category": "access",
+    "owner_group": "GRP-T002-NETOPS",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Cloud Sandbox",
+        "type": "manual",
+        "owner_group": "GRP-T002-INFRA",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "catalog_item_id": "CAT_T003_DATABASE_ACCESS_19",
+    "name": "Database Access request",
+    "description": "Standard provisioning of: Database Access.",
+    "category": "access",
+    "owner_group": "GRP-T003-PLATFORM",
+    "estimated_total_minutes": 1440,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Database Access",
+        "type": "manual",
+        "owner_group": "GRP-T003-ENG",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "catalog_item_id": "CAT_T002_DOCKING_STATION_20",
+    "name": "Docking Station request",
+    "description": "Standard provisioning of: Docking Station.",
+    "category": "software",
+    "owner_group": "GRP-T002-NETOPS",
+    "estimated_total_minutes": 1440,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Docking Station",
+        "type": "manual",
+        "owner_group": "GRP-T002-INFRA",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_T001_CLOUD_SANDBOX_21",
+    "name": "Cloud Sandbox request",
+    "description": "Standard provisioning of: Cloud Sandbox.",
+    "category": "access",
+    "owner_group": "GRP-PLATFORM",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Cloud Sandbox",
+        "type": "manual",
+        "owner_group": "GRP-SECOPS",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T003",
+    "catalog_item_id": "CAT_T003_DATABASE_ACCESS_22",
+    "name": "Database Access request",
+    "description": "Standard provisioning of: Database Access.",
+    "category": "access",
+    "owner_group": "GRP-T003-PLATFORM",
+    "estimated_total_minutes": 480,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Database Access",
+        "type": "manual",
+        "owner_group": "GRP-T003-PLATFORM",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_T001_HEADSET_23",
+    "name": "Headset request",
+    "description": "Standard provisioning of: Headset.",
+    "category": "hardware",
+    "owner_group": "GRP-NETOPS",
+    "estimated_total_minutes": 240,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Headset",
+        "type": "manual",
+        "owner_group": "GRP-NETOPS",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_T001_DATABASE_ACCESS_24",
+    "name": "Database Access request",
+    "description": "Standard provisioning of: Database Access.",
+    "category": "hardware",
+    "owner_group": "GRP-SECOPS",
+    "estimated_total_minutes": 480,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Database Access",
+        "type": "manual",
+        "owner_group": "GRP-KNOWLEDGE",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_T001_TABLET_25",
+    "name": "Tablet request",
+    "description": "Standard provisioning of: Tablet.",
+    "category": "software",
+    "owner_group": "GRP-NETOPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Tablet",
+        "type": "manual",
+        "owner_group": "GRP-NETOPS",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T002",
+    "catalog_item_id": "CAT_T002_SOFTWARE_LICENSE_26",
+    "name": "Software License request",
+    "description": "Standard provisioning of: Software License.",
+    "category": "hardware",
+    "owner_group": "GRP-T002-INFRA",
+    "estimated_total_minutes": 480,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Software License",
+        "type": "manual",
+        "owner_group": "GRP-T002-INFRA",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_T001_CLOUD_SANDBOX_27",
+    "name": "Cloud Sandbox request",
+    "description": "Standard provisioning of: Cloud Sandbox.",
+    "category": "software",
+    "owner_group": "GRP-PLATFORM",
+    "estimated_total_minutes": 240,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision Cloud Sandbox",
+        "type": "manual",
+        "owner_group": "GRP-ASSET",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_T001_GPU_WORKSTATION_28",
+    "name": "GPU Workstation request",
+    "description": "Standard provisioning of: GPU Workstation.",
+    "category": "software",
+    "owner_group": "GRP-NETOPS",
+    "estimated_total_minutes": 240,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision GPU Workstation",
+        "type": "manual",
+        "owner_group": "GRP-SERVICEDESK",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_T001_VPN_ACCESS_29",
+    "name": "VPN Access request",
+    "description": "Standard provisioning of: VPN Access.",
+    "category": "access",
+    "owner_group": "GRP-KNOWLEDGE",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision VPN Access",
+        "type": "manual",
+        "owner_group": "GRP-SERVICEDESK",
+        "depends_on": [],
+        "estimated_minutes": 60
+      }
+    ]
+  }
+]

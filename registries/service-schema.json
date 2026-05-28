@@ -1,0 +1,70 @@
+{
+  "registry_name": "service_schema_registry",
+  "version": "1.0.0",
+  "description": "Per-service operational schema: ticket ID prefixes, alias prefixes, and RBAC ownership configuration. Kept separate from service-registry.json (agent routing) and role-permission-registry.json (role definitions). Adding a new service = add one entry here. No code changes required.",
+  "services": [
+    {
+      "service_id": "incident",
+      "id_prefix": "INC",
+      "alias_prefixes": [],
+      "ownership_enforced": true,
+      "owner_fields": ["reported_by", "caller_id", "assigned_to", "created_by"]
+    },
+    {
+      "service_id": "request",
+      "id_prefix": "REQ",
+      "alias_prefixes": ["SR"],
+      "ownership_enforced": true,
+      "owner_fields": ["requested_by", "requested_for", "caller_id", "assigned_to", "created_by"]
+    },
+    {
+      "service_id": "problem",
+      "id_prefix": "PBM",
+      "alias_prefixes": ["PRB"],
+      "ownership_enforced": true,
+      "owner_fields": ["reported_by", "assigned_to", "owner", "created_by"]
+    },
+    {
+      "service_id": "change",
+      "id_prefix": "CHG",
+      "alias_prefixes": ["RFC"],
+      "ownership_enforced": true,
+      "owner_fields": ["requested_by", "assigned_to", "owner", "created_by"]
+    },
+    {
+      "service_id": "asset",
+      "id_prefix": "AST",
+      "alias_prefixes": [],
+      "ownership_enforced": true,
+      "owner_fields": ["assigned_to", "owner", "created_by"]
+    },
+    {
+      "service_id": "cmdb_ci",
+      "id_prefix": "CI",
+      "alias_prefixes": ["CMDB"],
+      "ownership_enforced": true,
+      "owner_fields": ["owner", "assigned_to"]
+    },
+    {
+      "service_id": "knowledge",
+      "id_prefix": "KB",
+      "alias_prefixes": [],
+      "ownership_enforced": false,
+      "owner_fields": []
+    },
+    {
+      "service_id": "catalog",
+      "id_prefix": "CAT",
+      "alias_prefixes": [],
+      "ownership_enforced": false,
+      "owner_fields": []
+    },
+    {
+      "service_id": "onboarding",
+      "id_prefix": "ONB",
+      "alias_prefixes": [],
+      "ownership_enforced": false,
+      "owner_fields": []
+    }
+  ]
+}

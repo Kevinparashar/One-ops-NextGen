@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Output",
+  "type": "object",
+  "required": [
+    "agent_id",
+    "status",
+    "executed",
+    "capability_id"
+  ],
+  "properties": {
+    "agent_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failed",
+        "blocked",
+        "validation_error"
+      ]
+    },
+    "executed": {
+      "type": "boolean"
+    },
+    "capability_id": {
+      "type": "string"
+    },
+    "tool_results": {
+      "type": "object",
+      "description": "Keyed by tool_id from resolved_tools for UC-1 tracing.",
+      "additionalProperties": true
+    },
+    "feature_output": {
+      "type": "object",
+      "description": "Normalized user-facing fields for this agent (e.g. summary markdown, flags)",
+      "properties": {
+        "profile_id": {
+          "type": "string"
+        },
+        "summary_markdown": {
+          "type": "string"
+        },
+        "from_cache": {
+          "type": "boolean"
+        },
+        "source_mutation_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ticket_links": {
+          "type": "object",
+          "description": "UC-1: linked CIs and tickets (references only)",
+          "properties": {
+            "linked_cis": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "linked_tickets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "attachment_metadata": {
+          "type": "array",
+          "description": "UC-1: attachment names/types/sizes/ids — not file bytes",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "error_message": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "validation_errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "examples": [
+    {
+      "agent_id": "summarization_agent",
+      "status": "success",
+      "executed": true,
+      "capability_id": "summary",
+      "tool_results": {
+        "get_cached_summary": {
+          "cache_hit": false
+        },
+        "summarize_entity": {
+          "summary_markdown": "(feature output after tool chain)"
+        }
+      },
+      "feature_output": {
+        "summary_markdown": "**Status**: Open | **Priority**: P2\n\n**What happened**: …",
+        "from_cache": false,
+        "source_mutation_version": null
+      },
+      "error_message": null,
+      "validation_errors": []
+    },
+    {
+      "agent_id": "summarization_agent",
+      "status": "success",
+      "executed": false,
+      "capability_id": "summary",
+      "tool_results": {},
+      "feature_output": {},
+      "error_message": null,
+      "validation_errors": [],
+      "demo_executor_validation_only": true,
+      "validated_tool_order": [
+        "get_cached_summary",
+        "get_ticket_details",
+        "get_ticket_timeline",
+        "get_ticket_links",
+        "get_ticket_attachment_metadata",
+        "summarize_entity",
+        "put_cached_summary"
+      ]
+    }
+  ]
+}

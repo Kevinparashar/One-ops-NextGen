@@ -1,0 +1,25 @@
+{
+  "glossary_name": "oneops_platform_glossary",
+  "version": "1.0.0",
+  "description": "Base ITSM domain vocabulary — synonyms collapsed to a canonical term before routing retrieval (Parlant glossary pattern). Tenants may overlay their own entries; the platform owns this base.",
+  "entries": [
+    {"canonical": "password", "synonyms": ["pwd", "passwd", "pass word"]},
+    {"canonical": "multi-factor authentication", "synonyms": ["mfa", "2fa", "two-factor", "two factor authentication"]},
+    {"canonical": "virtual private network", "synonyms": ["vpn"]},
+    {"canonical": "knowledge base", "synonyms": ["kb", "kbase", "knowledgebase", "knowledge-base"]},
+    {"canonical": "incident", "synonyms": ["inc", "outage", "break-fix", "break fix"]},
+    {"canonical": "service request", "synonyms": ["req", "sr", "catalog request"]},
+    {"canonical": "change request", "synonyms": ["chg", "rfc", "change record"]},
+    {"canonical": "problem record", "synonyms": ["prb", "pbm", "root cause record"]},
+    {"canonical": "configuration item", "synonyms": ["ci", "cmdb item", "cmdb record"]},
+    {"canonical": "service level agreement", "synonyms": ["sla"]},
+    {"canonical": "on-call", "synonyms": ["oncall", "on call"]},
+    {"canonical": "escalate", "synonyms": ["bump up", "raise priority", "kick up"]},
+    {"canonical": "assignment group", "synonyms": ["queue", "support group", "team queue"]},
+    {"canonical": "resolve", "synonyms": ["fix", "close out", "mark done"]},
+    {"canonical": "approve", "synonyms": ["sign off", "sign-off", "authorize"]},
+    {"canonical": "mean time to resolve", "synonyms": ["mttr"]},
+    {"canonical": "active directory", "synonyms": ["ad"]},
+    {"canonical": "known error", "synonyms": ["ke", "known issue"]}
+  ]
+}

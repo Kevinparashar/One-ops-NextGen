@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Tool Call Output",
+  "type": "object",
+  "required": [
+    "tool_id",
+    "status"
+  ],
+  "properties": {
+    "tool_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failed",
+        "validation_error"
+      ]
+    },
+    "output": {},
+    "error_message": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": true,
+  "examples": [
+    {
+      "tool_id": "get_cached_summary",
+      "status": "success",
+      "output": {
+        "cache_hit": false,
+        "ticket_id": "INC001",
+        "service_id": "incident",
+        "summary": null,
+        "source_mutation_version": null
+      },
+      "error_message": null
+    },
+    {
+      "tool_id": "summarize_entity",
+      "status": "validation_error",
+      "output": null,
+      "error_message": "Missing mandatory inputs for tool batch"
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-services.local/poc/contracts/team-run-output.schema.json",
+  "title": "TeamRunOutput",
+  "description": "Full pipeline artifact: plan, per-step results, client-facing final_status and user_response. Aligns with architecture §5.4. final_status enum matches final-response.schema.json. Map ExecutionResult.overall_status to final_status using §5.4.1.",
+  "type": "object",
+  "required": [
+    "request_id",
+    "plan",
+    "execution_results",
+    "final_status",
+    "user_response"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "plan": {
+      "$ref": "execution-plan.schema.json",
+      "description": "Planner output for this run (may have empty steps when clarification or no_match)."
+    },
+    "execution_results": {
+      "type": "array",
+      "items": {
+        "$ref": "execution-result.schema.json#/$defs/StepResult"
+      },
+      "description": "Per-step outcomes (same shape as ExecutionResult.step_results). Empty when no steps ran."
+    },
+    "final_status": {
+      "type": "string",
+      "enum": [
+        "executed",
+        "planned_only",
+        "clarification_required",
+        "no_match",
+        "failed"
+      ],
+      "description": "End-to-end pipeline status for the Bridge/UI."
+    },
+    "user_response": {
+      "type": "string",
+      "description": "Natural language string shown to the user (synthesis, clarification question, or error summary)."
+    },
+    "unsupported_subqueries": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "fallback_message": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "request_id": "req-20260318-001",
+      "plan": {
+        "request_id": "req-20260318-001",
+        "steps": [
+          {
+            "step_id": "step_1",
+            "agent_id": "summarization_agent",
+            "capability_id": "summary",
+            "service_id": "incident",
+            "execution_type": "read",
+            "tool_ids": [
+              "get_ticket_details",
+              "summarize_entity"
+            ],
+            "parameters": {
+              "ticket_id": "INC001"
+            },
+            "order_hint": 1,
+            "depends_on": []
+          }
+        ],
+        "needs_clarification": false,
+        "clarification_question": null,
+        "no_match": false,
+        "fallback_message": null,
+        "unsupported_subqueries": null
+      },
+      "execution_results": [
+        {
+          "step_id": "step_1",
+          "agent_id": "summarization_agent",
+          "status": "success",
+          "result": {
+            "summary_markdown": "**Status**: Open | **Priority**: P2"
+          },
+          "error_message": null
+        }
+      ],
+      "final_status": "executed",
+      "user_response": "Here is a concise summary of INC001 …",
+      "unsupported_subqueries": null,
+      "fallback_message": null
+    },
+    {
+      "request_id": "req-clarify-001",
+      "plan": {
+        "request_id": "req-clarify-001",
+        "steps": [],
+        "needs_clarification": true,
+        "clarification_question": "Do you mean incident INC001 or request REQ042?",
+        "no_match": false,
+        "fallback_message": null,
+        "unsupported_subqueries": null
+      },
+      "execution_results": [],
+      "final_status": "clarification_required",
+      "user_response": "Do you mean incident INC001 or request REQ042?",
+      "unsupported_subqueries": null,
+      "fallback_message": null
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+// OneOps wire/disk message contract — v1.
+//
+// ADR-0001: Protocol Buffers is the codec. Field numbers are permanent.
+// Adding an optional field is safe (N / N-1 consumers coexist); removing or
+// renumbering a field is a breaking change and bumps `schema_version` + a
+// major schema-registry version.
+//
+// Every inter-service message on a NATS boundary, and every conversation
+// event on disk, is an `Envelope`. The envelope carries routing/trace/tenant
+// metadata in named fields and the typed business message in `payload`.
+
+syntax = "proto3";
+
+package oneops.v1;
+
+// Discriminates what `Envelope.payload` deserialises to.
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  UC_REQUEST = 1;
+  UC_RESPONSE = 2;
+  CONVERSATION_EVENT = 3;
+}
+
+// Terminal outcome of one use-case execution.
+enum ExecutionStatus {
+  EXECUTION_STATUS_UNSPECIFIED = 0;
+  EXECUTED = 1;
+  CLARIFICATION_REQUIRED = 2;
+  NO_MATCH = 3;
+  FAILED = 4;
+}
+
+// The universal wrapper. Present on every boundary.
+message Envelope {
+  // Application-level schema version. The codec accepts a window of versions
+  // (current and current-1) so a rolling deploy never breaks mid-flight.
+  uint32 schema_version = 1;
+  MessageType message_type = 2;
+  // tenant_id is authoritative for isolation. It comes from the validated
+  // request envelope, never from user text.
+  string tenant_id = 3;
+  // W3C traceparent — propagates the OTel trace across the hop.
+  string trace_context = 4;
+  // Guards against double-execution under NATS at-least-once re-delivery.
+  string idempotency_key = 5;
+  // The typed business message, protobuf-serialised. Decoded per message_type.
+  bytes payload = 6;
+  // Server time (NTP-synced). Client timestamps are never trusted for order.
+  int64 emitted_at_unix_ms = 7;
+}
+
+// A request to execute one use-case agent.
+message UCRequest {
+  string request_id = 1;
+  string session_id = 2;
+  string user_id = 3;
+  string role = 4;
+  string locale = 5;
+  string agent_id = 6;       // resolved by the router from the registry
+  string intent = 7;
+  map<string, string> parameters = 8;
+  string message = 9;        // the raw user message, for handlers that need it
+}
+
+// The result of one use-case execution.
+message UCResponse {
+  string request_id = 1;
+  ExecutionStatus status = 2;
+  string user_response = 3;
+  string error_class = 4;    // authz | uc_missing | transient | unknown
+  string error_message = 5;
+  int64 latency_ms = 6;
+  repeated string executed_tools = 7;
+}
+
+// One append-only conversation-history event.
+message ConversationEvent {
+  string session_id = 1;
+  string turn_role = 2;      // user | assistant | system
+  string content = 3;
+  int64 turn_index = 4;
+  int64 occurred_at_unix_ms = 5;
+}

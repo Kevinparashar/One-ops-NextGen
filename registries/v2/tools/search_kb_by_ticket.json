@@ -1,0 +1,42 @@
+{
+  "active_version": 1,
+  "id": "search_kb_by_ticket",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "kb_search",
+          "kb_article_fetch",
+          "kb_ticket_search"
+        ]
+      },
+      "created_at": "2026-05-20T10:49:43.471465+00:00",
+      "description": "Find knowledge articles explicitly linked to a given work record or CI (via the article's related-incidents / related-CIs links). Read-only.",
+      "execution_type": "read",
+      "handler_ref": "oneops.use_cases.uc03_kb_lookup.handlers:search_kb_by_ticket",
+      "id": "search_kb_by_ticket",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "data_classification": "internal",
+          "description": "Canonical work-record or CI id the article is linked to (e.g. INC0048213, CI0000001).",
+          "name": "ticket_id",
+          "required": true,
+          "type": "str"
+        }
+      ],
+      "requires_scopes": [
+        "read:kb"
+      ],
+      "status": "active",
+      "timeout_ms": 20000,
+      "updated_at": "2026-05-20T10:49:43.471466+00:00",
+      "version": 1
+    }
+  }
+}

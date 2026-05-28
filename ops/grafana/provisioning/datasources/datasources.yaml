@@ -1,0 +1,28 @@
+# Grafana datasource provisioning. Two read-only datasources point at
+# the in-cluster Prometheus + Tempo so the dashboards work the moment
+# the container comes up.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    uid: prom
+    url: http://oneops-prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "15s"
+
+  - name: Tempo
+    type: tempo
+    access: proxy
+    uid: tempo
+    url: http://oneops-tempo:3200
+    editable: false
+    jsonData:
+      tracesToLogs:
+        datasourceUid: prom
+      serviceMap:
+        datasourceUid: prom
+      nodeGraph:
+        enabled: true

@@ -1,0 +1,2531 @@
+[
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000001",
+    "ci_name": "VPN Gateway - APAC",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00003",
+    "location": "Mumbai-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000008"
+      },
+      {
+        "type": "located_in",
+        "target_ci_id": null
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "model": "PA-3220",
+      "ip_address": "10.10.1.5",
+      "os": "PAN-OS 11.0",
+      "client_profile_version": "v2.3"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000002",
+    "ci_name": "VPN Gateway - EMEA",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00003",
+    "location": "Frankfurt-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000008"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "model": "PA-3220",
+      "ip_address": "10.20.1.5",
+      "os": "PAN-OS 11.0",
+      "client_profile_version": "v2.3"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000003",
+    "ci_name": "Email Cluster Exchange-01",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00014",
+    "location": "Dublin-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": null
+      },
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000008"
+      }
+    ],
+    "attributes": {
+      "vendor": "Microsoft",
+      "version": "Exchange 2019",
+      "node_count": 4,
+      "ip_address": "10.30.5.10"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000004",
+    "ci_name": "HR Portal",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00013",
+    "location": "Azure-EU",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000008"
+      },
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000005"
+      }
+    ],
+    "attributes": {
+      "vendor": "Workday",
+      "url": "https://hr.acme.internal",
+      "tls_version": "1.3"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000005",
+    "ci_name": "Payroll DB",
+    "ci_type": "database",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00004",
+    "location": "Mumbai-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "used_by",
+        "target_ci_id": "CI0000004"
+      }
+    ],
+    "attributes": {
+      "vendor": "Oracle",
+      "version": "Oracle 19c",
+      "size_gb": 850,
+      "ip_address": "10.10.20.15"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000006",
+    "ci_name": "Salesforce Integration Worker",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00012",
+    "location": "AWS-ap-south-1",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000012"
+      }
+    ],
+    "attributes": {
+      "runtime": "Python 3.11",
+      "queue_backend": "Kafka",
+      "consumer_group": "sf-sync"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000007",
+    "ci_name": "WiFi Controller HQ-01",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00003",
+    "location": "Bangalore-HQ",
+    "criticality": "high",
+    "relationships": [],
+    "attributes": {
+      "vendor": "Cisco",
+      "model": "9800-CL",
+      "ap_count": 47,
+      "channel_policy": "manual"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000008",
+    "ci_name": "SSO Identity Provider",
+    "ci_type": "security",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00011",
+    "location": "Global",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "used_by",
+        "target_ci_id": "CI0000001"
+      },
+      {
+        "type": "used_by",
+        "target_ci_id": "CI0000002"
+      },
+      {
+        "type": "used_by",
+        "target_ci_id": "CI0000003"
+      },
+      {
+        "type": "used_by",
+        "target_ci_id": "CI0000004"
+      }
+    ],
+    "attributes": {
+      "vendor": "Okta",
+      "saml_endpoint": "https://idp.acme.com/saml",
+      "mfa_provider": "Okta Verify"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000009",
+    "ci_name": "Service Desk Portal",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00013",
+    "location": "Azure-US",
+    "criticality": "medium",
+    "relationships": [],
+    "attributes": {
+      "vendor": "OneOps ITSM",
+      "version": "2026.1",
+      "tier": "Cloud Pro"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000010",
+    "ci_name": "Monitoring Stack",
+    "ci_type": "platform",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00012",
+    "location": "AWS-us-east-1",
+    "criticality": "medium",
+    "relationships": [],
+    "attributes": {
+      "vendor": "Grafana Labs",
+      "components": [
+        "Prometheus",
+        "Loki",
+        "Tempo"
+      ],
+      "collector_count": 6
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000011",
+    "ci_name": "Laptop Standard Image",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00015",
+    "location": "Global",
+    "criticality": "medium",
+    "relationships": [],
+    "attributes": {
+      "os": "Windows 11 Enterprise",
+      "build": "23H2-2026Q1",
+      "agents": [
+        "Defender ATP",
+        "Intune",
+        "VPN Client v2.3"
+      ]
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000012",
+    "ci_name": "Oracle ERP",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00014",
+    "location": "OnPrem-DC2",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000005"
+      }
+    ],
+    "attributes": {
+      "vendor": "Oracle",
+      "version": "Fusion Cloud ERP 2025",
+      "app_pool_memory_gb": 8
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000013",
+    "ci_name": "Change Calendar Service",
+    "ci_type": "itsm",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00005",
+    "location": "Global",
+    "criticality": "medium",
+    "relationships": [],
+    "attributes": {
+      "api_version": "v2",
+      "tier": "Standard"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000014",
+    "ci_name": "Asset Discovery Probe",
+    "ci_type": "platform",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00015",
+    "location": "Bangalore-DC",
+    "criticality": "low",
+    "relationships": [],
+    "attributes": {
+      "scan_subnets": [
+        "10.10.0.0/16",
+        "10.20.0.0/16",
+        "10.34.0.0/16"
+      ],
+      "cert_expiry": "2027-04-06"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI0000015",
+    "ci_name": "Knowledge Search Service",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00017",
+    "location": "AWS-eu-west-1",
+    "criticality": "medium",
+    "relationships": [],
+    "attributes": {
+      "ranker_version": "2026.04",
+      "index_doc_count": 1240
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9000001",
+    "ci_name": "GlobalCorp Core Firewall",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR90001",
+    "location": "HongKong-DC",
+    "criticality": "high",
+    "relationships": [],
+    "attributes": {
+      "vendor": "Cisco",
+      "model": "ASA-5516-X",
+      "ip_address": "192.168.1.1",
+      "firmware": "9.16.4"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9000002",
+    "ci_name": "GlobalCorp ERP Application",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR90002",
+    "location": "Azure-eastasia",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9000001"
+      }
+    ],
+    "attributes": {
+      "version": "SAP S/4HANA 2023",
+      "users": 450
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9000003",
+    "ci_name": "GlobalCorp Email Server",
+    "ci_type": "server",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR90002",
+    "location": "HongKong-DC",
+    "criticality": "high",
+    "relationships": [],
+    "attributes": {
+      "vendor": "Microsoft",
+      "model": "Exchange Server 2019",
+      "os": "Windows Server 2022"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI8000001",
+    "ci_name": "TechVentures API Gateway",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR80001",
+    "location": "GCP-us-central1",
+    "criticality": "high",
+    "relationships": [],
+    "attributes": {
+      "vendor": "Kong",
+      "version": "3.4",
+      "requests_per_day": 2500000
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI8000002",
+    "ci_name": "TechVentures Dev Kubernetes Cluster",
+    "ci_type": "server",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR80002",
+    "location": "GCP-us-central1",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI8000001"
+      }
+    ],
+    "attributes": {
+      "kubernetes_version": "1.29",
+      "node_count": 6
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010001",
+    "ci_name": "endpoint-t001-9010001",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100082",
+    "location": "Mumbai",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI0000009"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.223.31.171"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010002",
+    "ci_name": "itsm-t002-9010002",
+    "ci_type": "itsm",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100046",
+    "location": "Tokyo",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9000001"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.125.170.164"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010003",
+    "ci_name": "application-t002-9010003",
+    "ci_type": "application",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100054",
+    "location": "Hong Kong",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9000003"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.229.15.237"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010004",
+    "ci_name": "application-t003-9010004",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100086",
+    "location": "New York",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI8000002"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.9.249.219"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010005",
+    "ci_name": "endpoint-t002-9010005",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100042",
+    "location": "Frankfurt-DC",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9000002"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.247.17.237"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010006",
+    "ci_name": "network-t002-9010006",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100042",
+    "location": "Hong Kong",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010003"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.63.193.225"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010007",
+    "ci_name": "endpoint-t001-9010007",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00021",
+    "location": "Ahmedabad",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000001"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.147.11.189"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010008",
+    "ci_name": "security-t002-9010008",
+    "ci_type": "security",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100064",
+    "location": "Frankfurt-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010002"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.227.25.229"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010009",
+    "ci_name": "network-t001-9010009",
+    "ci_type": "network",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100038",
+    "location": "Ahmedabad",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI0000006"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.227.219.211"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010010",
+    "ci_name": "server-t003-9010010",
+    "ci_type": "server",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100055",
+    "location": "Shanghai",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010004"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.26.190.17"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010011",
+    "ci_name": "endpoint-t003-9010011",
+    "ci_type": "endpoint",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100055",
+    "location": "Shanghai",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI8000001"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.228.132.209"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010012",
+    "ci_name": "network-t003-9010012",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100031",
+    "location": "Lagos",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010011"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.162.145.184"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010013",
+    "ci_name": "platform-t002-9010013",
+    "ci_type": "platform",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100057",
+    "location": "Hong Kong",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9000001"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.162.211.6"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010014",
+    "ci_name": "security-t001-9010014",
+    "ci_type": "security",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00012",
+    "location": "Bangalore HQ",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000010"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.157.178.92"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010015",
+    "ci_name": "itsm-t002-9010015",
+    "ci_type": "itsm",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100064",
+    "location": "Hong Kong",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9000001"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.237.56.74"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010016",
+    "ci_name": "network-t001-9010016",
+    "ci_type": "network",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100040",
+    "location": "Mumbai",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI0000001"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.29.17.3"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010017",
+    "ci_name": "network-t001-9010017",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100070",
+    "location": "Mumbai",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000001"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.224.246.19"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010018",
+    "ci_name": "server-t001-9010018",
+    "ci_type": "server",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00002",
+    "location": "Mumbai",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI0000014"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.33.247.52"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010019",
+    "ci_name": "server-t001-9010019",
+    "ci_type": "server",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100056",
+    "location": "Mumbai-DC",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010016"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.239.17.155"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010020",
+    "ci_name": "security-t003-9010020",
+    "ci_type": "security",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100062",
+    "location": "DC2",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI8000001"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.114.97.128"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010021",
+    "ci_name": "itsm-t003-9010021",
+    "ci_type": "itsm",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100031",
+    "location": "Lagos",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010020"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.194.28.204"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010022",
+    "ci_name": "network-t003-9010022",
+    "ci_type": "network",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100010",
+    "location": "Lagos",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010004"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.180.14.140"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010023",
+    "ci_name": "itsm-t001-9010023",
+    "ci_type": "itsm",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00014",
+    "location": "Mumbai",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000013"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.50.70.51"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010024",
+    "ci_name": "network-t003-9010024",
+    "ci_type": "network",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100065",
+    "location": "Shanghai",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010004"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.132.101.15"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010025",
+    "ci_name": "itsm-t002-9010025",
+    "ci_type": "itsm",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100064",
+    "location": "Frankfurt-DC",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9000002"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.228.218.189"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010026",
+    "ci_name": "endpoint-t001-9010026",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100063",
+    "location": "Bangalore HQ",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI0000008"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.53.141.59"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010027",
+    "ci_name": "server-t001-9010027",
+    "ci_type": "server",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100038",
+    "location": "Mumbai-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI0000010"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.171.177.6"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010028",
+    "ci_name": "application-t003-9010028",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100081",
+    "location": "Shanghai",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010022"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.110.50.30"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010029",
+    "ci_name": "security-t001-9010029",
+    "ci_type": "security",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100083",
+    "location": "Ahmedabad",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI0000006"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.37.58.146"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010030",
+    "ci_name": "network-t001-9010030",
+    "ci_type": "network",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR00021",
+    "location": "Mumbai-DC",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010016"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.244.122.81"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010031",
+    "ci_name": "platform-t003-9010031",
+    "ci_type": "platform",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100080",
+    "location": "Shanghai",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010011"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.182.50.164"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010032",
+    "ci_name": "server-t002-9010032",
+    "ci_type": "server",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100022",
+    "location": "Frankfurt-DC",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010003"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.227.72.17"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010033",
+    "ci_name": "endpoint-t002-9010033",
+    "ci_type": "endpoint",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100012",
+    "location": "Tokyo",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010025"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.232.25.156"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010034",
+    "ci_name": "platform-t001-9010034",
+    "ci_type": "platform",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100011",
+    "location": "Ahmedabad",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010030"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.36.47.96"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010035",
+    "ci_name": "network-t001-9010035",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00001",
+    "location": "Mumbai-DC",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI0000007"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.155.235.23"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010036",
+    "ci_name": "database-t001-9010036",
+    "ci_type": "database",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100074",
+    "location": "Ahmedabad",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010009"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.138.160.143"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010037",
+    "ci_name": "database-t002-9010037",
+    "ci_type": "database",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100051",
+    "location": "Frankfurt-DC",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9000003"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.240.2.184"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010038",
+    "ci_name": "itsm-t001-9010038",
+    "ci_type": "itsm",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100084",
+    "location": "Mumbai",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010014"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.95.43.147"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010039",
+    "ci_name": "database-t001-9010039",
+    "ci_type": "database",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100005",
+    "location": "Mumbai-DC",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI0000012"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.161.212.75"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010040",
+    "ci_name": "endpoint-t001-9010040",
+    "ci_type": "endpoint",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100032",
+    "location": "Mumbai-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010034"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.78.129.179"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010041",
+    "ci_name": "endpoint-t002-9010041",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100048",
+    "location": "Frankfurt-DC",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010037"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.218.147.192"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010042",
+    "ci_name": "database-t002-9010042",
+    "ci_type": "database",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100044",
+    "location": "Frankfurt-DC",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9000001"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.69.118.180"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010043",
+    "ci_name": "security-t001-9010043",
+    "ci_type": "security",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100041",
+    "location": "Mumbai-DC",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010007"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.82.139.4"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010044",
+    "ci_name": "database-t001-9010044",
+    "ci_type": "database",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00010",
+    "location": "Bangalore HQ",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010040"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.90.225.195"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010045",
+    "ci_name": "server-t002-9010045",
+    "ci_type": "server",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100012",
+    "location": "Frankfurt-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010003"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.54.116.81"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010046",
+    "ci_name": "network-t001-9010046",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00014",
+    "location": "Bangalore HQ",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI0000014"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.70.94.208"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010047",
+    "ci_name": "itsm-t001-9010047",
+    "ci_type": "itsm",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00009",
+    "location": "Mumbai",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010007"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.70.153.27"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010048",
+    "ci_name": "network-t001-9010048",
+    "ci_type": "network",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR00016",
+    "location": "Ahmedabad",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010001"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.161.159.147"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010049",
+    "ci_name": "endpoint-t002-9010049",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100061",
+    "location": "Frankfurt-DC",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9000003"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.208.160.41"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010050",
+    "ci_name": "application-t002-9010050",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR90004",
+    "location": "HongKong-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010045"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.170.116.155"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010051",
+    "ci_name": "application-t002-9010051",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100035",
+    "location": "Frankfurt-DC",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010015"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.57.21.10"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010052",
+    "ci_name": "database-t002-9010052",
+    "ci_type": "database",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100023",
+    "location": "Frankfurt-DC",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010015"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.148.152.217"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010053",
+    "ci_name": "security-t001-9010053",
+    "ci_type": "security",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00017",
+    "location": "Bangalore HQ",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI0000014"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.157.183.52"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010054",
+    "ci_name": "security-t002-9010054",
+    "ci_type": "security",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100046",
+    "location": "HongKong-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010002"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.175.184.88"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010055",
+    "ci_name": "network-t002-9010055",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR90001",
+    "location": "HongKong-DC",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010042"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.222.14.92"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010056",
+    "ci_name": "itsm-t001-9010056",
+    "ci_type": "itsm",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100021",
+    "location": "Mumbai",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010001"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.116.104.101"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010057",
+    "ci_name": "itsm-t001-9010057",
+    "ci_type": "itsm",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00002",
+    "location": "Ahmedabad",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010029"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.177.131.140"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010058",
+    "ci_name": "itsm-t002-9010058",
+    "ci_type": "itsm",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100059",
+    "location": "Tokyo",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010033"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.209.216.35"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010059",
+    "ci_name": "database-t001-9010059",
+    "ci_type": "database",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100084",
+    "location": "Bangalore HQ",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010057"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.77.179.223"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010060",
+    "ci_name": "network-t001-9010060",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00018",
+    "location": "Mumbai-DC",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010007"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.40.8.163"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010061",
+    "ci_name": "security-t002-9010061",
+    "ci_type": "security",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100003",
+    "location": "Tokyo",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9000001"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.71.204.154"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010062",
+    "ci_name": "security-t001-9010062",
+    "ci_type": "security",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00016",
+    "location": "Mumbai",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010016"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.227.196.193"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010063",
+    "ci_name": "endpoint-t001-9010063",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100007",
+    "location": "Bangalore HQ",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010043"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.189.74.147"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010064",
+    "ci_name": "network-t003-9010064",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100086",
+    "location": "New York",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010021"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.33.60.71"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010065",
+    "ci_name": "server-t001-9010065",
+    "ci_type": "server",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100014",
+    "location": "Mumbai-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI0000010"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.229.243.166"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010066",
+    "ci_name": "network-t001-9010066",
+    "ci_type": "network",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100006",
+    "location": "Mumbai",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010035"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.218.86.160"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010067",
+    "ci_name": "network-t001-9010067",
+    "ci_type": "network",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100056",
+    "location": "Mumbai-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010026"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.43.243.86"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010068",
+    "ci_name": "security-t001-9010068",
+    "ci_type": "security",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100047",
+    "location": "Bangalore HQ",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010067"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.215.21.10"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010069",
+    "ci_name": "endpoint-t003-9010069",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100089",
+    "location": "Lagos",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI8000001"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.69.233.148"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010070",
+    "ci_name": "application-t002-9010070",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100023",
+    "location": "Hong Kong",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010045"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.84.83.87"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010071",
+    "ci_name": "endpoint-t002-9010071",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100012",
+    "location": "Hong Kong",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9000003"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.143.174.70"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010072",
+    "ci_name": "platform-t002-9010072",
+    "ci_type": "platform",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100064",
+    "location": "Hong Kong",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9000002"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.86.205.12"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010073",
+    "ci_name": "server-t001-9010073",
+    "ci_type": "server",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100082",
+    "location": "Mumbai",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010046"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.141.198.150"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010074",
+    "ci_name": "network-t001-9010074",
+    "ci_type": "network",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100034",
+    "location": "Ahmedabad",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI0000004"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.71.211.71"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010075",
+    "ci_name": "application-t001-9010075",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100091",
+    "location": "Ahmedabad",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010060"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.245.188.204"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010076",
+    "ci_name": "endpoint-t001-9010076",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100082",
+    "location": "Bangalore HQ",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI0000005"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.55.199.226"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010077",
+    "ci_name": "server-t001-9010077",
+    "ci_type": "server",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR00017",
+    "location": "Ahmedabad",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010023"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.131.52.136"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010078",
+    "ci_name": "platform-t001-9010078",
+    "ci_type": "platform",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00018",
+    "location": "Mumbai-DC",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000005"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.9.211.129"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010079",
+    "ci_name": "database-t003-9010079",
+    "ci_type": "database",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100065",
+    "location": "Shanghai",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010020"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.135.72.90"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010080",
+    "ci_name": "itsm-t003-9010080",
+    "ci_type": "itsm",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100086",
+    "location": "New York",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010021"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.130.86.79"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010081",
+    "ci_name": "database-t001-9010081",
+    "ci_type": "database",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100004",
+    "location": "Bangalore HQ",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000015"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.215.24.57"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010082",
+    "ci_name": "server-t001-9010082",
+    "ci_type": "server",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR00010",
+    "location": "Bangalore HQ",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010030"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.219.28.162"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010083",
+    "ci_name": "security-t001-9010083",
+    "ci_type": "security",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100026",
+    "location": "Bangalore HQ",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000011"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.51.88.169"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010084",
+    "ci_name": "application-t001-9010084",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100067",
+    "location": "Bangalore HQ",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI0000008"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.143.218.68"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010085",
+    "ci_name": "platform-t001-9010085",
+    "ci_type": "platform",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100056",
+    "location": "Mumbai-DC",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010014"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.154.86.237"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010086",
+    "ci_name": "application-t002-9010086",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100057",
+    "location": "Frankfurt-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010045"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.57.230.245"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010087",
+    "ci_name": "itsm-t001-9010087",
+    "ci_type": "itsm",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100072",
+    "location": "Mumbai-DC",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010081"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.207.77.250"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010088",
+    "ci_name": "server-t001-9010088",
+    "ci_type": "server",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100006",
+    "location": "Ahmedabad",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI0000001"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.59.230.112"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010089",
+    "ci_name": "itsm-t001-9010089",
+    "ci_type": "itsm",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00003",
+    "location": "Bangalore HQ",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000009"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.10.100.173"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010090",
+    "ci_name": "endpoint-t001-9010090",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR00006",
+    "location": "Bangalore HQ",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI0000007"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.112.188.176"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010091",
+    "ci_name": "platform-t002-9010091",
+    "ci_type": "platform",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100054",
+    "location": "Hong Kong",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010072"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.109.39.151"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010092",
+    "ci_name": "database-t002-9010092",
+    "ci_type": "database",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR90002",
+    "location": "Hong Kong",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010008"
+      }
+    ],
+    "attributes": {
+      "vendor": "Dell",
+      "ip_address": "10.212.33.180"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010093",
+    "ci_name": "application-t002-9010093",
+    "ci_type": "application",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100042",
+    "location": "HongKong-DC",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010070"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.104.101.17"
+    }
+  },
+  {
+    "tenant_id": "T003",
+    "ci_id": "CI9010094",
+    "ci_name": "itsm-t003-9010094",
+    "ci_type": "itsm",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR80001",
+    "location": "Shanghai",
+    "criticality": "low",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010004"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.68.230.224"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010095",
+    "ci_name": "endpoint-t001-9010095",
+    "ci_type": "endpoint",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100070",
+    "location": "Mumbai",
+    "criticality": "high",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010034"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.145.38.174"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010096",
+    "ci_name": "endpoint-t001-9010096",
+    "ci_type": "endpoint",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100067",
+    "location": "Ahmedabad",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010073"
+      }
+    ],
+    "attributes": {
+      "vendor": "AWS",
+      "ip_address": "10.193.13.236"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010097",
+    "ci_name": "database-t001-9010097",
+    "ci_type": "database",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100026",
+    "location": "Ahmedabad",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "depends_on",
+        "target_ci_id": "CI9010038"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.92.110.101"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010098",
+    "ci_name": "endpoint-t001-9010098",
+    "ci_type": "endpoint",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR00008",
+    "location": "Mumbai-DC",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "runs_on",
+        "target_ci_id": "CI9010007"
+      }
+    ],
+    "attributes": {
+      "vendor": "Cisco",
+      "ip_address": "10.157.164.112"
+    }
+  },
+  {
+    "tenant_id": "T001",
+    "ci_id": "CI9010099",
+    "ci_name": "server-t001-9010099",
+    "ci_type": "server",
+    "environment": "development",
+    "status": "active",
+    "owner": "USR100068",
+    "location": "Bangalore HQ",
+    "criticality": "critical",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010065"
+      }
+    ],
+    "attributes": {
+      "vendor": "PaloAlto",
+      "ip_address": "10.26.131.147"
+    }
+  },
+  {
+    "tenant_id": "T002",
+    "ci_id": "CI9010100",
+    "ci_name": "database-t002-9010100",
+    "ci_type": "database",
+    "environment": "production",
+    "status": "active",
+    "owner": "USR100059",
+    "location": "Tokyo",
+    "criticality": "medium",
+    "relationships": [
+      {
+        "type": "connected_to",
+        "target_ci_id": "CI9010033"
+      }
+    ],
+    "attributes": {
+      "vendor": "Kong",
+      "ip_address": "10.90.90.185"
+    }
+  }
+]

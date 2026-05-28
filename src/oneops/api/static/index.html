@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OneOps AI · ITSM Assistant</title>
+  <!-- Google Fonts (Inter) — preconnect for low-RTT first paint -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" />
+  <!-- Markdown renderer for assistant responses (sole JS dep) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">OA</div>
+      <div>
+        <div class="brand-title">OneOps AI</div>
+        <div class="brand-sub">ITSM Assistant</div>
+      </div>
+    </div>
+
+    <div class="identity-block">
+      <label>tenant
+        <select id="tenant"></select>
+      </label>
+      <label>user
+        <select id="user"></select>
+      </label>
+      <label>role
+        <select id="role"></select>
+      </label>
+    </div>
+
+    <button id="new-session" type="button" class="ghost">+ New session</button>
+
+    <div class="counters">
+      <div class="counter">
+        <span class="counter-label">Turns</span>
+        <span class="counter-value" id="turn-count">0</span>
+      </div>
+      <div class="counter">
+        <span class="counter-label">Cache hits</span>
+        <span class="counter-value" id="cache-hits">0</span>
+      </div>
+      <div class="counter">
+        <span class="counter-label">Last latency</span>
+        <span class="counter-value" id="last-latency">—</span>
+      </div>
+    </div>
+
+    <div class="threads">
+      <div class="threads-title">Threads</div>
+      <div id="thread-list">
+        <div class="thread-item active">
+          <span id="session-id">…</span>
+          <span class="muted small">current</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <span id="status" class="muted small">Ready.</span>
+    </div>
+  </aside>
+
+  <main class="workspace">
+    <header class="workspace-header">
+      <div>
+        <h1>ITSM Assistant</h1>
+        <p class="muted small" id="kb-meta">Knowledge base · Cross-UC orchestration</p>
+      </div>
+      <div class="header-actions" id="fast-path-actions"></div>
+    </header>
+
+    <div class="status-strip" id="status-strip"></div>
+
+    <section class="conversation-wrap">
+      <div id="conversation"></div>
+    </section>
+
+    <form id="chat-form" class="chat-input" autocomplete="off">
+      <input id="chat-input"
+             placeholder="Ask about a ticket, search the knowledge base, or escalate…"
+             autofocus required />
+      <button type="submit" aria-label="send">↑</button>
+    </form>
+  </main>
+
+  <!-- Modal for fast-path button forms -->
+  <div id="fast-path-modal" class="modal hidden">
+    <div class="modal-card">
+      <header>
+        <h3 id="fp-title">Run</h3>
+        <button type="button" class="close" id="fp-close">×</button>
+      </header>
+      <form id="fp-form"></form>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Orchestrator to Agent Input — AI Studio Model",
+  "type": "object",
+  "required": [
+    "request_id",
+    "plan_item",
+    "context",
+    "previous_results",
+    "resolved_tools"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "plan_item": {
+      "type": "object",
+      "required": [
+        "step_id",
+        "agent_id",
+        "capability_id",
+        "service_id",
+        "execution_type",
+        "parameters",
+        "order_hint",
+        "depends_on"
+      ],
+      "properties": {
+        "step_id": {
+          "type": "string"
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "capability_id": {
+          "type": "string"
+        },
+        "service_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "execution_type": {
+          "type": "string",
+          "enum": [
+            "read",
+            "action"
+          ]
+        },
+        "parameters": {
+          "type": "object",
+          "description": "Step-scoped map from ExecutionPlan / PlanStep.parameters; merged with context for tool invocation (parameters override session keys).",
+          "additionalProperties": true
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "order_hint": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "context": {
+      "type": "object",
+      "required": [
+        "tenant_id",
+        "user_id",
+        "role"
+      ],
+      "properties": {
+        "tenant_id": {
+          "type": "string"
+        },
+        "user_id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "locale": {
+          "type": "string"
+        },
+        "ticket_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_id_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "conversation_history": {
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "previous_results": {
+      "type": "object"
+    },
+    "resolved_tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Allowlist from agent-tool-mapping.json for (agent_id, service_id). List order matches registry row order — executor should invoke in that order for UC-1 (cache check before fetch/generate). Tool ids are parameterized verbs (e.g. get_ticket_details); service_id is passed in plan_item.parameters (and tool kwargs) and must match plan_item.service_id."
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "request_id": "req-20260318-001",
+      "plan_item": {
+        "step_id": "step_1",
+        "agent_id": "summarization_agent",
+        "capability_id": "summary",
+        "service_id": "incident",
+        "execution_type": "read",
+        "parameters": {
+          "ticket_id": "INC001",
+          "tenant_id": "T001",
+          "service_id": "incident"
+        },
+        "confidence": 0.94,
+        "order_hint": 1,
+        "depends_on": []
+      },
+      "context": {
+        "tenant_id": "T001",
+        "user_id": "user-42",
+        "role": "service_desk_agent",
+        "session_id": "sess-xyz",
+        "locale": "en",
+        "ticket_id": "INC001",
+        "request_id_ref": null,
+        "conversation_history": []
+      },
+      "previous_results": {},
+      "resolved_tools": [
+        "get_cached_summary",
+        "get_ticket_details",
+        "get_ticket_timeline",
+        "get_ticket_links",
+        "get_ticket_attachment_metadata",
+        "summarize_entity",
+        "put_cached_summary"
+      ]
+    }
+  ]
+}

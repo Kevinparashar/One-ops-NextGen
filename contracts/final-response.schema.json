@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Final Response — Bridge / UI",
+  "type": "object",
+  "required": [
+    "request_id",
+    "session_id",
+    "final_status",
+    "user_response",
+    "payload",
+    "errors",
+    "fallback_message"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Always present — bridge generates one if client omitted it. Never null."
+    },
+    "final_status": {
+      "type": "string",
+      "enum": [
+        "executed",
+        "planned_only",
+        "clarification_required",
+        "no_match",
+        "failed"
+      ]
+    },
+    "user_response": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Bridge/UI payload. May be feature-agent output after execution, or a demo-only envelope (planner + executor validation / dry-run) when downstream feature agents are not run.",
+      "additionalProperties": true
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "error.schema.json"
+      }
+    },
+    "fallback_message": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "request_id": "req-20260318-001",
+      "session_id": "sess-xyz",
+      "final_status": "executed",
+      "user_response": "Here is a concise summary of the ticket (served from cache).",
+      "payload": {
+        "summarization_agent": {
+          "summary_markdown": "**Status**: Open | **Priority**: P2 | **Assigned**: Network Team\n\n**What happened**: ...\n\n**Key updates**:\n- ...\n\n**Pending**: ...\n\n**Linked**: ...",
+          "from_cache": true,
+          "source_mutation_version": "mut-7421"
+        }
+      },
+      "errors": [],
+      "fallback_message": null
+    },
+    {
+      "request_id": "req-demo-uc1-executor-001",
+      "session_id": "sess-demo",
+      "final_status": "planned_only",
+      "user_response": "Demo run: planner/executor binding validated from registries and contracts only—no live summarization or ITSM calls.",
+      "payload": {
+        "demo_mode": "registry_contracts_only",
+        "user_intent": "UC-1 ticket summary",
+        "routed_agent_id": "summarization_agent",
+        "capability_id": "summary",
+        "service_id": "incident",
+        "execution_type": "read",
+        "executor_tool_ids_in_order": [
+          "get_cached_summary",
+          "get_ticket_details",
+          "get_ticket_timeline",
+          "get_ticket_links",
+          "get_ticket_attachment_metadata",
+          "summarize_entity",
+          "put_cached_summary"
+        ],
+        "routing_hints": {
+          "router_alias_id": "ticket_summary",
+          "registry_source": "agent-tool-mapping.json row (summarization_agent × incident)"
+        },
+        "note": "No feature summarization agent or ITSM calls in this demo — shows planner/executor binding from registries + contracts only."
+      },
+      "errors": [],
+      "fallback_message": null
+    }
+  ]
+}

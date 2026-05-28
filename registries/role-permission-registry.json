@@ -1,0 +1,171 @@
+{
+  "registry_name": "role_permission_registry",
+  "version": "1.0.0",
+  "description": "Defines RBAC permissions per role. Used by the tool boundary guard to enforce read/write access before any tool executes. Permissions follow the format action:scope where scope is 'all_tickets' (any tenant-local ticket), 'own_tickets' (only tickets reported by or assigned to the requesting user), or a specific resource type.",
+  "roles": [
+    {
+      "role": "viewer",
+      "display_name": "Viewer",
+      "description": "Read-only access to tickets the user is directly involved in (reporter or assignee). Cannot view other users' tickets.",
+      "permissions": [
+        "read:own_tickets"
+      ]
+    },
+    {
+      "role": "employee",
+      "display_name": "Employee",
+      "description": "End user who can view and create their own tickets. Cannot view tickets belonging to other users.",
+      "permissions": [
+        "read:own_tickets",
+        "create:ticket"
+      ]
+    },
+    {
+      "role": "service_desk_agent",
+      "display_name": "Service Desk Agent",
+      "description": "Frontline support agent. Can read all tickets within the tenant, update work notes, and create tickets on behalf of users.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket"
+      ]
+    },
+    {
+      "role": "network_engineer",
+      "display_name": "Network Engineer",
+      "description": "Specialist agent. Can read all tickets and update work notes within the tenant.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket"
+      ]
+    },
+    {
+      "role": "database_admin",
+      "display_name": "Database Administrator",
+      "description": "Specialist agent. Can read all tickets and update work notes within the tenant.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket"
+      ]
+    },
+    {
+      "role": "application_support",
+      "display_name": "Application Support",
+      "description": "Application support agent. Can read all tickets and update work notes within the tenant.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket"
+      ]
+    },
+    {
+      "role": "change_manager",
+      "display_name": "Change Manager",
+      "description": "Manages change requests. Can read all tickets and approve or reject changes.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket",
+        "approve:change"
+      ]
+    },
+    {
+      "role": "problem_manager",
+      "display_name": "Problem Manager",
+      "description": "Manages problem records. Can read all tickets and manage problem lifecycle.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket"
+      ]
+    },
+    {
+      "role": "security_engineer",
+      "display_name": "Security Engineer",
+      "description": "Security specialist. Can read all tickets and update work notes.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket"
+      ]
+    },
+    {
+      "role": "cloud_engineer",
+      "display_name": "Cloud Engineer",
+      "description": "Cloud infrastructure specialist. Can read all tickets and update work notes.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket"
+      ]
+    },
+    {
+      "role": "cmdb_admin",
+      "display_name": "CMDB Administrator",
+      "description": "Manages configuration items. Can read all tickets and manage CMDB records.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket",
+        "write:cmdb"
+      ]
+    },
+    {
+      "role": "asset_manager",
+      "display_name": "Asset Manager",
+      "description": "Manages IT assets. Can read all tickets and manage asset records.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket",
+        "write:asset"
+      ]
+    },
+    {
+      "role": "knowledge_manager",
+      "display_name": "Knowledge Manager",
+      "description": "Manages knowledge base articles. Can read all tickets and publish KB articles.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket",
+        "write:kb"
+      ]
+    },
+    {
+      "role": "it_director",
+      "display_name": "IT Director",
+      "description": "Senior leadership. Full read access across all tickets and resources within the tenant.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket",
+        "approve:change",
+        "write:cmdb",
+        "write:asset",
+        "write:kb",
+        "admin"
+      ]
+    },
+    {
+      "role": "manager",
+      "display_name": "Manager",
+      "description": "Team or department manager. Read access across all tickets within the tenant for oversight; cannot create or modify tickets.",
+      "permissions": [
+        "read:all_tickets",
+        "read:kb"
+      ]
+    },
+    {
+      "role": "end_user",
+      "display_name": "End User",
+      "description": "Standard end user. Can read tickets they reported or are assigned to; out of audience for cross-tenant summarisation. Exercises the authz-recheck deny path on UC-1.",
+      "permissions": [
+        "read:own_tickets",
+        "create:ticket"
+      ]
+    }
+  ]
+}

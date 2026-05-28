@@ -1,0 +1,111 @@
+{
+  "active_version": 1,
+  "id": "uc01_summarization",
+  "versions": {
+    "1": {
+      "abac_tags": {
+        "audience": [
+          "viewer",
+          "employee",
+          "service_desk_agent",
+          "manager"
+        ],
+        "data_classification": "confidential",
+        "service": [
+          "incident",
+          "request",
+          "problem",
+          "change",
+          "asset",
+          "cmdb_ci"
+        ],
+        "tier": "read"
+      },
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "entity_service_in",
+        "values": [
+          "incident",
+          "request",
+          "problem",
+          "change",
+          "asset",
+          "cmdb_ci"
+        ]
+      },
+      "compound_of": [],
+      "created_at": "2026-05-20T10:49:43.471534+00:00",
+      "depends_on": [],
+      "description": "Retrieves and renders facts about an ITSM/ITOM work record itself (INC, REQ, PBM, CHG, AST, CI). Returns the record's own attributes: summary, status, priority, severity, owner, assignee, SLA, work notes, comments, linked-record ids (related problem, related changes, affected CI), and current known state. Use this agent when the user wants to UNDERSTAND THE ENTITY \u2014 its facts, its history, what it is, what is going on with it. Capability is bounded to the record's own stored fields; this agent does NOT retrieve external knowledge content (articles, runbooks, troubleshooting guides).",
+      "determinism_level": "low",
+      "excludes": [],
+      "hooks": {
+        "after_invocation": [],
+        "before_invocation": ["builtin:authz_recheck"]
+      },
+      "id": "uc01_summarization",
+      "intent_family": "entity_summary",
+      "journey": null,
+      "owner": "team-itsm",
+      "policy_refs": [
+        "policy_pii_redact",
+        "policy_tenant_scope"
+      ],
+      "routing_shape": "single_agent",
+      "status": "active",
+      "tool_refs": [
+        {
+          "tool_id": "get_cached_summary",
+          "version": 1
+        },
+        {
+          "tool_id": "get_ticket_details",
+          "version": 1
+        },
+        {
+          "tool_id": "get_ticket_timeline",
+          "version": 1
+        },
+        {
+          "tool_id": "get_ticket_links",
+          "version": 1
+        },
+        {
+          "tool_id": "get_ticket_attachment_metadata",
+          "version": 1
+        },
+        {
+          "tool_id": "summarize_entity",
+          "version": 1
+        },
+        {
+          "tool_id": "put_cached_summary",
+          "version": 1
+        }
+      ],
+      "fast_path": {
+        "enabled": true,
+        "primary_tool_id": "summarize_entity",
+        "input_fields": [
+          {
+            "name": "ticket_id",
+            "type": "str",
+            "required": true,
+            "description": "Canonical work-record id (e.g. INC0048213, PBM0003003)."
+          },
+          {
+            "name": "service_id",
+            "type": "str",
+            "required": true,
+            "auto_derive_from": "ticket_id",
+            "description": "Service module: incident | request | problem | change | asset | cmdb_ci. Auto-derived from the ticket_id prefix when not supplied."
+          }
+        ]
+      },
+      "updated_at": "2026-05-26T11:00:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

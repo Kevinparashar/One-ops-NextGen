@@ -1,0 +1,18 @@
+{
+  "entity_type": "service_request",
+  "version": 1,
+  "rows": [
+    {"label": "Status", "source_field": "status", "kind": "enum", "optional": false},
+    {"label": "Priority", "source_field": "priority", "kind": "enum"},
+    {"label": "Catalog Item", "source_field": "catalog_item", "kind": "text"},
+    {"label": "Requested For", "source_field": "requested_for", "kind": "id_ref"},
+    {"label": "Requested By", "source_field": "requested_by", "kind": "id_ref"},
+    {"label": "Approval Stage", "source_field": "approval_stage", "kind": "enum"},
+    {"label": "Approver", "source_field": "approver", "kind": "id_ref"},
+    {"label": "Cost Estimate", "source_field": "cost_estimate", "kind": "money", "rbac_required": ["finance.read"]},
+    {"label": "Fulfillment Group", "source_field": "fulfillment_group", "kind": "id_ref"},
+    {"label": "Created At", "source_field": "created_at", "kind": "date"},
+    {"label": "Updated At", "source_field": "updated_at", "kind": "date"},
+    {"label": "Due At", "source_field": "due_at", "kind": "date"}
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "active_version": 1,
+  "id": "uc_request_envelope",
+  "versions": {
+    "1": {
+      "created_at": "2026-05-20T10:49:43.471581+00:00",
+      "deprecates_version": null,
+      "deprecation_window_days": 90,
+      "description": "The protobuf Envelope exchanged on every NATS boundary and written for every conversation event (ADR-0001). Carries schema_version, tenant_id, trace_context, idempotency_key, and a typed payload (UCRequest / UCResponse / ConversationEvent).",
+      "format": "protobuf",
+      "id": "uc_request_envelope",
+      "location": "proto/oneops/v1/envelope.proto",
+      "owner": "team-platform",
+      "status": "active",
+      "updated_at": "2026-05-20T10:49:43.471582+00:00",
+      "version": 1
+    }
+  }
+}

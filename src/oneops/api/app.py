@@ -1,0 +1,1316 @@
+"""FastAPI app — the chat + fast-path ingress.
+
+Two POST routes serve the engine; one GET serves the demo frontend.
+
+  * `POST /api/chat`            — natural-language ingress (router path)
+  * `POST /api/fast/{uc_id}`    — button ingress (UI-declared intent)
+  * `GET  /`                    — single-page HTML demo (chat + buttons)
+  * `GET  /api/fast/{uc_id}/spec` — return the declared input schema so a
+                                     frontend can render the right form
+
+Both POSTs return the **same response contract** — `final_status`,
+`final_response`, `step_results`, `session_id`, `request_id`, `trace_id`.
+A test compares the two doors for one identical intent ⇒ identical shape.
+
+The compiled executor + registry are built once at app start (lifespan) and
+reused across requests — multi-user concurrent safety comes from the
+stateless services + asyncpg pool + LangGraph's per-thread checkpointer.
+"""
+from __future__ import annotations
+
+import asyncio
+import os
+import time
+import uuid
+from contextlib import asynccontextmanager
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, Path, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from oneops.errors import NATSUnavailableError, OneOpsError
+from oneops.executor.graph import build_executor_graph, run_turn
+from oneops.executor.memory import NoopTrimmer, TokenBudgetTrimmer
+from oneops.executor.step_runner import HandlerStepExecutor
+from oneops.session import InMemoryEventLog, InMemoryHotWindow, SessionEventStore
+from oneops.toolrunner.resolver import HandlerResolver
+from oneops.observability import get_logger, get_tracer
+from oneops.registry.loader import load_registry
+from oneops.router.fast_path import (
+    FastPathDispatcher,
+    FastPathError,
+    FastPathRequest,
+)
+from oneops.router.router import Router
+from oneops.session.profile_store import get_user_profile_store  # noqa: F401 - eager-load
+
+_log = get_logger("oneops.api")
+_tracer = get_tracer("oneops.api")
+
+DEFAULT_TENANT_FALLBACK = os.getenv("ONEOPS_DEV_DEFAULT_TENANT", "T001")
+DEFAULT_USER_FALLBACK = os.getenv("ONEOPS_DEV_DEFAULT_USER", "oneops")
+DEFAULT_ROLE_FALLBACK = os.getenv("ONEOPS_DEV_DEFAULT_ROLE", "service_desk_agent")
+
+
+def _build_session_store() -> SessionEventStore:
+    """Construct the process-wide `SessionEventStore`.
+
+    Today: InMemory backends — survive the process lifetime, which is the
+    durability surface a single-process FaaS dev / demo needs. Production
+    is one env-flag away:
+
+      * `ONEOPS_SESSION_BACKEND=postgres+dragonfly` → wire
+        `PostgresEventLog(asyncpg_pool)` + `DragonflyHotWindow(client)`
+        instead. The `SessionEventStore` Protocol seam does not change.
+
+    Tenant isolation is structural — every `append` / `recent` takes
+    `tenant_id`; the in-memory dict is keyed `(tenant_id, session_id)`,
+    so two tenants never collide on a shared session id.
+    """
+    backend = os.getenv("ONEOPS_SESSION_BACKEND", "memory").strip().lower()
+    if backend == "memory":
+        cold = InMemoryEventLog()
+        hot = InMemoryHotWindow()
+        _log.info("oneops.api.session_store_selected", backend="memory",
+                  durability="process-lifetime")
+        return SessionEventStore(cold=cold, hot=hot)
+    if backend == "dragonfly":
+        # Demo / single-process FaaS durable: cold log + hot window both
+        # live on Dragonfly. Survives uvicorn restart; survives multi-tab
+        # reload. Production swaps cold log for Postgres via the same
+        # Protocol seam — no caller change.
+        from oneops.session.dragonfly_log import DragonflyEventLog
+        from oneops.session.dragonfly_window import DragonflyHotWindow
+        cold = DragonflyEventLog.from_settings()
+        hot = DragonflyHotWindow.from_settings()
+        _log.info("oneops.api.session_store_selected", backend="dragonfly",
+                  durability="cluster-lifetime")
+        return SessionEventStore(cold=cold, hot=hot)
+    raise RuntimeError(
+        f"ONEOPS_SESSION_BACKEND={backend!r} is not yet supported; "
+        f"use 'memory' (default) or 'dragonfly'.")
+
+
+def _build_llm_gateway():
+    """Construct an `LlmGateway` over the LiteLLM proxy when the env is
+    configured. Returns `None` when the proxy URL is absent — the status
+    chip reports the honest state and `summarize_entity` falls through to
+    its `outcome="llm_unavailable"` path.
+
+    The gateway is shared process-wide. Quota + cost tracking are stamped
+    per-tenant by the gateway itself."""
+    base_url = os.getenv("LLM_GATEWAY_URL", "").strip()
+    if not base_url:
+        return None
+    # Canonical env var names (match `.env.example` — see docs/runbooks/
+    # configuration.md when it lands). Production deployments configure
+    # these via the secret manager; no per-application aliases.
+    api_key = os.getenv("LLM_GATEWAY_API_KEY", "").strip()
+    try:
+        from oneops.llm.gateway import LlmGateway
+        from oneops.llm.transport import LiteLLMTransport
+        transport = LiteLLMTransport(
+            base_url=base_url, api_key=api_key,
+            timeout_s=float(os.getenv("LLM_TIMEOUT_SECONDS", "60.0")))
+        return LlmGateway(
+            transport=transport,
+            max_retries=int(os.getenv("LLM_MAX_RETRIES", "2")),
+            fallback_model=os.getenv("LLM_FALLBACK_MODEL") or None,
+        )
+    except Exception as exc:                          # noqa: BLE001 — boundary
+        _log.warning("oneops.api.llm_gateway_build_failed",
+                     error=str(exc)[:200])
+        return None
+
+
+def _nats_connection_is_live() -> bool:
+    """Return True when this process holds a live NATS connection.
+
+    Topology-agnostic: works for the single-process demo, the split-
+    role topology (ingress / graph_worker / agent_worker), and any
+    future multi-replica deployment. The signal is the actual
+    transport state (`NATSClient.is_connected`), not an inferred
+    "I have an embedded worker" flag — those flags lie in split mode.
+
+    Safe to call from request paths (sync, no I/O): we peek at the
+    process-wide singleton's `is_connected` boolean. If no client has
+    been constructed yet (cold boot or NATS disabled), returns False.
+    """
+    try:
+        from oneops.adapters.nats_client import _client      # noqa: SLF001 — boundary
+        return bool(_client and _client.is_connected)
+    except Exception:                                       # noqa: BLE001 — boundary
+        return False
+
+
+def _build_conversation_trimmer(gateway: Any, model: str):
+    """Construct the conversation trimmer for the executor (substrate G2).
+
+    Production behaviour:
+      * Gateway wired → `TokenBudgetTrimmer` with a real summariser that
+        compresses the oldest-N turns into one synthetic system message.
+        Token budget + keep-window come from env so operators tune
+        without code changes.
+      * No gateway → `NoopTrimmer`. The handler can't safely summarise
+        without an LLM; refusing-loud (`ConversationTrimError`) would
+        block local dev. NoopTrimmer keeps behaviour exactly as it is
+        today for those paths.
+
+    Env knobs (with defaults):
+      * `CONVERSATION_MAX_TOKENS`   = 4000
+      * `CONVERSATION_KEEP_TURNS`   = 10  (most-recent verbatim turns)
+    """
+    max_tokens = int(os.getenv("CONVERSATION_MAX_TOKENS", "4000"))
+    keep_turns = int(os.getenv("CONVERSATION_KEEP_TURNS", "10"))
+    if gateway is None:
+        return NoopTrimmer()
+
+    async def _summarise(
+        messages: list[dict[str, str]], tenant_id: str,
+    ) -> str:
+        # Single LLM call → compresses oldest-prefix into a paragraph.
+        # The gateway is the only egress (Component Spec C11), policy
+        # composed (C15), tenant-scoped (C13).
+        from oneops.llm import LlmMessage, LlmRequest, ResponseFormat
+        from oneops.policy import Profile, compose
+
+        rules = (
+            "You compress an ITSM assistant's prior conversation into ONE "
+            "short factual paragraph (≤120 words). Capture: which records "
+            "were discussed, what the user asked about each, what the "
+            "assistant answered. Drop greetings, repeats, and chit-chat. "
+            "Never invent facts."
+        )
+        system_prompt = compose(Profile.INTERNAL_AGENT, extra_sections=[rules])
+        # Serialise the prefix as a numbered transcript so the LLM has
+        # clear structure.
+        transcript = "\n".join(
+            f"{i+1}. {m.get('role','')}: {m.get('content','')}"
+            for i, m in enumerate(messages))
+        try:
+            resp = await gateway.call(LlmRequest(
+                messages=(
+                    LlmMessage("system", system_prompt, cache_control=True),
+                    LlmMessage("user", transcript),
+                ),
+                model=model or "gpt-4o-mini",
+                tenant_id=tenant_id or "_unknown",
+                response_format=ResponseFormat.TEXT,
+                request_id=""))
+            return (resp.content or "").strip()
+        except Exception as exc:                          # noqa: BLE001 — boundary
+            _log.warning("oneops.api.trimmer_summary_failed",
+                         error=str(exc)[:200])
+            # Return empty → trimmer raises ConversationTrimError loudly
+            # (per its contract). Caller surfaces a typed turn failure.
+            return ""
+
+    return TokenBudgetTrimmer(
+        max_tokens=max_tokens,
+        keep_last_turns=keep_turns,
+        summariser=_summarise,
+    )
+
+
+# Per-UC phrasing for fast-path messages. Each entry maps an `inputs` dict
+# to the natural-English message stored in the session log + shown on
+# reload. Adding a new UC = one line; no code branch.
+_FAST_PATH_PHRASING: dict[str, Any] = {
+    "uc01_summarization":
+        lambda inp: f"Summarize {inp.get('ticket_id') or '(no id)'}",
+    "uc03_kb_lookup":
+        lambda inp: f"Show knowledge article {inp.get('article_id') or '(no id)'}",
+}
+
+
+def _humanise_fast_path_request(uc_id: str, inputs: dict[str, Any]) -> str:
+    """Build the user-facing message stored in the session log when a turn
+    enters via the fast-path button. Falls back to a generic shape for any
+    UC that hasn't declared phrasing yet."""
+    phraser = _FAST_PATH_PHRASING.get(uc_id)
+    if phraser is not None:
+        return phraser(inputs)
+    first_value = next(iter((inputs or {}).values()), "")
+    label = uc_id.replace("_", " ").title() if uc_id else "request"
+    return f"Run {label}: {first_value}".rstrip(": ")
+
+
+def _summarizer_is_wired() -> bool:
+    """`True` once a `SummarizeFn` has been registered via
+    `set_summarize_llm`. Until E2 ships this stays `False`; the UI's status
+    chip surfaces the honest state — never claims wired when it isn't."""
+    try:
+        from oneops.use_cases.uc01_summarization.tools import _get_summarize_fn
+        return _get_summarize_fn() is not None
+    except Exception:                       # noqa: BLE001 — health probe
+        return False
+
+
+# ── request / response shapes ───────────────────────────────────────────
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4_000)
+    session_id: str | None = None
+
+
+class FastPathPostRequest(BaseModel):
+    """Caller-supplied structured input for a fast-path UC. The dispatcher
+    validates this against the UC's declared `fast_path.input_fields`."""
+
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    session_id: str | None = None
+
+
+class TurnResponse(BaseModel):
+    """Canonical contract returned by BOTH doors. Frontend renders it the
+    same way regardless of how the turn was entered."""
+
+    door: str                            # "chat" | "fast_path"
+    final_status: str
+    final_response: str
+    step_results: list[dict[str, Any]]
+    session_id: str
+    request_id: str
+    trace_id: str | None = None
+    latency_ms: int
+
+
+# ── envelope construction ───────────────────────────────────────────────
+
+
+class _RequestShim:
+    """Minimal duck-type for the bits `_run` reads off a Request — just
+    `.app` so we can reach `app.state`. The WebSocket route uses this
+    shim so the per-frame inner code is BYTE-IDENTICAL to the HTTP path
+    (zero behaviour drift between the two transports)."""
+
+    __slots__ = ("app",)
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+
+def _principal_from_headers(request: Request) -> tuple[str, str, str]:
+    """Dev-mode auth: pick tenant / user / role from request headers, with
+    safe fallbacks for the demo. Production swaps this for the JWT claims
+    parsed upstream by AWS API Gateway / Cognito."""
+    h = request.headers
+    tenant_id = (h.get("x-tenant-id") or DEFAULT_TENANT_FALLBACK).strip()
+    user_id = (h.get("x-user-id") or DEFAULT_USER_FALLBACK).strip()
+    role = (h.get("x-role") or DEFAULT_ROLE_FALLBACK).strip()
+    return tenant_id, user_id, role
+
+
+def _new_request_id() -> str:
+    return "req_" + uuid.uuid4().hex[:18]
+
+
+def _new_session_id() -> str:
+    return "sess_" + uuid.uuid4().hex[:18]
+
+
+# ── lifespan: build graph + registry once ───────────────────────────────
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Build the engine once at startup. The compiled graph is stateless;
+    every per-request invocation gets its own thread_id."""
+    t0 = time.monotonic()
+    # Load `.env` once if present — uvicorn doesn't read it automatically and
+    # the status chips depend on env vars (POSTGRES_URL, LLM_GATEWAY_URL,
+    # NATS_URL, OTEL_EXPORTER_OTLP_ENDPOINT) to report honest config state.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(".env", override=False)
+    except ImportError:
+        pass
+    registry = load_registry("registries/v2")
+    # ── LLM Gateway built FIRST so disambiguator selection is a
+    # construction-time decision (not a post-hoc private-attr patch).
+    gateway = _build_llm_gateway()
+    chosen_model = os.getenv("LLM_DEFAULT_MODEL", "gpt-4o-mini").strip()
+
+    # Router substrate. Stage-2 retrieval is the inverted-index lexical one
+    # (G3 load-tested at 1000 agents); stage-4 disambiguation rides the LLM
+    # when the gateway is up — that's the layer that survives misspellings,
+    # paraphrases, casual grammar. Without the gateway, the deterministic
+    # ThresholdDisambiguator is the safe fallback.
+    from oneops.authz.service import AuthzService
+    from oneops.router.disambiguation import (
+        LlmDisambiguator, ThresholdDisambiguator,
+    )
+    from oneops.router.glossary import Glossary
+    from oneops.router.retrieval import LexicalRetriever
+    retriever = LexicalRetriever(registry)
+    glossary = Glossary.from_file()
+    authz = AuthzService.create()
+    if gateway is not None:
+        disambiguator = LlmDisambiguator(gateway, model=chosen_model,
+                                         registry=registry)
+        # Rewriter selection — when the LLM gateway is up, use the LLM
+        # rewriter (resolves pronouns / back-references against
+        # conversation_history). Without it, multi-turn "what is the
+        # priority of it" cannot work — entity carries no anchor.
+        from oneops.router.rewrite import LlmRewriter
+        rewriter = LlmRewriter(gateway, model=chosen_model)
+        # Decomposer selection — LLM-backed so compound messages
+        # ("summarize INC0001001 and INC0001002") split into N atomic
+        # sub-queries. v4 product shape: a single message can carry N
+        # sub-queries routed to N UCs (single_engine_multi_subquery).
+        # Without it, the router collapses every compound message to one
+        # sub-query and only the first entity gets served.
+        from oneops.router.decompose import LlmDecomposer
+        decomposer = LlmDecomposer(gateway, model=chosen_model)
+    else:
+        from oneops.router.rewrite import PassthroughRewriter
+        from oneops.router.decompose import PassthroughDecomposer
+        disambiguator = ThresholdDisambiguator()
+        rewriter = PassthroughRewriter()
+        decomposer = PassthroughDecomposer()
+    router = Router(
+        registry=registry, glossary=glossary, retriever=retriever,
+        disambiguator=disambiguator, authz=authz,
+        rewriter=rewriter, decomposer=decomposer)
+    dispatcher = FastPathDispatcher(registry)
+
+    # ── HandlerResolver — registry of tool handlers ────────────────────
+    # Production swap (FaaS deployment): handlers register from their own
+    # Lambda packages. Here we use the in-process module-import path; the
+    # resolver's `import` fallback walks `module:function` refs, so every
+    # tool we declared in registries/v2/tools/*.json wires up automatically.
+    resolver = HandlerResolver()
+    local_step_executor = HandlerStepExecutor(registry=registry, resolver=resolver)
+    # AGENT_TRANSPORT=nats routes step dispatch through `oneops.agent.<id>`
+    # so agent-to-agent traffic shows up on the bus (and in nats logs).
+    # Local (in-process) is the default for tests + single-process dev.
+    agent_transport = os.getenv("AGENT_TRANSPORT", "local").strip().lower()
+    if agent_transport == "nats":
+        from oneops.executor.nats_step_executor import NatsStepExecutor
+        step_executor = NatsStepExecutor()
+    else:
+        step_executor = local_step_executor
+
+    # ── SessionEventStore — durable conversation memory ───────────────
+    # InMemory backends survive the process lifetime, which is what a
+    # single-process FaaS dev / demo needs. Production swaps the cold log
+    # for `PostgresEventLog` and the hot window for `DragonflyHotWindow`
+    # via env (the same Protocol seams) — no caller changes.
+    session_store = _build_session_store()
+
+    # ── LLM Gateway — E2: wire `summarize_entity` to the live LLM ────
+    # The gateway is the single egress for every model call (quota,
+    # redaction, retry, fallback, cost). Today we wire it for UC-1; future
+    # UCs that need LLM calls reuse the same instance.
+    if gateway is not None:
+        from oneops.executor.boundary import LlmBoundaryResponder
+        from oneops.use_cases.uc01_summarization.cache import (
+            get_summary_cache_store,
+        )
+        from oneops.use_cases.uc01_summarization.llm_summarizer import (
+            build_cached_summarize_fn,
+        )
+        from oneops.use_cases.uc01_summarization.tools import (
+            set_summarize_llm,
+        )
+        # Cache-aside: tenant-partitioned summary cache wraps the gateway
+        # call. Repeat queries → cache hit → zero LLM cost, ~5ms latency.
+        set_summarize_llm(build_cached_summarize_fn(
+            gateway, cache_store=get_summary_cache_store(),
+            model=chosen_model))
+        # Field-read LLM — extracts which Key Detail labels the user is
+        # asking for on a follow-up question ("what is the priority of
+        # it?"). Returns [] for full-summary or unrelated messages, so
+        # the handler falls through to summarise.
+        from oneops.use_cases.uc01_summarization.field_read import (
+            LlmFieldReadExtractor, set_field_read_llm,
+        )
+        _fr = LlmFieldReadExtractor(gateway, model=chosen_model)
+        async def _field_read_call(msg, labels, tenant, model, *, user_id=""):
+            return await _fr.extract(msg, labels, tenant, model,
+                                     user_id=user_id)
+        set_field_read_llm(_field_read_call)
+        # Embedding-based field matcher (Stage 3, 2026-05-29). Runs
+        # BEFORE the LLM extractor. Pure semantic — replaces the
+        # keyword `_SYNONYMS` table with cosine similarity against
+        # field descriptions. Fail-OPEN: any embedding error and the
+        # turn falls through to the LLM extractor above.
+        from oneops.use_cases.uc01_summarization.field_embedder import (
+            build_field_embedder, set_field_embedder,
+        )
+        set_field_embedder(build_field_embedder(gateway))
+        # Conversational boundary — classifies non-routed turns and emits
+        # the right reply per category. Out-of-scope literal is enforced
+        # server-side. Disambiguator is already an LlmDisambiguator (set
+        # at router construction above), so all three LLM-backed seams
+        # are wired in one consistent place.
+        app.state.gateway = gateway
+        app.state.boundary = LlmBoundaryResponder(
+            gateway, model=chosen_model)
+        # UC-3 KB query-embedding fn — semantic-search path. Uses the
+        # same gateway egress as chat calls (per-tenant cost, OTel
+        # spans, retries, LiteLLM proxy routing). The 1536-d default
+        # matches the dimensionality stored on `itsm.kb_knowledge`.
+        from oneops.use_cases.uc03_kb_lookup.kb_embed import (
+            build_cached_embed_fn, set_kb_embed_fn,
+        )
+        embed_model = os.getenv(
+            "LLM_EMBED_MODEL", "text-embedding-3-large").strip()
+        embed_dims_env = os.getenv("LLM_EMBED_DIMENSIONS", "1536").strip()
+        embed_dims = int(embed_dims_env) if embed_dims_env else None
+        set_kb_embed_fn(build_cached_embed_fn(
+            gateway, model=embed_model, dimensions=embed_dims))
+        # Phase 5b faithfulness gate — scores (query, composed answer)
+        # via embedding cosine similarity. The handler thresholds
+        # against `UC03_MIN_ANSWER_RELEVANCE_SCORE` and falls back to
+        # CASE B when the answer drifts from the query subject.
+        from oneops.use_cases.uc03_kb_lookup.kb_embed import (
+            build_relevance_scorer, set_kb_relevance_scorer,
+        )
+        set_kb_relevance_scorer(build_relevance_scorer(
+            gateway, model=embed_model, dimensions=embed_dims))
+        # UC-3 grounded answer composer (Phase 3, CASE A/B). After
+        # search_kb returns hits, the composer writes a faithful,
+        # citation-bearing reply — never fabricated, explicit "no
+        # match" path for CASE B. Same gateway egress (OTel + cost +
+        # retries + LiteLLM proxy).
+        from oneops.use_cases.uc03_kb_lookup.answer_composer import (
+            LlmAnswerComposer, set_kb_answer_composer,
+        )
+        set_kb_answer_composer(LlmAnswerComposer(gateway, model=chosen_model))
+        # Stage-1 conversation-control gate (pre-router). Same gateway
+        # egress → OTel + cost tracking + retries + LiteLLM proxy. The
+        # gate caches verdicts in Dragonfly so repeat greetings/thanks
+        # cost zero tokens.
+        from oneops.conversation.control_gate import (
+            LlmControlClassifier, set_control_classifier,
+        )
+        set_control_classifier(
+            LlmControlClassifier(gateway, model=chosen_model))
+        _log.info("oneops.api.llm_gateway_wired",
+                  model=chosen_model, embed_model=embed_model,
+                  cache_aside=True,
+                  conversational_boundary=True,
+                  llm_disambiguator=True,
+                  kb_embed=True)
+    else:
+        app.state.gateway = None
+        app.state.boundary = None
+        _log.info("oneops.api.llm_gateway_skipped",
+                  reason="LLM_GATEWAY_URL not configured")
+
+    # ── Checkpointer selection ──────────────────────────────────────────
+    # LANGGRAPH_CHECKPOINTER=postgres → durable AsyncPostgresSaver against
+    # a DEDICATED database (ADR-0004). Any other value (or unset) → the
+    # in-memory `InMemorySaver` baked into `build_executor_graph`.
+    # Production-grade: a misconfigured Postgres URL is a HARD boot
+    # failure, never a silent fallback to MemorySaver (that would mask
+    # data loss on the first restart).
+    checkpointer_mode = (os.getenv("LANGGRAPH_CHECKPOINTER", "memory")
+                         .strip().lower())
+    checkpointer = None
+    app.state.checkpointer_mode = checkpointer_mode
+    if checkpointer_mode == "postgres":
+        from oneops.executor.graph import build_postgres_checkpointer
+        try:
+            checkpointer = await build_postgres_checkpointer()
+            _log.info("oneops.api.checkpointer_selected",
+                      backend="postgres", durable=True)
+        except Exception as exc:                          # noqa: BLE001 — boot gate
+            raise RuntimeError(
+                f"LANGGRAPH_CHECKPOINTER=postgres but the checkpoint "
+                f"database is unreachable / setup failed: {exc}. "
+                f"Either fix LANGGRAPH_POSTGRES_URL or set "
+                f"LANGGRAPH_CHECKPOINTER=memory."
+            ) from exc
+    else:
+        _log.info("oneops.api.checkpointer_selected",
+                  backend="memory", durable=False)
+
+    graph = build_executor_graph(
+        router=router,
+        registry=registry,
+        step_executor=step_executor,
+        # AuthZ is wired so `builtin:authz_recheck` (G5) actually fires —
+        # UC-1 declares it in `before_invocation`. Without this wiring the
+        # hook would HookError loud (refused-silent-skip).
+        authz_service=authz,
+        # Session store: conversation history persists across turns under
+        # the same `session_id`. The frontend keeps that id in localStorage,
+        # so reload preserves the conversation.
+        session_store=session_store,
+        # Conversational boundary (when LLM is wired); falls back to the
+        # deterministic responder otherwise.
+        boundary=getattr(app.state, "boundary", None),
+        # Conversation trimmer (G2): bounds history per turn so long
+        # sessions don't grow the LLM prompt without limit. Production
+        # uses `TokenBudgetTrimmer` with an LLM-backed summariser when
+        # the gateway is wired; falls back to NoopTrimmer when there's
+        # no LLM (tests / pre-init startup).
+        conversation_trimmer=_build_conversation_trimmer(gateway, chosen_model),
+        # Durable checkpointer when postgres mode is on; else builder
+        # falls back to InMemorySaver.
+        checkpointer=checkpointer,
+    )
+    app.state.session_store = session_store
+    app.state.graph = graph
+    app.state.registry = registry
+    app.state.dispatcher = dispatcher
+
+    # ── Worker role + invoker mode (multi-tenant split topology) ────────
+    # WORKER_ROLE selects which NATS subscriptions this process attaches:
+    #   all          - single-process demo: graph worker + every agent
+    #                  worker co-located (the original behaviour).
+    #   ingress      - public HTTP/WebSocket entry only. Publishes to
+    #                  NATS, holds NO worker subscriptions. /api/chat
+    #                  routes through nats_invoke.
+    #   graph_worker - graph orchestrator only. Subscribes to
+    #                  oneops.request.chat; dispatches to agent subjects.
+    #   agent_worker - one specific agent. Requires AGENT_ID env to
+    #                  name the registry agent (e.g. uc01_summarization).
+    # Production topology runs one container per role; ingress can scale
+    # independently of graph_worker which can scale independently of each
+    # agent_worker. NATS queue groups load-balance replicas within a role.
+    worker_role = os.getenv("WORKER_ROLE", "all").strip().lower()
+    invoker_mode = os.getenv("UC_INVOKER_MODE", "local").strip().lower()
+    app.state.worker_role = worker_role
+    app.state.invoker_mode = invoker_mode
+    app.state.graph_worker = None
+
+    # When this process publishes to NATS (any role except a hypothetical
+    # pure-local one), require the connection up front so a misconfigured
+    # cluster surfaces at boot, never at first turn.
+    if invoker_mode == "nats" or worker_role in ("graph_worker", "agent_worker"):
+        from oneops.adapters.nats_client import get_nats_client
+        try:
+            await get_nats_client()
+        except Exception as exc:                          # noqa: BLE001 — boot gate
+            raise RuntimeError(
+                f"NATS is unreachable at boot: {exc}. "
+                f"Either start NATS at NATS_URL or set "
+                f"UC_INVOKER_MODE=local + WORKER_ROLE=all for a local "
+                f"single-process demo."
+            ) from exc
+
+    # Graph-worker subscription — attached when WORKER_ROLE includes it.
+    if worker_role in ("all", "graph_worker") and invoker_mode == "nats":
+        from oneops.workers.graph_worker import GraphWorker
+        worker = GraphWorker(graph)
+        await worker.start()
+        app.state.graph_worker = worker
+        _log.info("oneops.api.graph_worker_attached", role=worker_role)
+    elif worker_role == "ingress":
+        _log.info("oneops.api.graph_worker_skipped",
+                  role=worker_role,
+                  note="ingress publishes only; graph_worker is a separate process")
+    else:
+        _log.info("oneops.api.invoker_mode_selected", mode=invoker_mode)
+
+    # Agent-worker subscriptions — attached when WORKER_ROLE includes them.
+    app.state.agent_workers = []
+    if agent_transport == "nats":
+        if worker_role == "all":
+            from oneops.workers.agent_worker import AgentWorker
+            active_agents = registry.agents.list_active()
+            for agent in active_agents:
+                w = AgentWorker(agent.id, local_step_executor)
+                await w.start()
+                app.state.agent_workers.append(w)
+            _log.info("oneops.api.agent_workers_attached",
+                      role=worker_role,
+                      agents=[a.id for a in active_agents])
+        elif worker_role == "agent_worker":
+            from oneops.workers.agent_worker import AgentWorker
+            target_agent_id = (os.getenv("AGENT_ID") or "").strip()
+            if not target_agent_id:
+                raise RuntimeError(
+                    "WORKER_ROLE=agent_worker requires AGENT_ID env to be "
+                    "set to a registered agent id (e.g. uc01_summarization).")
+            agent_record = registry.agents.get_optional(target_agent_id)
+            if agent_record is None or agent_record.status.value != "active":
+                raise RuntimeError(
+                    f"AGENT_ID={target_agent_id!r} is not an active agent "
+                    f"in the registry; cannot start agent_worker.")
+            w = AgentWorker(target_agent_id, local_step_executor)
+            await w.start()
+            app.state.agent_workers.append(w)
+            _log.info("oneops.api.agent_workers_attached",
+                      role=worker_role, agents=[target_agent_id])
+        elif worker_role in ("ingress", "graph_worker"):
+            _log.info("oneops.api.agent_workers_skipped",
+                      role=worker_role,
+                      note="agent workers run as their own processes")
+    else:
+        _log.info("oneops.api.agent_transport_selected", transport="local")
+
+    _log.info(
+        "oneops.api.ready",
+        boot_ms=int((time.monotonic() - t0) * 1000),
+        active_agents=registry.active_agent_count(),
+    )
+    try:
+        yield
+    finally:
+        # Close the asyncpg pool if a Postgres ticket store opened one.
+        # Best-effort: skip on any failure so shutdown stays clean.
+        try:
+            from oneops.use_cases._shared.ticket_store import (
+                get_ticket_store,
+            )
+            store = get_ticket_store()
+            if hasattr(store, "close"):
+                await store.close()  # type: ignore[func-returns-value]
+        except Exception as exc:                # noqa: BLE001 — shutdown discipline
+            _log.warning("oneops.api.shutdown_cleanup_failed", error=str(exc))
+        # Close the LLM transport's HTTP client if we opened it.
+        try:
+            gw = getattr(app.state, "gateway", None)
+            if gw is not None:
+                transport = getattr(gw, "_transport", None)
+                if transport is not None and hasattr(transport, "aclose"):
+                    await transport.aclose()
+        except Exception as exc:                # noqa: BLE001 — shutdown discipline
+            _log.warning("oneops.api.llm_shutdown_cleanup_failed",
+                         error=str(exc))
+        # Drain the embedded GraphWorker and close NATS connection.
+        try:
+            worker = getattr(app.state, "graph_worker", None)
+            if worker is not None:
+                await worker.stop()
+            for aw in getattr(app.state, "agent_workers", []) or []:
+                await aw.stop()
+            # Close the checkpointer's owned Postgres pool, if any.
+            try:
+                graph_obj = getattr(app.state, "graph", None)
+                ckp = getattr(graph_obj, "checkpointer", None) if graph_obj else None
+                owned_pool = getattr(ckp, "_owned_pool", None)
+                if owned_pool is not None:
+                    await owned_pool.close()
+            except Exception as exc:                # noqa: BLE001 — shutdown discipline
+                _log.warning("oneops.api.checkpointer_pool_close_failed",
+                             error=str(exc))
+            if getattr(app.state, "invoker_mode", "local") == "nats":
+                from oneops.adapters.nats_client import shutdown_nats_client
+                await shutdown_nats_client()
+        except Exception as exc:                # noqa: BLE001 — shutdown discipline
+            _log.warning("oneops.api.nats_shutdown_cleanup_failed",
+                         error=str(exc))
+
+
+# ── app factory ─────────────────────────────────────────────────────────
+
+
+def create_app() -> FastAPI:
+    return build_app()
+
+
+def build_app() -> FastAPI:
+    app = FastAPI(
+        title="OneOps API",
+        version="0.1.0",
+        lifespan=_lifespan,
+        docs_url="/api/docs",
+        redoc_url=None,
+    )
+
+    # CORS — open in dev (any origin) so a separately-hosted frontend or a
+    # local SDK can call the engine. Production tightens this to the known
+    # origins list at the upstream API Gateway layer.
+    cors_origins_env = os.getenv("ONEOPS_CORS_ORIGINS", "*").strip()
+    cors_origins = (
+        ["*"] if cors_origins_env == "*"
+        else [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["x-request-id", "x-trace-id"],
+    )
+
+    # ── frontend ──────────────────────────────────────────────────────
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    async def _index() -> HTMLResponse:
+        index_path = os.path.join(static_dir, "index.html")
+        with open(index_path, encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+
+    # ── health ────────────────────────────────────────────────────────
+    @app.get("/api/health")
+    async def _health() -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "active_agents": app.state.registry.active_agent_count(),
+            "fast_path_eligible": [
+                a.id for a in app.state.registry.agents.list_active()
+                if a.fast_path is not None and a.fast_path.enabled
+            ],
+        }
+
+    # ── subsystem config / status (frontend status strip) ─────────────
+    @app.get("/api/config")
+    async def _config() -> dict[str, Any]:
+        from oneops.use_cases.uc01_summarization.cache import (
+            get_summary_cache_store,
+        )
+        from oneops.use_cases._shared.ticket_store import get_ticket_store
+        cache_backend = type(get_summary_cache_store()).__name__
+        ticket_backend = type(get_ticket_store()).__name__
+        otel_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
+        llm_gateway_url = os.getenv("LLM_GATEWAY_URL", "").strip()
+        postgres_url = os.getenv("POSTGRES_URL", "").strip()
+        nats_url = os.getenv("NATS_URL", "").strip()
+        # `enabled` here means "the wire is configured" — not "the service
+        # is alive". A live health probe is a separate, slower endpoint.
+        return {
+            "cache": {
+                "enabled": True,
+                "backend": cache_backend,
+                "summarizer_wired":
+                    _summarizer_is_wired(),
+            },
+            "otel": {
+                "enabled": bool(otel_endpoint),
+                "endpoint": otel_endpoint or None,
+                "in_memory_spans": True,         # always — we open spans even
+                                                # when no exporter is configured
+            },
+            "llm_gateway": {
+                # The gateway HTTP URL is in env; whether `set_summarize_llm`
+                # has been called is the more honest signal — it's the seam
+                # the UC handler actually uses.
+                "configured": bool(llm_gateway_url),
+                "url": llm_gateway_url or None,
+                "summarizer_wired": _summarizer_is_wired(),
+            },
+            "postgres": {
+                "configured": bool(postgres_url),
+                "backend_in_use": ticket_backend,
+            },
+            "nats": {
+                "configured": bool(nats_url),
+                "url": nats_url or None,
+                # Production-grade truth: the chip is green when this
+                # process holds a live NATS connection. Works for every
+                # topology — single-process demo, split-roles, future
+                # multi-replica — because the question being answered
+                # is "is this ingress actually talking to NATS right
+                # now?", which is a transport-state fact, not a
+                # deployment-shape assumption.
+                "wired_into_ingress": _nats_connection_is_live(),
+            },
+            "session": {
+                "wired": getattr(app.state, "session_store", None) is not None,
+                "backend": (type(getattr(app.state, "session_store", None)).__name__
+                            if getattr(app.state, "session_store", None) else "none"),
+                "durable_across_reload": True,   # localStorage on the frontend
+            },
+        }
+
+    # ── identity option lists (sidebar dropdowns) ────────────────────
+    @app.get("/api/identity-options")
+    async def _identity_options() -> dict[str, Any]:
+        # Tenants + users + roles are real values from the seeded DB and
+        # the role registry — declared as data so they swap without code.
+        # If POSTGRES_URL is set we *could* read distinct tenants live; for
+        # the demo we hardcode the canonical set and let the user type a
+        # custom value via the `custom` option.
+        return {
+            "tenants": ["T001", "T002", "T003"],
+            "users": ["oneops", "u_demo", "u_admin", "u_viewer"],
+            # Three canonical demo roles. Maps to UC-1's audience list
+            # (`service_desk_agent` and `manager` are in-audience for
+            # incident summarisation; `end_user` is OUT — exercises the
+            # authz-recheck deny path cleanly).
+            "roles": [
+                "service_desk_agent",
+                "manager",
+                "end_user",
+            ],
+            "defaults": {
+                "tenant": "T001",
+                "user": "oneops",
+                "role": "service_desk_agent",
+            },
+        }
+
+    # ── session history (frontend rehydrates on reload) ───────────────
+    @app.get("/api/session/{session_id}/history")
+    async def _session_history(
+        session_id: str = Path(..., min_length=1, max_length=64),
+        request: Request = None,             # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        store = getattr(app.state, "session_store", None)
+        if store is None:
+            return {"events": []}
+        tenant_id, _user_id, _role = _principal_from_headers(request)
+        # Tenant binding is mandatory — the store keys events under
+        # `(tenant_id, session_id)`; a mismatched tenant simply sees an
+        # empty history, never another tenant's transcript.
+        try:
+            events = await store.recent(tenant_id, session_id)
+        except Exception as exc:                  # noqa: BLE001 — boundary
+            _log.warning("oneops.api.session_history_failed",
+                         session_id=session_id, error=str(exc)[:200])
+            return {"events": []}
+        return {
+            "session_id": session_id,
+            "events": [
+                {"role": e.turn_role, "content": e.content,
+                 "turn_index": e.turn_index,
+                 "occurred_at_unix_ms": e.occurred_at_unix_ms}
+                for e in events
+            ],
+        }
+
+    # ── fast-path spec discovery (frontend renders forms from this) ───
+    @app.get("/api/fast/{uc_id}/spec")
+    async def _fast_path_spec(uc_id: str = Path(..., min_length=1)) -> dict[str, Any]:
+        spec = app.state.dispatcher.describe(uc_id)
+        if spec is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"use case {uc_id!r} does not expose a fast-path entry")
+        return {
+            "uc_id": uc_id,
+            "primary_tool_id": spec.primary_tool_id,
+            "input_fields": [
+                {"name": f.name, "type": f.type, "required": f.required,
+                 "description": f.description,
+                 "auto_derive_from": f.auto_derive_from}
+                for f in spec.input_fields
+            ],
+        }
+
+    # ── session lifecycle (server-owned create / list / delete) ───────
+    # Server is the source of truth: every session_id is minted via
+    # `POST /api/sessions`. Client localStorage is a cache of the
+    # currently-selected id; it can be deleted without losing the
+    # conversation (the server still has it until the idle TTL
+    # expires) and a stale cached id is rejected on `GET`.
+    @app.post("/api/sessions")
+    async def _session_create(request: Request) -> dict[str, Any]:
+        from oneops.session.lifecycle import get_lifecycle
+        tenant_id, user_id, _role = _principal_from_headers(request)
+        meta = await get_lifecycle().create(
+            tenant_id=tenant_id, user_id=user_id)
+        if meta is None:
+            # Lifecycle store unreachable — mint a transient id so the
+            # chat path still works. The session won't appear in the
+            # sidebar list until Dragonfly recovers, but no functional
+            # break for the user (graceful degradation).
+            sid = _new_session_id()
+            return {"session_id": sid, "transient": True}
+        return meta.to_dict()
+
+    @app.get("/api/sessions")
+    async def _session_list(request: Request,
+                            limit: int = 20) -> dict[str, Any]:
+        from oneops.session.lifecycle import get_lifecycle
+        tenant_id, user_id, _role = _principal_from_headers(request)
+        rows = await get_lifecycle().list_for_user(
+            tenant_id=tenant_id, user_id=user_id, limit=max(1, min(50, limit)))
+        return {"sessions": [m.to_dict() for m in rows]}
+
+    @app.get("/api/sessions/{session_id}")
+    async def _session_get(
+        session_id: str = Path(..., min_length=1, max_length=64),
+        request: Request = None,                    # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        from oneops.session.lifecycle import get_lifecycle
+        tenant_id, _user_id, _role = _principal_from_headers(request)
+        meta = await get_lifecycle().get(
+            tenant_id=tenant_id, session_id=session_id)
+        if meta is None:
+            raise HTTPException(status_code=404,
+                                detail="session not found or expired")
+        return meta.to_dict()
+
+    @app.delete("/api/sessions/{session_id}")
+    async def _session_delete(
+        session_id: str = Path(..., min_length=1, max_length=64),
+        request: Request = None,                    # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        from oneops.session.lifecycle import get_lifecycle
+        tenant_id, _user_id, _role = _principal_from_headers(request)
+        ok = await get_lifecycle().delete(
+            tenant_id=tenant_id, session_id=session_id)
+        # Best effort: also remove the conversation log so a re-create
+        # with the same id (theoretically impossible — uuid4) wouldn't
+        # see ghost events. The hot window is implicitly purged when
+        # there is no cold log to rebuild from.
+        store = getattr(app.state, "session_store", None)
+        if store is not None:
+            try:
+                # Append a terminal "closed" sentinel? — no, just leave the
+                # cold log to TTL out naturally per retention policy. The
+                # metadata removal above is what makes it invisible.
+                pass
+            except Exception:
+                pass
+        return {"deleted": ok, "session_id": session_id}
+
+    # ── chat door (natural language) ─────────────────────────────────
+    @app.post("/api/chat", response_model=TurnResponse)
+    async def _chat(req: ChatRequest, request: Request) -> TurnResponse:
+        from oneops.session.lifecycle import get_lifecycle
+        tenant_id, user_id, role = _principal_from_headers(request)
+        request_id = _new_request_id()
+        lifecycle = get_lifecycle()
+        # Symmetric session-id ownership (production fix 2026-05-28):
+        #   * Client sent a session_id → lookup. If found, use as-is.
+        #     If unknown (first turn of a new session, or expired), ADOPT
+        #     the client's id by passing it to lifecycle.create(). The
+        #     lifecycle validates structural format and either adopts or
+        #     falls back to a fresh-mint; the caller always learns the
+        #     actual id via the response.
+        #   * Client sent none → mint (auto-create new session).
+        # The pre-fix behaviour (server-owned, replace-on-unknown) broke
+        # multi-turn for any client that doesn't pre-create sessions via
+        # POST /api/sessions — every turn became a fresh session, the
+        # rewriter saw empty history, follow-ups misrouted to UC-3.
+        # Adoption fixes this without breaking the frontend flow
+        # (frontend still POSTs /api/sessions first; lifecycle.get finds
+        # it on subsequent /api/chat calls).
+        client_sid = (req.session_id or "").strip()
+        if client_sid:
+            existing = await lifecycle.get(
+                tenant_id=tenant_id, session_id=client_sid)
+            if existing is None:
+                fresh = await lifecycle.create(
+                    tenant_id=tenant_id, user_id=user_id,
+                    title=(req.message or "")[:120],
+                    session_id=client_sid,                  # adopt if safe
+                )
+                session_id = (fresh.session_id if fresh is not None
+                              else client_sid)
+            else:
+                session_id = client_sid
+        else:
+            fresh = await lifecycle.create(
+                tenant_id=tenant_id, user_id=user_id,
+                title=(req.message or "")[:120])
+            session_id = (fresh.session_id if fresh is not None
+                          else _new_session_id())
+        envelope: dict[str, Any] = {
+            "request_id": request_id,
+            "tenant_id": tenant_id,
+            "session_id": session_id,
+            "user_id": user_id,
+            "role": role,
+            "message": req.message,
+        }
+        response = await _run(request, envelope, door="chat",
+                              thread_id=request_id, session_id=session_id)
+        # Slide the idle TTL and bump turn_count + title on every
+        # successful turn. Failures are non-fatal — the chat reply is
+        # already produced.
+        try:
+            await lifecycle.touch(
+                tenant_id=tenant_id, session_id=session_id, user_id=user_id,
+                title=(req.message or "")[:120], bump_turn_count=True)
+        except Exception:
+            pass
+        return response
+
+    # ── chat door (WebSocket) ─────────────────────────────────────────
+    # Production topology (per architecture plan):
+    #   Browser ── WebSocket ──> AWS API Gateway (WebSocket API) ──>
+    #   Ingress (this) ── NATS ──> graph_worker ── NATS ──>
+    #   agent_worker ── NATS ──> ingress ── WS frame ──> Browser
+    #
+    # Production-grade details:
+    #   * Identity bound at HANDSHAKE only (headers from API Gateway).
+    #     Subsequent frames cannot change tenant / user / role — the
+    #     server keeps the principal in the connection scope. Defence
+    #     against the "envelope spoofing" class.
+    #   * Per-frame request_id; the user can pipeline several queries
+    #     on one socket and get matching replies (correlation id in the
+    #     reply payload). NATS request/reply already round-trips this.
+    #   * Heartbeat: rely on the WebSocket protocol's PING/PONG, kept
+    #     alive by uvicorn's default 20s timeout. Closed sockets are
+    #     dropped server-side; the browser opens a new one on next
+    #     turn (frontend reconnect logic).
+    #   * Graceful degradation: NATSUnavailableError / TimeoutError on
+    #     the per-frame round-trip surface as a typed `service_degraded`
+    #     response frame — never closes the socket on a transient
+    #     failure, just sends the message back to the browser.
+    #   * Backpressure: `await ws.send_json(...)` is awaited per frame;
+    #     a slow browser blocks the per-connection loop, not the whole
+    #     ingress (one task per socket).
+    @app.websocket("/ws/chat")
+    async def _ws_chat(ws: WebSocket) -> None:
+        # Bind identity at connect — never per-frame. Same fallback rules
+        # as the HTTP path so the demo works without auth headers.
+        h = ws.headers
+        tenant_id = (h.get("x-tenant-id") or DEFAULT_TENANT_FALLBACK).strip()
+        user_id = (h.get("x-user-id") or DEFAULT_USER_FALLBACK).strip()
+        role = (h.get("x-role") or DEFAULT_ROLE_FALLBACK).strip()
+        await ws.accept()
+        _log.info("oneops.ws.connected",
+                  tenant_id=tenant_id, user_id=user_id, role=role)
+        try:
+            while True:
+                # One frame = one chat turn. Browser sends:
+                #   {"message": "...", "session_id": "..."}
+                # Server replies with the same TurnResponse shape the HTTP
+                # path returns — frontend renders identically.
+                frame = await ws.receive_json()
+                if not isinstance(frame, dict):
+                    await ws.send_json({
+                        "door": "chat",
+                        "final_status": "invalid_request",
+                        "final_response": "Each frame must be a JSON object.",
+                        "step_results": [], "session_id": "",
+                        "request_id": "", "trace_id": None, "latency_ms": 0,
+                    })
+                    continue
+
+                message = str(frame.get("message") or "").strip()
+                if not message:
+                    await ws.send_json({
+                        "door": "chat",
+                        "final_status": "invalid_request",
+                        "final_response": "`message` is required.",
+                        "step_results": [], "session_id": "",
+                        "request_id": "", "trace_id": None, "latency_ms": 0,
+                    })
+                    continue
+
+                request_id = _new_request_id()
+                session_id = (str(frame.get("session_id") or "").strip()
+                              or _new_session_id())
+                envelope: dict[str, Any] = {
+                    "request_id": request_id,
+                    "tenant_id": tenant_id,
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "role": role,
+                    "message": message,
+                }
+                try:
+                    reply = await _run(
+                        # `_run` uses the request only for `app.state` and
+                        # OTel context; the WS connection's scope provides
+                        # the same. We pass a small shim that exposes
+                        # `app.state` so the helper stays unchanged.
+                        _RequestShim(ws.app), envelope, door="chat",
+                        thread_id=request_id, session_id=session_id)
+                except Exception as exc:                  # noqa: BLE001
+                    _log.warning("oneops.ws.turn_failed", error=str(exc)[:200])
+                    reply = TurnResponse(
+                        door="chat",
+                        final_status="service_degraded",
+                        final_response=("That request couldn't complete. "
+                                         "Please try again."),
+                        step_results=[], session_id=session_id,
+                        request_id=request_id, trace_id=None, latency_ms=0,
+                    )
+
+                # Pydantic v2: .model_dump() — single source of truth so
+                # WS frames are byte-identical to HTTP responses.
+                await ws.send_json(reply.model_dump())
+        except WebSocketDisconnect:
+            _log.info("oneops.ws.disconnected",
+                      tenant_id=tenant_id, user_id=user_id)
+        except Exception as exc:                          # noqa: BLE001
+            _log.warning("oneops.ws.error", error=str(exc)[:200])
+            try:
+                await ws.close(code=1011)
+            except Exception:                             # noqa: BLE001
+                pass
+
+    # ── fast-path door (button-shaped, UC-declared) ──────────────────
+    @app.post("/api/fast/{uc_id}", response_model=TurnResponse)
+    async def _fast_path(
+        uc_id: str = Path(..., min_length=1),
+        req: FastPathPostRequest | None = None,
+        request: Request = None,                # type: ignore[assignment]
+    ) -> TurnResponse:
+        tenant_id, user_id, role = _principal_from_headers(request)
+        request_id = _new_request_id()
+        session_id = ((req and req.session_id) or _new_session_id()).strip()
+        inputs = (req.inputs if req else {}) or {}
+        try:
+            dispatch = app.state.dispatcher.dispatch(FastPathRequest(
+                uc_id=uc_id, inputs=inputs))
+        except FastPathError as exc:
+            # Surface dispatcher rejections as a normal clarification turn.
+            # Raw HTTP 400 with internal text ("fast-path requires fields:
+            # ['service_id']") leaks implementation detail to the user and
+            # never matches the "system should validate and respond per
+            # contract" rule. A bare-digit / missing-prefix id from the
+            # button lands here.
+            _log.info("fast_path.input_clarification",
+                      uc_id=uc_id, error=str(exc)[:200])
+            primary = next(iter(inputs.values()), "") if inputs else ""
+            primary_text = f" '{primary}'" if primary else ""
+            return TurnResponse(
+                door="fast_path",
+                request_id=request_id,
+                trace_id=None,
+                session_id=session_id,
+                final_status="clarification",
+                final_response=(
+                    "I couldn't act on that input"
+                    + primary_text
+                    + ". Please provide a complete record id "
+                    "(for example INC0001001, REQ0002001, PBM0003001, "
+                    "CHG0004001) and try again."),
+                step_results=[],
+                router_diagnostics=[],
+                latency_ms=0,
+                summarizer_wired=_summarizer_is_wired(),
+                cache_hit=None,
+                cache_age_s=None,
+            )
+        # Serialise the plan into the shape the executor's state holds.
+        plan_state = [
+            {"step_id": s.step_id, "agent_id": s.agent_id,
+             "parameters": dict(s.parameters), "depends_on": list(s.depends_on)}
+            for s in dispatch.plan.steps
+        ]
+        envelope: dict[str, Any] = {
+            "request_id": request_id,
+            "tenant_id": tenant_id,
+            "session_id": session_id,
+            "user_id": user_id,
+            "role": role,
+            # A human-readable synthetic message — what the user effectively
+            # asked when they pressed the button. This is what appears in
+            # the conversation log and on reload, so it must read naturally
+            # ("Summarize INC0001001"), never as debug junk.
+            "message": _humanise_fast_path_request(uc_id, inputs),
+            # Pre-built plan + explicit fast-path stamp — see executor.graph
+            # entry-branch contract.
+            "plan": plan_state,
+            "route_outcome": "routed",
+            "entry_mode": "fast_path",
+        }
+        return await _run(request, envelope, door="fast_path",
+                          thread_id=request_id, session_id=session_id)
+
+    return app
+
+
+# ── shared turn driver ──────────────────────────────────────────────────
+
+
+async def _run(
+    request: Request, envelope: dict[str, Any], *,
+    door: str, thread_id: str, session_id: str,
+) -> TurnResponse:
+    """Drive one turn — either in-process (default) or over NATS
+    (when UC_INVOKER_MODE=nats). Same envelope, same TurnResponse shape;
+    only the transport differs."""
+    t0 = time.monotonic()
+    mode = getattr(request.app.state, "invoker_mode", "local")
+    try:
+        with _tracer.start_as_current_span(
+            "oneops.api.turn",
+            attributes={
+                "oneops.door": door,
+                "oneops.tenant_id": envelope["tenant_id"],
+                "oneops.user_id": envelope.get("user_id", ""),
+                "oneops.invoker_mode": mode,
+            },
+        ) as span:
+            if mode == "nats":
+                from oneops.api.nats_invoker import nats_invoke
+                # The worker computes latency_ms / trace_id of its own
+                # leg; we still wrap the whole HTTP turn under
+                # `oneops.api.turn` so the end-to-end span captures the
+                # NATS round-trip too.
+                reply = await asyncio.wait_for(
+                    nats_invoke(envelope, timeout_s=60.0), timeout=65.0)
+                trace_id = (reply.get("trace_id")
+                            or (format(span.get_span_context().trace_id, "032x")
+                                if span.get_span_context().trace_id else None))
+                return TurnResponse(
+                    door=door,
+                    final_status=str(reply.get("final_status") or ""),
+                    final_response=str(reply.get("final_response") or ""),
+                    step_results=list(reply.get("step_results") or []),
+                    session_id=session_id,
+                    request_id=envelope["request_id"],
+                    trace_id=trace_id,
+                    latency_ms=int((time.monotonic() - t0) * 1000),
+                )
+
+            # in-process path (default)
+            graph = request.app.state.graph
+            out = await asyncio.wait_for(
+                run_turn(graph, envelope,
+                         config={"configurable": {"thread_id": thread_id}}),
+                timeout=60.0,
+            )
+            trace_id = format(span.get_span_context().trace_id, "032x") \
+                if span.get_span_context().trace_id else None
+    except asyncio.TimeoutError as exc:
+        # Soft degradation — a typed turn response, not HTTP 504.
+        # Production should not surface raw transport timeouts as 5xx;
+        # the user sees a clean retryable message and the trace carries
+        # the timeout for ops.
+        _log.warning("oneops.api.turn_timeout", door=door)
+        return TurnResponse(
+            door=door,
+            final_status="service_degraded",
+            final_response=(
+                "The assistant is taking longer than expected. "
+                "Please try that again in a moment."),
+            step_results=[],
+            session_id=session_id,
+            request_id=envelope["request_id"],
+            trace_id=None,
+            latency_ms=int((time.monotonic() - t0) * 1000),
+        )
+    except NATSUnavailableError as exc:
+        # Transport degradation surfaces as a typed turn response too —
+        # retries already exhausted by `resilient_call`, or the circuit
+        # breaker is OPEN. The user sees a clean retryable message; the
+        # logged warning carries the breaker / exhaustion reason for ops.
+        _log.warning("oneops.api.turn_degraded",
+                     door=door, reason=str(exc)[:200])
+        return TurnResponse(
+            door=door,
+            final_status="service_degraded",
+            final_response=(
+                "The assistant is temporarily unavailable. "
+                "Please try again shortly."),
+            step_results=[],
+            session_id=session_id,
+            request_id=envelope["request_id"],
+            trace_id=None,
+            latency_ms=int((time.monotonic() - t0) * 1000),
+        )
+    except OneOpsError as exc:
+        raise HTTPException(status_code=500,
+                            detail=f"engine failure: {exc}") from exc
+    except Exception as exc:                  # noqa: BLE001 — boundary
+        _log.warning("oneops.api.turn_failed",
+                     door=door, error=str(exc)[:200])
+        raise HTTPException(status_code=500,
+                            detail=f"engine failure: {type(exc).__name__}") \
+            from exc
+    return TurnResponse(
+        door=door,
+        final_status=out.get("final_status") or "",
+        final_response=out.get("final_response") or "",
+        step_results=list(out.get("step_results") or []),
+        session_id=session_id,
+        request_id=envelope["request_id"],
+        trace_id=trace_id,
+        latency_ms=int((time.monotonic() - t0) * 1000),
+    )
+
+
+__all__ = ["build_app", "create_app", "TurnResponse"]

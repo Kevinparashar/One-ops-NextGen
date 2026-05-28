@@ -1,0 +1,24 @@
+{
+  "description": "Field-exposure policy for ITSM entity records returned by UC tool handlers. Each field carries a data classification; a handler returns a field to the model only when its classification ranks below the withhold threshold. Fields not listed default to 'internal' (exposable). This is registry data — marking a new field sensitive is a one-line edit here, never a code change (Component Spec C1, C12).",
+  "default_classification": "internal",
+  "withhold_at_or_above": "confidential",
+  "classifications": {
+    "tenant_id": "restricted"
+  },
+  "internal_content": {
+    "description": "Record arrays whose items carry a per-item visibility flag. An item is internal unless its flag is true; internal items are returned only to a privileged (staff) role. An end-user or unrecognised role sees only public items. Default-deny — a role must be listed in privileged_roles to see internal content.",
+    "arrays": ["work_notes", "comments", "timeline"],
+    "visibility_flag": "is_public",
+    "privileged_roles": [
+      "service_desk_agent", "problem_manager", "change_manager",
+      "application_support", "network_engineer", "database_admin",
+      "security_engineer", "cmdb_admin", "knowledge_manager",
+      "asset_manager", "cloud_engineer", "it_director"
+    ]
+  },
+  "kb_audience": {
+    "description": "Knowledge-base article audiences. 'end_user_visible' audiences are returned to any role; 'privileged_only' audiences are returned only to a privileged (staff) role — the same privileged_roles list as internal_content. Default-deny: an unrecognised role sees only end_user_visible audiences.",
+    "end_user_visible": ["all", "end_user"],
+    "privileged_only": ["technician"]
+  }
+}

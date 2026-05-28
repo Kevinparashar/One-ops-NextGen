@@ -1,0 +1,48 @@
+{
+  "active_version": 1,
+  "id": "get_ticket_details",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "summary",
+          "field_read"
+        ]
+      },
+      "created_at": "2026-05-20T10:49:43.471316+00:00",
+      "description": "Fetch the core field snapshot of a work record by id \u2014 title, description, status, priority, assignment group/assignee, categorisation, key timestamps. Read-only toward ITSM.",
+      "execution_type": "read",
+      "handler_ref": "oneops.use_cases.uc01_summarization.handlers:get_ticket_details",
+      "id": "get_ticket_details",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "data_classification": "internal",
+          "description": "Canonical work-record id (e.g. INC0048213).",
+          "name": "ticket_id",
+          "required": true,
+          "type": "str"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Service module: incident | request | problem | change | asset | cmdb_ci.",
+          "name": "service_id",
+          "required": true,
+          "type": "str"
+        }
+      ],
+      "requires_scopes": [
+        "read:ticket"
+      ],
+      "status": "active",
+      "timeout_ms": 15000,
+      "updated_at": "2026-05-20T10:49:43.471329+00:00",
+      "version": 1
+    }
+  }
+}

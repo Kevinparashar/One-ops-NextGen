@@ -1,0 +1,91 @@
+{
+  "active_version": 1,
+  "id": "uc03_kb_lookup",
+  "versions": {
+    "1": {
+      "abac_tags": {
+        "audience": [
+          "viewer",
+          "employee",
+          "service_desk_agent",
+          "manager"
+        ],
+        "data_classification": "internal",
+        "service": [
+          "knowledge"
+        ],
+        "tier": "read"
+      },
+      "activation_condition": {
+        "operator": "any_of",
+        "negate": false,
+        "clauses": [
+          {
+            "clauses": [],
+            "negate": false,
+            "operator": "leaf",
+            "signal": "entity_service_in",
+            "values": ["knowledge"]
+          },
+          {
+            "clauses": [],
+            "negate": false,
+            "operator": "leaf",
+            "signal": "intent_in",
+            "values": ["knowledge_base", "kb_search", "how_to"]
+          }
+        ],
+        "signal": null,
+        "values": []
+      },
+      "compound_of": [],
+      "created_at": "2026-05-20T10:49:43.471561+00:00",
+      "depends_on": [],
+      "description": "Retrieves supporting knowledge content from the knowledge corpus — articles, runbooks, playbooks, SOPs, troubleshooting guides, known-issue write-ups, previous resolutions, and reference material. Two modes: TOPIC search (no entity — e.g. 'how do I fix VPN') and ENTITY-SCOPED search (KB articles ABOUT a record / CI / asset). Renders article title + body (Symptom / Cause / Resolution as present) + source citation. Use this agent when the user wants MATERIAL THAT HELPS UNDERSTAND, RESOLVE, OR SUPPORT a topic or record — not the record's own stored field values. Capability is bounded to the KB corpus; this agent does NOT render the record's own fields (status, priority, owner, SLA, root_cause, RCA, linked-record ids, or any other on-record attribute).",
+      "determinism_level": "low",
+      "excludes": [],
+      "hooks": {
+        "after_invocation": [],
+        "before_invocation": []
+      },
+      "id": "uc03_kb_lookup",
+      "intent_family": "knowledge_base",
+      "journey": null,
+      "owner": "team-itsm",
+      "policy_refs": [
+        "policy_kb_audience",
+        "policy_tenant_scope"
+      ],
+      "routing_shape": "single_agent",
+      "status": "active",
+      "tool_refs": [
+        {
+          "tool_id": "search_kb",
+          "version": 1
+        },
+        {
+          "tool_id": "search_kb_by_ticket",
+          "version": 1
+        },
+        {
+          "tool_id": "get_kb_article",
+          "version": 1
+        }
+      ],
+      "fast_path": {
+        "enabled": false,
+        "primary_tool_id": "get_kb_article",
+        "input_fields": [
+          {
+            "name": "article_id",
+            "type": "str",
+            "required": true,
+            "description": "Canonical knowledge-base article id (e.g. KB0005010)."
+          }
+        ]
+      },
+      "updated_at": "2026-05-26T11:05:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

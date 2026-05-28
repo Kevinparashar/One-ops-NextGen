@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Error Object",
+  "type": "object",
+  "required": [
+    "code",
+    "message"
+  ],
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "e.g. PERMISSION_DENIED (UC-1.9), STALE_IGNORED, TOOL_FAILED"
+    },
+    "message": {
+      "type": "string"
+    },
+    "agent_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tool_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "details": {}
+  },
+  "additionalProperties": true,
+  "examples": [
+    {
+      "code": "PERMISSION_DENIED",
+      "message": "Caller lacks view permission on ticket INC001 (UC-1.9).",
+      "agent_id": "summarization_agent",
+      "tool_id": "get_ticket_details",
+      "details": {
+        "tenant_id": "T001",
+        "ticket_id": "INC001",
+        "service_id": "incident"
+      }
+    }
+  ]
+}

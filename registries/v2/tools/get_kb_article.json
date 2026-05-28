@@ -1,0 +1,42 @@
+{
+  "active_version": 1,
+  "id": "get_kb_article",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "kb_search",
+          "kb_article_fetch",
+          "kb_ticket_search"
+        ]
+      },
+      "created_at": "2026-05-20T10:49:43.471475+00:00",
+      "description": "Fetch a single knowledge article by id \u2014 body, metadata, rating, tags. Published articles only. Read-only.",
+      "execution_type": "read",
+      "handler_ref": "oneops.use_cases.uc03_kb_lookup.handlers:get_kb_article",
+      "id": "get_kb_article",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "data_classification": "internal",
+          "description": "Knowledge article id (e.g. KB0012345).",
+          "name": "article_id",
+          "required": true,
+          "type": "str"
+        }
+      ],
+      "requires_scopes": [
+        "read:kb"
+      ],
+      "status": "active",
+      "timeout_ms": 15000,
+      "updated_at": "2026-05-20T10:49:43.471476+00:00",
+      "version": 1
+    }
+  }
+}

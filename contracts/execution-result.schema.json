@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-services.local/poc/contracts/execution-result.schema.json",
+  "title": "ExecutionResult",
+  "description": "Executor output after running plan steps. Aligns with architecture §5.3. Normative: use error_message (not error), overall_status only on ExecutionResult, StepResult.status only in success | validation_error | blocked | failed.",
+  "type": "object",
+  "$defs": {
+    "StepResult": {
+      "type": "object",
+      "required": [
+        "step_id",
+        "agent_id",
+        "status"
+      ],
+      "properties": {
+        "step_id": {
+          "type": "string"
+        },
+        "agent_id": {
+          "type": "string",
+          "description": "Must match the agent_id from the corresponding PlanStep."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "success",
+            "validation_error",
+            "blocked",
+            "failed"
+          ],
+          "description": "Per-step outcome; do not use error, skipped, or completed."
+        },
+        "result": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Agent/tool payload (e.g. { \"assistant_text\": \"...\" } or structured agent output).",
+          "additionalProperties": true
+        },
+        "error_message": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Human-readable failure detail when status is not success."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "request_id",
+    "step_results",
+    "overall_status"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "description": "Same correlation id as ExecutionPlan.request_id"
+    },
+    "step_results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/StepResult"
+      },
+      "description": "One entry per executed step (order should follow plan execution order)."
+    },
+    "overall_status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "partial",
+        "failed"
+      ],
+      "description": "Aggregate executor outcome; map to TeamRunOutput.final_status per architecture §5.4.1."
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "request_id": "req-20260318-001",
+      "step_results": [
+        {
+          "step_id": "step_1",
+          "agent_id": "summarization_agent",
+          "status": "success",
+          "result": {
+            "summary_markdown": "**Status**: Open\n\n**What happened**: ...",
+            "from_cache": false
+          },
+          "error_message": null
+        }
+      ],
+      "overall_status": "success"
+    },
+    {
+      "request_id": "req-partial-001",
+      "step_results": [
+        {
+          "step_id": "step_1",
+          "agent_id": "summarization_agent",
+          "status": "success",
+          "result": {
+            "summary_markdown": "Partial summary."
+          },
+          "error_message": null
+        },
+        {
+          "step_id": "step_2",
+          "agent_id": "triage_agent",
+          "status": "blocked",
+          "result": null,
+          "error_message": "Policy blocked automatic priority change."
+        }
+      ],
+      "overall_status": "partial"
+    }
+  ]
+}

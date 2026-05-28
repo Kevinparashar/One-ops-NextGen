@@ -1,0 +1,881 @@
+{
+  "registry_name": "tool_registry",
+  "version": "1.0.0",
+  "tools": [
+    {
+      "tool_id": "get_ticket_details",
+      "capability_id": "summary",
+      "supported_service_ids": [
+        "incident",
+        "request",
+        "problem",
+        "change"
+      ],
+      "function_name": "get_ticket_details",
+      "module_path": "tools.summary_tools",
+      "description": "Retrieves the authoritative core snapshot of a work record whose module is selected by service_id: incident (e.g. INC*), request (REQ*), problem (PRB*), or change (CHG*)—identifier, title, long description, status, priority, assignment group and assignee, categorization, and key timestamps. Threaded work notes, customer comments, and state transitions are not duplicated here; they come from get_ticket_timeline. Use as the structured field fetch in summarization and analysis pipelines aligned with summarization_agent (read-only toward ITSM). Caller must pass ticket_id, tenant_id, and service_id consistent with the underlying record type per service-registry. Lacking view permission must yield a permission error without leaking fields.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "get_ticket_timeline",
+      "capability_id": "summary",
+      "supported_service_ids": [
+        "incident",
+        "request",
+        "problem",
+        "change"
+      ],
+      "function_name": "get_ticket_timeline",
+      "module_path": "tools.summary_tools",
+      "description": "Returns the chronological activity stream required for narrative summaries and sentiment: customer-visible comments, work notes (when policy allows agents to see them), and major status transitions—scoped by service_id to incident, request, problem, or change. Matches the validation expectation that summaries draw on all work notes, comments, and transitions—not only the title block. max_entries caps extremely long threads so outputs stay concise while favoring recent and high-signal entries. Read-only; together with get_ticket_details and get_ticket_links it supplies the evidence plane for summarization_agent.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "max_entries",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "get_cached_summary",
+      "capability_id": "summary",
+      "supported_service_ids": [
+        "incident",
+        "request",
+        "problem",
+        "change"
+      ],
+      "function_name": "get_cached_summary",
+      "module_path": "tools.summary_tools",
+      "description": "Reads a previously generated natural-language summary from AI-side storage for a ticket keyed by tenant_id, ticket_id, and service_id. A hit is returned only when no ticket mutations occurred after generation—comments, status changes, reassignment, linked-item changes, etc.—so freshness is event-driven with no time-based TTL by default. On miss or staleness the pipeline should refetch via get_ticket_details, get_ticket_timeline, get_ticket_links, and attachment metadata, then call summarize_entity and optionally put_cached_summary. Supports the product rule that the same ticket state yields the same summary whether invoked from ticket UI or chat. Caller visibility matches the source ticket; unauthorized access must not return cached text.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "put_cached_summary",
+      "capability_id": "summary",
+      "supported_service_ids": [
+        "incident",
+        "request",
+        "problem",
+        "change"
+      ],
+      "function_name": "put_cached_summary",
+      "module_path": "tools.summary_tools",
+      "description": "Persists summarize_entity output and lineage metadata to the AI cache so repeat requests for an unchanged ticket avoid redundant LLM work—consistent with summarization_agent’s read-only ITSM posture. source_mutation_version (or equivalent) must tag the ticket revision at write time for staleness checks on later reads. Does not write to the ITSM ticket body but does write to AI-side cache storage. tool_type is cache (not action) so executor read-step validation does not require a separate action step for this tool.",
+      "tool_type": "cache",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "summary",
+          "service_id"
+        ],
+        "optional": [
+          "source_mutation_version"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "get_ticket_links",
+      "capability_id": "summary",
+      "supported_service_ids": [
+        "incident",
+        "request",
+        "problem",
+        "change"
+      ],
+      "function_name": "get_ticket_links",
+      "module_path": "tools.summary_tools",
+      "description": "Collects relationship edges for the focal ticket: linked CIs, parent/child tickets, duplicates, and generic related items—reference metadata only (ids, short titles, link type), never full peer record bodies or cross-tenant content. When a linked ticket sits in another tenant, only an opaque reference may appear; its text is not fetched or summarized through this path. Feeds the “Linked” section of structured summaries and impact lines (e.g. related change or known error). Visibility follows caller rights on the source record and platform rules on targets.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "get_ticket_attachment_metadata",
+      "capability_id": "summary",
+      "supported_service_ids": [
+        "incident",
+        "request",
+        "problem",
+        "change"
+      ],
+      "function_name": "get_ticket_attachment_metadata",
+      "module_path": "tools.summary_tools",
+      "description": "Lists attachment filenames, MIME types, sizes, and upload times so summaries and chat can acknowledge evidence without reading bytes—satisfying the requirement that attachment content is not analyzed by default and that narratives can state when files were referenced but not opened. max_items caps large lists. No binary return. Same RBAC as other summarization reads on the ticket.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "max_items",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "summarize_entity",
+      "capability_id": "summary",
+      "supported_service_ids": [
+        "incident",
+        "request",
+        "problem",
+        "change"
+      ],
+      "function_name": "summarize_entity",
+      "module_path": "tools.summary_tools",
+      "description": "Synthesizes structured markdown for incident, request, problem, or change—status, priority, assignment, what happened, key updates, pending work, and linked references—so ticket UI and AI chat can show the same narrative for the same ticket state when inputs match. Accepts optional pre-fetched ticket_core, ticket_timeline, ticket_links, and attachment_metadata to avoid duplicate ITSM calls in executor-chained flows. language should follow the ticket locale or tenant configuration when set; summary_length helps bound verbosity on tickets with very long threads. Does not mutate ITSM; output is suitable for put_cached_summary. service_id must match the record module per service-registry.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "language",
+          "summary_length",
+          "ticket_core",
+          "ticket_timeline",
+          "ticket_links",
+          "attachment_metadata"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "find_similar_entities",
+      "capability_id": "similar_entity",
+      "supported_service_ids": [
+        "incident",
+        "request",
+        "problem",
+        "change"
+      ],
+      "function_name": "find_similar_entities",
+      "module_path": "tools.similarity_tools",
+      "description": "Finds peer tickets similar to a source incident, request, problem, or change for pattern discovery, duplicate awareness, and resolution reuse—aligned with similar_tickets_agent. Embedding text is typically built from title, description, and recent customer-facing updates; vector retrieval is usually combined with metadata post-filters (tenant, optional time_window_hours, same_category_only, same_service_only). prefer_status steers results toward open work for duplicate-style outcomes or resolved work for precedent reuse; min_similarity_score drops weak matches. include_related can enrich the embedded text with linked context. Re-ranking often blends semantic similarity, metadata overlap, and recency. Never returns cross-tenant rows; omit candidates the caller cannot view.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "max_results",
+          "time_window_hours",
+          "same_category_only",
+          "same_service_only",
+          "prefer_status",
+          "min_similarity_score",
+          "include_related",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "search_kb",
+      "capability_id": "kb_lookup",
+      "supported_service_ids": [
+        "knowledge"
+      ],
+      "function_name": "search_kb",
+      "module_path": "ai_service.use_cases.uc03_kb_lookup.tools",
+      "description": "Searches the knowledge base from a natural-language question. Implements hybrid retrieval (semantic + BM25), applies audience and role filtering, and returns ranked articles with excerpts. top_k caps results (max 10). Tenant-isolated. Audience and state filtering handled internally by the tool.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "query",
+          "tenant_id",
+          "role"
+        ],
+        "optional": [
+          "top_k",
+          "category"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "search_kb_by_ticket",
+      "capability_id": "kb_lookup",
+      "supported_service_ids": [
+        "knowledge"
+      ],
+      "function_name": "search_kb_by_ticket",
+      "module_path": "ai_service.use_cases.uc03_kb_lookup.tools",
+      "description": "Ticket-grounded KB search. Builds query context from the entity record fields declared in config.yaml ticket_context. Applies CI and incident relationship boosts when the article is linked to the same CI or incident. Tenant- and audience-scoped.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "entity_id",
+          "entity_type",
+          "source_entity",
+          "tenant_id",
+          "role"
+        ],
+        "optional": [
+          "top_k"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "get_kb_article",
+      "capability_id": "kb_lookup",
+      "supported_service_ids": [
+        "knowledge"
+      ],
+      "function_name": "get_kb_article",
+      "module_path": "ai_service.use_cases.uc03_kb_lookup.tools",
+      "description": "Fetches one knowledge article by kb_id. Honors audience and role — end-user channels never receive technician-only articles. Draft articles only shown to roles with read:kb_drafts permission. Retired articles surface a retirement notice.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "kb_id",
+          "tenant_id",
+          "role"
+        ],
+        "optional": []
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "analyze_entity_sentiment",
+      "capability_id": "sentiment",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "analyze_entity_sentiment",
+      "module_path": "tools.sentiment_tools",
+      "description": "Scores end-customer emotional tone on incidents and requests for badges, routing, and proactive handling—aligned with sentiment_agent. analysis_scope selects ticket-level rollup, latest customer comment (auto-trigger style), or multi-comment trajectory (improving, stable, deteriorating). Default path ignores agent and system work notes; set include_non_customer only when policy allows scoring non-customer text. Outputs typically include label, confidence 0–1, key phrases, escalation risk, and trajectory; high-volume threads may cap analyzed customer comments (e.g. recent window) while preserving trend. Non-English source may be analyzed in place with normalized labels per tenant rules.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "analysis_scope",
+          "comment_id",
+          "comment_text",
+          "max_customer_comments",
+          "language",
+          "include_non_customer",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "classify_entity",
+      "capability_id": "triage",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "classify_entity",
+      "module_path": "tools.triage_tools",
+      "description": "Classification stage of triage_agent on incidents and requests: proposes category and subcategory with confidence and rationale, using full ticket text when available or title_snippet/description_snippet for sparse records. Honors portal preselected_category fields, VIP and affected_ci_hint, and re_triage for manual reruns. recommendation_only returns advice only—matches chat flows where the agent shows “where this should go” before persisting.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "re_triage",
+          "recommendation_only",
+          "title_snippet",
+          "description_snippet",
+          "preselected_category",
+          "preselected_subcategory",
+          "requester_department",
+          "requester_location",
+          "vip_flag",
+          "affected_ci_hint",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "prioritize_entity",
+      "capability_id": "triage",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "prioritize_entity",
+      "module_path": "tools.triage_tools",
+      "description": "Priority stage of triage_agent: maps impact and urgency (explicit levels or inferred) to P1–P4-style outcomes with rationale, optionally informed by vip_flag, sentiment_hint, and prior_classification_confidence. recommendation_only supports preview-only chat. When applied, drives SLA targets and queue ordering per tenant matrix rules.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "re_triage",
+          "recommendation_only",
+          "impact_level",
+          "urgency_level",
+          "vip_flag",
+          "sentiment_hint",
+          "prior_classification_confidence",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "check_duplicate_candidates",
+      "capability_id": "triage",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "check_duplicate_candidates",
+      "module_path": "tools.triage_tools",
+      "description": "Duplicate-discovery stage of triage_agent: read-only scan of recent open tickets (configurable window, often on the order of two days, and high similarity threshold) for the same tenant and service_id to flag likely duplicates before assignment. Does not write; assign_entity or an analyst may record duplicate_of_ticket_id and pause routing when policy requires.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "time_window_hours",
+          "min_similarity_score",
+          "max_results",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "assign_entity",
+      "capability_id": "triage",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "assign_entity",
+      "module_path": "tools.triage_tools",
+      "description": "Assignment stage of triage_agent on incidents and requests: sets assignment group and/or assignee, or with apply_assignment false returns recommendations only—e.g. chat answering “where should this go?” without persisting. actor_user_id is required for audit on writes. routing_confidence bands map to automation posture (e.g. high confidence auto-assign, mid band with AI-triaged visibility, low confidence handoff to triage queue—exact thresholds are tenant policy). ai_triaged_flag marks mid-confidence automation. duplicate_of_ticket_id links subordinate tickets when duplicate detection fired. Respects assignment RBAC.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id",
+          "actor_user_id"
+        ],
+        "optional": [
+          "assignment_group",
+          "assigned_to",
+          "apply_assignment",
+          "routing_confidence",
+          "ai_triaged_flag",
+          "duplicate_of_ticket_id",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "close_entity",
+      "capability_id": "lifecycle",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "close_entity",
+      "module_path": "tools.lifecycle_tools",
+      "description": "STATE TRANSITION — use only when the user explicitly wants to close the ticket. Moves an incident or request to closed status with a mandatory closure_note for audit and customer communication. Do NOT use for field updates (use update_ticket) or to add a note without closing (use add_comment). Do NOT combine with resolve_entity in the same request — resolve and close are separate transitions. Requires actor_user_id. Honors platform guards (pending tasks, approvals). service_id must be incident or request.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "actor_user_id",
+          "closure_note",
+          "service_id"
+        ],
+        "optional": []
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "reopen_entity",
+      "capability_id": "lifecycle",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "reopen_entity",
+      "module_path": "tools.lifecycle_tools",
+      "description": "STATE TRANSITION — use only when the user explicitly wants to reopen a previously resolved or closed ticket. Moves the ticket back to an active state; reason is required for audit. SLA timer restart behavior on reopen is tenant policy. Do NOT use for field updates (use update_ticket) or commenting (use add_comment). Do NOT call alongside close_entity or resolve_entity — these are mutually exclusive transitions. service_id must be incident or request.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "actor_user_id",
+          "reason",
+          "service_id"
+        ],
+        "optional": []
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "resolve_entity",
+      "capability_id": "lifecycle",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "resolve_entity",
+      "module_path": "tools.lifecycle_tools",
+      "description": "STATE TRANSITION — use when the user says the issue is fixed or wants to mark it resolved. Moves the ticket to resolved status with a mandatory resolution_note visible to the requester and auditable; text feeds future resolution suggestion evidence. Resolved is a distinct state from closed — do NOT also call close_entity unless the user explicitly wants both transitions. Do NOT use for field-only updates (use update_ticket) or adding a note without resolving (use add_comment). service_id must be incident or request.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "actor_user_id",
+          "resolution_note",
+          "service_id"
+        ],
+        "optional": []
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "cancel_entity",
+      "capability_id": "lifecycle",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "cancel_entity",
+      "module_path": "tools.lifecycle_tools",
+      "description": "STATE TRANSITION — use only when the user explicitly wants to cancel and abandon the ticket (not resolve or close it). Moves the ticket to cancelled status with a mandatory cancellation_reason for audit. Do NOT use when the user wants to close or resolve — cancelled means the work is withdrawn, not completed. Do NOT use for field updates (use update_ticket). Approvals may be required per tenant policy. service_id must be incident or request.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "actor_user_id",
+          "cancellation_reason",
+          "service_id"
+        ],
+        "optional": []
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "add_comment",
+      "capability_id": "lifecycle",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "add_comment",
+      "module_path": "tools.lifecycle_tools",
+      "description": "NO STATE CHANGE — use when the user wants to add a note or message to the ticket without changing its status. Adds a customer-visible comment or internal work_note on an incident or request. Does NOT transition ticket state — if the user also wants to close, resolve, or cancel, call the appropriate state transition tool separately. is_public controls visibility (customer-facing vs internal). actor_user_id required. RBAC comment permission required. service_id must be incident or request.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "actor_user_id",
+          "comment_text",
+          "service_id"
+        ],
+        "optional": [
+          "comment_type",
+          "is_public",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "link_tickets",
+      "capability_id": "lifecycle",
+      "supported_service_ids": [
+        "incident",
+        "request",
+        "problem",
+        "change"
+      ],
+      "function_name": "link_tickets",
+      "module_path": "tools.lifecycle_tools",
+      "description": "ticket_action_agent lifecycle tool: links two tickets (duplicate, related, parent, child) with optional target_service_id for cross-module edges (e.g. incident to change). supported_service_ids span incident, request, problem, change; actor_user_id required; RBAC on source and target.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "source_ticket_id",
+          "target_ticket_id",
+          "tenant_id",
+          "actor_user_id",
+          "service_id"
+        ],
+        "optional": [
+          "link_type",
+          "target_service_id",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "update_ticket",
+      "capability_id": "lifecycle",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "update_ticket",
+      "module_path": "tools.lifecycle_tools",
+      "description": "NO STATE CHANGE — use when the user wants to change a field value (priority, title, description, category, urgency, assignment_group, etc.) without transitioning ticket status. Does NOT close, resolve, reopen, or cancel — use the dedicated state transition tools for those. Only supplied fields are written; omitted fields are left unchanged. update_reason is recommended for audit. If the user asks to both update a field AND transition state, call this tool AND the appropriate state transition tool separately. Requires edit permission. service_id must be incident or request.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "actor_user_id",
+          "service_id"
+        ],
+        "optional": [
+          "priority",
+          "title",
+          "description",
+          "category",
+          "sub_category",
+          "assignment_group",
+          "urgency",
+          "update_reason",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "check_open_tickets_for_issue",
+      "capability_id": "creation",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "check_open_tickets_for_issue",
+      "module_path": "tools.creation_tools",
+      "description": "Pre-create guard for ticket_creation_agent on incidents and requests: read-only search for open tickets for the same caller_user_id that may duplicate the described issue, using optional title_snippet and description_snippet from the conversation when no row exists yet. Aligns with conversational creation flows that must warn instead of spawning a second ticket for the same problem. Scoped by tenant_id and service_id.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "tenant_id",
+          "service_id",
+          "caller_user_id"
+        ],
+        "optional": [
+          "title_snippet",
+          "description_snippet",
+          "max_results",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "create_ticket",
+      "capability_id": "creation",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "create_ticket",
+      "module_path": "tools.creation_tools",
+      "description": "Creates a new incident or service request after conversational slot capture—ticket_creation_agent; service_id selects the module per service-registry. caller_user_id is the authenticated actor; affected_user_id supports on-behalf creation. preview_only returns a draft without persisting; confirmed_by_user with preview_only false submits. use_defaults_for_missing supports a “just create it” path when the user stops answering prompts. partial_form_draft_id resumes abandoned portal forms. Orchestration should cap clarification turns before preview (soft guardrail) and must run duplicate checks (check_open_tickets_for_issue) before submit when policy requires. attachment_ids references chat uploads when supported. Post-create triage may still reclassify or reroute the record transparently.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "title",
+          "description",
+          "tenant_id",
+          "caller_user_id",
+          "service_id"
+        ],
+        "optional": [
+          "priority",
+          "category",
+          "sub_category",
+          "assignment_group",
+          "catalog_item_id",
+          "urgency",
+          "affected_user_id",
+          "location",
+          "asset_id",
+          "ci_display_name",
+          "attachment_ids",
+          "use_defaults_for_missing",
+          "preview_only",
+          "confirmed_by_user",
+          "partial_form_draft_id",
+          "conversation_session_id",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "suggest_resolution",
+      "capability_id": "resolution_suggestion",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "suggest_resolution",
+      "module_path": "tools.resolution_tools",
+      "description": "Read path for resolution_agent: returns ranked, actionable resolution hypotheses from similar resolved incidents/requests (search_window_months typically spans several months of closed work), KB articles, and known-error or CI-scoped records. Symptom extraction, vector or hybrid search, step normalization, de-duplication, and filtering against work notes when filter_already_tried_from_work_notes is enabled are implementation responsibilities. Ranking blends success rate, similarity to the current ticket, recency, and source authority; results often include three to five options with effort, invasiveness, and elevated-access annotations. conversational_format tailors wording for chat versus the ticket UI. When no strong precedents exist, the agent layer should fall back to KB-oriented guidance rather than inventing facts.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "ticket_id",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "max_suggestions",
+          "include_similar_resolved",
+          "include_kb_articles",
+          "include_known_errors",
+          "search_window_months",
+          "filter_already_tried_from_work_notes",
+          "min_suggestion_score",
+          "conversational_format",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "record_feedback",
+      "capability_id": "resolution_suggestion",
+      "supported_service_ids": [
+        "incident",
+        "request"
+      ],
+      "function_name": "record_feedback",
+      "module_path": "tools.resolution_tools",
+      "description": "Action path for resolution_agent: captures helpful or not_helpful feedback on a ranked suggestion without mutating the ticket body. target_type must be resolution_suggestion; suggestion_rank identifies which numbered option was rated. Feeds re-ranking and success metrics for suggest_resolution. Per-tenant storage with actor_user_id and optional ticket_id for audit. Distinct from future summary- or raw-KB-only feedback channels.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "tenant_id",
+          "actor_user_id",
+          "target_type",
+          "target_id",
+          "rating",
+          "service_id"
+        ],
+        "optional": [
+          "suggestion_rank",
+          "ticket_id",
+          "comment",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "check_fulfillment_duplicate",
+      "capability_id": "fulfillment",
+      "supported_service_ids": [
+        "catalog",
+        "request",
+        "onboarding"
+      ],
+      "function_name": "check_fulfillment_duplicate",
+      "module_path": "tools.fulfillment_tools",
+      "description": "Read-only duplicate guard for fulfillment_agent across catalog, request, and onboarding service_ids: detects in-flight or recent fulfillment for the same catalog_item_id and subject_key (e.g. employee email or id) before starting another run. Call ahead of execute_fulfillment_workflow to prevent parallel duplicate journeys. exclude_request_id_ref skips the current request reference when revalidating updates.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "tenant_id",
+          "service_id",
+          "catalog_item_id",
+          "subject_key"
+        ],
+        "optional": [
+          "exclude_request_id_ref",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "get_fulfillment_status",
+      "capability_id": "fulfillment",
+      "supported_service_ids": [
+        "catalog",
+        "request",
+        "onboarding"
+      ],
+      "function_name": "get_fulfillment_status",
+      "module_path": "tools.fulfillment_tools",
+      "description": "Read-only status for fulfillment_agent: task counts, phases, ETA, blockers, and optional include_task_breakdown for requester or manager rollups and technician views of manual steps—aligned with long-running catalog and onboarding fulfillment in service-registry.",
+      "tool_type": "read",
+      "parameters": {
+        "required": [
+          "request_id_ref",
+          "tenant_id",
+          "service_id"
+        ],
+        "optional": [
+          "include_task_breakdown",
+          "aggregate_scope",
+          "actor_user_id",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "execute_fulfillment_workflow",
+      "capability_id": "fulfillment",
+      "supported_service_ids": [
+        "catalog",
+        "request",
+        "onboarding"
+      ],
+      "function_name": "execute_fulfillment_workflow",
+      "module_path": "tools.fulfillment_tools",
+      "description": "Primary orchestration action for fulfillment_agent on catalog, request, and onboarding service_ids: decomposes a catalog template into parallel and sequential tasks, executes automated steps, tracks SLAs and milestones, notifies the requester when configured, and handles retries, substitutions, escalations, cancellation, and partial rollback of completed automation per policy. execution_mode selects run, plan_only decomposition, cancel, or approve_substitution. require_template_approval_when_missing protects first-time or non-template items. Coordinates with check_fulfillment_duplicate and update_fulfillment_task for dedupe and manual completions.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "catalog_item_id",
+          "request_id_ref",
+          "tenant_id",
+          "actor_user_id",
+          "service_id"
+        ],
+        "optional": [
+          "workflow_inputs",
+          "execution_mode",
+          "notify_requester_on_milestones",
+          "require_template_approval_when_missing",
+          "substitution_approval_id",
+          "rollback_completed_automations",
+          "conversation_session_id",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    },
+    {
+      "tool_id": "update_fulfillment_task",
+      "capability_id": "fulfillment",
+      "supported_service_ids": [
+        "catalog",
+        "request",
+        "onboarding"
+      ],
+      "function_name": "update_fulfillment_task",
+      "module_path": "tools.fulfillment_tools",
+      "description": "Fulfillment_agent action: updates a single named task in an active workflow (complete, in_progress, blocked, cancelled)—e.g. technician marks badge provisioning done. completion_evidence stores audit proof. Completing a blocking task triggers dependency re-evaluation and may unblock downstream tasks. notify_requester can emit milestone communications. Requires request_id_ref, task_id, actor_user_id, and service_id among catalog | request | onboarding.",
+      "tool_type": "action",
+      "parameters": {
+        "required": [
+          "request_id_ref",
+          "task_id",
+          "tenant_id",
+          "actor_user_id",
+          "task_status",
+          "service_id"
+        ],
+        "optional": [
+          "resolution_note",
+          "completion_evidence",
+          "notify_requester",
+          "user_id",
+          "role"
+        ]
+      },
+      "version": "1.0"
+    }
+  ]
+}

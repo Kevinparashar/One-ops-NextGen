@@ -1,0 +1,12 @@
+# Prometheus config for POC copy 5.
+# Scrapes the OTel Collector's Prometheus exporter (:8889) which carries
+# the app's ai.llm.* / cache.dragonfly.* / ai.cache.* / ai.tool.* metrics.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: oneops-otel-collector
+    static_configs:
+      - targets: ["oneops-otel-collector:8889"]
