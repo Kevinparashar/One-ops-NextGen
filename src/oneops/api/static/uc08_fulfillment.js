@@ -161,7 +161,7 @@
         body: {
           sr_title: text.slice(0, 120),
           sr_description: text,
-          top_k: 5,
+          top_k: 4,
         },
       });
       state.sr = null;          // preview mode — no SR yet
@@ -198,7 +198,7 @@
         body: {
           sr_title: sr.title,
           sr_description: sr.description,
-          top_k: 5,
+          top_k: 4,
         },
       });
       state.match = match;
@@ -304,30 +304,39 @@
           </div>` : ""}
         </div>
 
-        ${(m.candidates || []).length > 1 ? `
+        ${(m.candidates || []).length > 1 ? (() => {
+          const alts = m.candidates.slice(1, 4);   // top 3 alternates only
+          return `
         <details class="uc08-alts">
           <summary>
-            <span class="uc08-alts-summary-text">Other candidates</span>
-            <span class="uc08-alts-count">${m.candidates.length - 1}</span>
+            <span class="uc08-alts-summary-text">Other top matches</span>
+            <span class="uc08-alts-count">${alts.length}</span>
           </summary>
           <div class="uc08-alts-list">
-            ${m.candidates.slice(1).map(c => {
+            ${alts.map((c, i) => {
               const altPct = Math.round(c.cosine_score * 100);
               const altTone = altPct >= 80 ? "high" : altPct >= 60 ? "mid" : "low";
               return `
-              <div class="uc08-alt-row">
-                <div class="uc08-alt-text">
-                  <code class="uc08-alt-id">${escapeHtml(c.catalog_item_id)}</code>
-                  <span class="uc08-alt-name">${escapeHtml(c.name)}</span>
-                </div>
-                <div class="uc08-alt-bar-wrap" title="cosine ${c.cosine_score.toFixed(2)}">
-                  <div class="uc08-alt-bar uc08-conf-bar-${altTone}" style="width:${altPct}%"></div>
-                  <span class="uc08-alt-pct">${altPct}%</span>
+              <div class="uc08-alt-card">
+                <div class="uc08-alt-rank">#${i + 2}</div>
+                <div class="uc08-alt-body">
+                  <div class="uc08-alt-title-row">
+                    <div class="uc08-alt-name">${escapeHtml(c.name || "—")}</div>
+                    <div class="uc08-alt-score uc08-alt-score-${altTone}">${altPct}%</div>
+                  </div>
+                  <div class="uc08-alt-meta-row">
+                    <code class="uc08-alt-id">${escapeHtml(c.catalog_item_id)}</code>
+                    ${c.category ? `<span class="uc08-chip uc08-chip-category">${escapeHtml(c.category)}</span>` : ""}
+                    ${c.owner_group ? `<span class="uc08-chip uc08-chip-owner">👥 ${escapeHtml(c.owner_group)}</span>` : ""}
+                  </div>
+                  <div class="uc08-alt-bar-wrap" title="cosine similarity ${c.cosine_score.toFixed(3)}">
+                    <div class="uc08-alt-bar uc08-conf-bar-${altTone}" style="width:${altPct}%"></div>
+                  </div>
                 </div>
               </div>
             `;}).join("")}
           </div>
-        </details>` : ""}
+        </details>`;})() : ""}
 
         ${isPreview ? "" : renderEnrichmentForm(sr, chosen, e)}
 
@@ -375,7 +384,7 @@
         body: {
           sr_title: sr.title,
           sr_description: sr.description,
-          top_k: 5,
+          top_k: 4,
         },
       });
       state.match = match;

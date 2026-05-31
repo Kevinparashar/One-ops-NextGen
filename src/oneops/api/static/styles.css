@@ -1123,3 +1123,52 @@ details.uc08-alts[open] summary::before { transform: rotate(90deg); }
 .uc08-alt-pct { position: absolute; right: 6px; top: 50%;
     transform: translateY(-50%); font-size: 10px; font-weight: 700;
     color: #fff; text-shadow: 0 0 3px rgba(0,0,0,.6); }
+
+/* ── Other-candidates ranked mini-cards (v2) ──────────────────────── */
+
+/* Override v1 simple-row styles when card layout is present */
+.uc08-alts-list { padding: 8px 10px 12px; gap: 8px; }
+
+.uc08-alt-card { display: flex; align-items: stretch; gap: 12px;
+    padding: 10px 12px; border-radius: 8px;
+    background: rgba(255,255,255,.025);
+    border: 1px solid rgba(255,255,255,.05);
+    transition: background .15s, border-color .15s; }
+.uc08-alt-card:hover { background: rgba(255,255,255,.04);
+    border-color: rgba(120,220,180,.20); }
+
+.uc08-alt-rank { font-family: 'SF Mono', Menlo, monospace;
+    font-size: 13px; font-weight: 700; color: #8e98a3;
+    display: flex; align-items: center; justify-content: center;
+    width: 34px; flex-shrink: 0;
+    background: rgba(255,255,255,.04);
+    border-radius: 6px; }
+
+.uc08-alt-body { flex: 1; min-width: 0; display: flex;
+    flex-direction: column; gap: 6px; }
+
+.uc08-alt-title-row { display: flex; align-items: baseline;
+    gap: 12px; }
+.uc08-alt-name { flex: 1; color: #e0e6ec; font-weight: 600;
+    font-size: 14px; line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uc08-alt-score { font-family: 'SF Mono', Menlo, monospace;
+    font-size: 12px; font-weight: 700; padding: 2px 8px;
+    border-radius: 4px; flex-shrink: 0; }
+.uc08-alt-score-high { background: rgba(120,220,180,.18); color: #87dab1; }
+.uc08-alt-score-mid  { background: rgba(255,180,90,.18); color: #ffc987; }
+.uc08-alt-score-low  { background: rgba(255,90,90,.16); color: #ff9b9b; }
+
+.uc08-alt-meta-row { display: flex; flex-wrap: wrap;
+    align-items: center; gap: 6px; }
+.uc08-alt-meta-row .uc08-alt-id { font-size: 10.5px;
+    color: #8e98a3; background: rgba(255,255,255,.05);
+    padding: 1px 6px; border-radius: 3px;
+    font-family: 'SF Mono', Menlo, monospace; }
+
+/* Slimmer inline bar inside card (no percentage label — score chip has it) */
+.uc08-alt-card .uc08-alt-bar-wrap { position: relative; width: 100%;
+    height: 4px; background: rgba(255,255,255,.06);
+    border-radius: 2px; overflow: hidden; margin-top: 2px; }
+.uc08-alt-card .uc08-alt-bar { height: 100%; border-radius: 2px; }
+.uc08-alt-card .uc08-alt-pct { display: none; }  /* hide v1 pct */
