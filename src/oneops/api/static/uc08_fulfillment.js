@@ -403,95 +403,140 @@
         No enrichment data — fill values manually after proceeding.
       </div>`;
     }
-    const hist = (h) => {
-      if (!h) return "";
-      const val = h.value || "";
-      const label = h.evidence_label || "";
-      return val
-        ? `<span class="uc08-hist-evidence">📚 ${escapeHtml(label)}</span>`
-        : `<span class="uc08-hist-evidence uc08-no-history">📚 ${escapeHtml(label)}</span>`;
+    const histEvidence = (h) => {
+      if (!h || !h.evidence_label) return "";
+      const tone = h.value ? "has" : "none";
+      return `<span class="uc08-hist-tag uc08-hist-tag-${tone}">${escapeHtml(h.evidence_label)}</span>`;
     };
+    const histValue = (h) => (h && h.value) || "";
+    const pCanon = e.priority_canonical || "Medium";
+    const pLetter = e.priority_p_letter || "P3";
+    const pTone = pLetter === "P1" ? "p1" : pLetter === "P2" ? "p2" : pLetter === "P4" ? "p4" : "p3";
+
+    // SLA due — humanise
+    const slaIso = e.sla_due_iso || "";
+    let slaHuman = slaIso;
+    if (slaIso) {
+      try {
+        const d = new Date(slaIso);
+        const now = new Date();
+        const hoursLeft = Math.round((d - now) / 36e5);
+        slaHuman = `${slaIso.replace("T", " ").slice(0, 16)} UTC · in ${hoursLeft}h`;
+      } catch (_) {}
+    }
 
     return `
-      <h4>Review &amp; edit values</h4>
-      <p class="uc08-help">
-        🤖 AI-derived · 📚 Suggested from history · 📅 Computed from catalog
-      </p>
+      <h4 class="uc08-section-title">Review &amp; edit values</h4>
 
-      <div class="uc08-fields">
-        <label class="uc08-row">
-          <span class="uc08-row-label">Title (AI)</span>
-          <input id="uc08-f-title" type="text" maxlength="120"
-                 value="${escapeHtml(sr.title)}">
-        </label>
-
-        <label class="uc08-row">
-          <span class="uc08-row-label">Description (AI verbatim)</span>
-          <textarea id="uc08-f-description" rows="2"
-                    maxlength="4000">${escapeHtml(sr.description)}</textarea>
-        </label>
-
-        <label class="uc08-row">
-          <span class="uc08-row-label">Requested for</span>
-          <input id="uc08-f-requested-for" type="text"
-                 placeholder="USR00007" value="${escapeHtml(sr.requested_for || "")}">
-        </label>
-
-        <label class="uc08-row">
-          <span class="uc08-row-label">📅 Category (from catalog)</span>
-          <input id="uc08-f-category" type="text" readonly
-                 value="${escapeHtml(e.category || "")}">
-        </label>
-
-        <label class="uc08-row">
-          <span class="uc08-row-label">📅 Assignment group (catalog)</span>
-          <input id="uc08-f-assignment-group" type="text"
-                 value="${escapeHtml(e.assignment_group_from_catalog || "")}">
-        </label>
-
-        <label class="uc08-row">
-          <span class="uc08-row-label">
-            📚 Assigned to ${hist(e.assigned_to)}
-          </span>
-          <input id="uc08-f-assigned-to" type="text"
-                 placeholder="USR…"
-                 value="${escapeHtml((e.assigned_to && e.assigned_to.value) || "")}">
-        </label>
-
-        <label class="uc08-row">
-          <span class="uc08-row-label">
-            📚 Approved by ${hist(e.approved_by)}
-          </span>
-          <input id="uc08-f-approved-by" type="text"
-                 placeholder="USR…"
-                 value="${escapeHtml((e.approved_by && e.approved_by.value) || "")}">
-        </label>
-
-        <label class="uc08-row">
-          <span class="uc08-row-label">
-            📚 CI id ${hist(e.ci_id)}
-          </span>
-          <input id="uc08-f-ci-id" type="text"
-                 placeholder="CI…"
-                 value="${escapeHtml((e.ci_id && e.ci_id.value) || "")}">
-        </label>
-
-        <label class="uc08-row">
-          <span class="uc08-row-label">📅 SLA due</span>
-          <input id="uc08-f-sla-due" type="text" readonly
-                 value="${escapeHtml(e.sla_due_iso || "")}">
-        </label>
-
-        <div class="uc08-priority-row">
-          <span class="uc08-row-label">🤖 Priority (from matrix)</span>
-          <span class="uc08-priority-pill">${escapeHtml(e.priority_p_letter || "")}
-            (${escapeHtml(e.priority_canonical || "")})</span>
-          <span class="uc08-priority-inputs">
-            impact: <strong>${escapeHtml(e.impact || "")}</strong>
-            · urgency: <strong>${escapeHtml(e.urgency || "")}</strong>
-          </span>
-        </div>
+      <div class="uc08-form-legend">
+        <span class="uc08-legend-pill uc08-legend-ai">🤖 AI-derived</span>
+        <span class="uc08-legend-pill uc08-legend-catalog">📦 From catalog</span>
+        <span class="uc08-legend-pill uc08-legend-history">📚 From history</span>
       </div>
+
+      <!-- ── Section A — AI-derived ───────────────────────────────── -->
+      <section class="uc08-form-section uc08-section-ai">
+        <header class="uc08-form-section-header">
+          <span class="uc08-form-section-icon">🤖</span>
+          <span class="uc08-form-section-title">AI-derived</span>
+          <span class="uc08-form-section-hint">title, description, priority</span>
+        </header>
+
+        <div class="uc08-fields">
+          <label class="uc08-row">
+            <span class="uc08-row-label">Title</span>
+            <input id="uc08-f-title" class="uc08-input" type="text" maxlength="120"
+                   value="${escapeHtml(sr.title)}">
+          </label>
+
+          <label class="uc08-row">
+            <span class="uc08-row-label">Description <em>(preserved verbatim)</em></span>
+            <textarea id="uc08-f-description" class="uc08-input uc08-textarea" rows="2"
+                      maxlength="4000">${escapeHtml(sr.description)}</textarea>
+          </label>
+
+          <div class="uc08-priority-box uc08-priority-${pTone}">
+            <div class="uc08-priority-main">
+              <span class="uc08-priority-pill uc08-priority-pill-${pTone}">
+                ${escapeHtml(pLetter)} · ${escapeHtml(pCanon)}
+              </span>
+              <span class="uc08-priority-formula">
+                impact <strong>${escapeHtml(e.impact || "—")}</strong>
+                · urgency <strong>${escapeHtml(e.urgency || "—")}</strong>
+              </span>
+            </div>
+            <span class="uc08-priority-source">4×4 matrix</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Section B — From catalog ─────────────────────────────── -->
+      <section class="uc08-form-section uc08-section-catalog">
+        <header class="uc08-form-section-header">
+          <span class="uc08-form-section-icon">📦</span>
+          <span class="uc08-form-section-title">From catalog</span>
+          <span class="uc08-form-section-hint">deterministic — no AI</span>
+        </header>
+
+        <div class="uc08-fields uc08-fields-2col">
+          <label class="uc08-row">
+            <span class="uc08-row-label">Category</span>
+            <input id="uc08-f-category" class="uc08-input uc08-input-readonly" type="text" readonly
+                   value="${escapeHtml(e.category || "")}">
+          </label>
+
+          <label class="uc08-row">
+            <span class="uc08-row-label">Assignment group</span>
+            <input id="uc08-f-assignment-group" class="uc08-input" type="text"
+                   value="${escapeHtml(e.assignment_group_from_catalog || "")}">
+          </label>
+
+          <label class="uc08-row uc08-row-wide">
+            <span class="uc08-row-label">SLA due</span>
+            <input id="uc08-f-sla-due" class="uc08-input uc08-input-readonly" type="text" readonly
+                   value="${escapeHtml(slaHuman)}">
+          </label>
+        </div>
+      </section>
+
+      <!-- ── Section C — From history ─────────────────────────────── -->
+      <section class="uc08-form-section uc08-section-history">
+        <header class="uc08-form-section-header">
+          <span class="uc08-form-section-icon">📚</span>
+          <span class="uc08-form-section-title">From history</span>
+          <span class="uc08-form-section-hint">pattern-matched from past SRs on this catalog</span>
+        </header>
+
+        <div class="uc08-fields uc08-fields-2col">
+          <label class="uc08-row">
+            <span class="uc08-row-label">Requested for ${histEvidence(null)}</span>
+            <input id="uc08-f-requested-for" class="uc08-input" type="text"
+                   placeholder="USR…"
+                   value="${escapeHtml(sr.requested_for || "")}">
+          </label>
+
+          <label class="uc08-row">
+            <span class="uc08-row-label">Assigned to ${histEvidence(e.assigned_to)}</span>
+            <input id="uc08-f-assigned-to" class="uc08-input" type="text"
+                   placeholder="USR…"
+                   value="${escapeHtml(histValue(e.assigned_to))}">
+          </label>
+
+          <label class="uc08-row">
+            <span class="uc08-row-label">Approved by ${histEvidence(e.approved_by)}</span>
+            <input id="uc08-f-approved-by" class="uc08-input" type="text"
+                   placeholder="USR…"
+                   value="${escapeHtml(histValue(e.approved_by))}">
+          </label>
+
+          <label class="uc08-row">
+            <span class="uc08-row-label">CI id ${histEvidence(e.ci_id)}</span>
+            <input id="uc08-f-ci-id" class="uc08-input" type="text"
+                   placeholder="CI…"
+                   value="${escapeHtml(histValue(e.ci_id))}">
+          </label>
+        </div>
+      </section>
     `;
   }
 
