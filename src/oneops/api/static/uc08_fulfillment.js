@@ -228,58 +228,105 @@
 
     const isPreview = !sr;
 
+    const confPct = m.rerank_used
+      ? pct(m.rerank_confidence)
+      : (chosen ? Math.round(chosen.cosine_score * 100) : 0);
+    const confLabel = m.rerank_used ? "rerank confidence" : "cosine similarity";
+    const confTone = confPct >= 80 ? "high" : confPct >= 60 ? "mid" : "low";
+    const judgeTone = m.judge_verdict ? m.judge_verdict.toLowerCase() : "none";
+    const judgePct = pct(m.judge_confidence || 0);
+
     body.innerHTML = `
       <div class="uc08-step uc08-match">
         ${isPreview ? `
-        <div class="uc08-sr-pill uc08-preview-pill">
-          🔍 <strong>PREVIEW</strong> — no SR has been created yet
+        <div class="uc08-banner uc08-banner-preview">
+          <span class="uc08-banner-icon">🔍</span>
+          <span class="uc08-banner-text">
+            <strong>Preview mode</strong> — nothing saved yet.
+            Click <em>Create SR &amp; proceed</em> below to persist.
+          </span>
         </div>` : `
-        <div class="uc08-sr-pill">
-          🆕 ${escapeHtml(sr.request_id)} &nbsp;|&nbsp;
-          status: <strong>${escapeHtml(sr.status)}</strong>
-          / stage: <strong>${escapeHtml(sr.stage)}</strong>
+        <div class="uc08-banner uc08-banner-sr">
+          <span class="uc08-banner-icon">🆕</span>
+          <span class="uc08-banner-text">
+            SR <strong>${escapeHtml(sr.request_id)}</strong> created
+            · status <span class="uc08-chip uc08-chip-status">${escapeHtml(sr.status)}</span>
+            · stage <span class="uc08-chip uc08-chip-status">${escapeHtml(sr.stage)}</span>
+          </span>
         </div>`}
 
-        <h4>${m.rerank_used ? "🤖 Best match" : "🎯 Best match"}
-          <span class="uc08-confidence">
-            ${m.rerank_used ?
-              `(rerank confidence ${pct(m.rerank_confidence)}%)` :
-              `(cosine ${chosen ? chosen.cosine_score.toFixed(2) : "—"})`}
-          </span>
-        </h4>
-
-        <div class="uc08-catalog-card">
-          <div class="uc08-cat-id">📦 ${escapeHtml(chosen ? chosen.catalog_item_id : "")}</div>
-          <div class="uc08-cat-name">${escapeHtml(chosen ? chosen.name : "")}</div>
-          <div class="uc08-cat-desc">${escapeHtml(chosen ? chosen.description : "")}</div>
-          <div class="uc08-cat-meta">
-            Category: <strong>${escapeHtml(chosen ? chosen.category : "")}</strong>
-            &nbsp;·&nbsp; Owner: <strong>${escapeHtml(chosen ? chosen.owner_group : "")}</strong>
+        <!-- ── Catalog card (hero) ───────────────────────────── -->
+        <div class="uc08-catalog-card uc08-catalog-hero">
+          <div class="uc08-cat-header">
+            <div class="uc08-cat-icon">📦</div>
+            <div class="uc08-cat-titles">
+              <div class="uc08-cat-name">${escapeHtml(chosen ? chosen.name : "—")}</div>
+              <div class="uc08-cat-id-line">
+                <code class="uc08-cat-id-code">${escapeHtml(chosen ? chosen.catalog_item_id : "")}</code>
+                ${chosen ? `
+                <span class="uc08-chip uc08-chip-category">${escapeHtml(chosen.category || "uncategorised")}</span>
+                <span class="uc08-chip uc08-chip-owner">👥 ${escapeHtml(chosen.owner_group || "—")}</span>` : ""}
+              </div>
+            </div>
           </div>
+
+          ${chosen && chosen.description ? `
+          <p class="uc08-cat-desc">${escapeHtml(chosen.description)}</p>` : ""}
+
+          <!-- Confidence row -->
+          <div class="uc08-conf-row">
+            <div class="uc08-conf-label">
+              ${m.rerank_used ? "🤖 LLM rerank" : "🎯 Embedding match"}
+              <span class="uc08-conf-sub">(${confLabel})</span>
+            </div>
+            <div class="uc08-conf-bar-wrap">
+              <div class="uc08-conf-bar uc08-conf-bar-${confTone}" style="width:${confPct}%"></div>
+              <span class="uc08-conf-pct">${confPct}%</span>
+            </div>
+          </div>
+
           ${m.rerank_reasoning ? `
-          <div class="uc08-reasoning">
-            <em>Reasoning:</em> ${escapeHtml(m.rerank_reasoning)}
-          </div>` : ""}
+          <blockquote class="uc08-reasoning">
+            <span class="uc08-reasoning-tag">💡 Why this catalog</span>
+            ${escapeHtml(m.rerank_reasoning)}
+          </blockquote>` : ""}
+
           ${m.judge_verdict ? `
-          <div class="uc08-judge">
-            <em>Judge:</em>
-            <strong class="uc08-judge-${m.judge_verdict.toLowerCase()}">${escapeHtml(m.judge_verdict)}</strong>
-            (${pct(m.judge_confidence || 0)}%) — ${escapeHtml(m.judge_reasoning || "")}
+          <div class="uc08-judge uc08-judge-${judgeTone}">
+            <div class="uc08-judge-header">
+              <span class="uc08-judge-badge uc08-judge-badge-${judgeTone}">
+                ${m.judge_verdict === "FAITHFUL" ? "✓" : m.judge_verdict === "UNFAITHFUL" ? "✗" : "?"}
+                ${escapeHtml(m.judge_verdict)}
+              </span>
+              <span class="uc08-judge-pct">verifier confidence ${judgePct}%</span>
+            </div>
+            <div class="uc08-judge-reason">${escapeHtml(m.judge_reasoning || "")}</div>
           </div>` : ""}
         </div>
 
         ${(m.candidates || []).length > 1 ? `
         <details class="uc08-alts">
-          <summary>Other candidates (${m.candidates.length - 1})</summary>
-          <ul>
-            ${m.candidates.slice(1).map(c => `
-              <li>
-                <code>${escapeHtml(c.catalog_item_id)}</code>
-                — ${escapeHtml(c.name)}
-                <span class="uc08-cos">${c.cosine_score.toFixed(2)}</span>
-              </li>
-            `).join("")}
-          </ul>
+          <summary>
+            <span class="uc08-alts-summary-text">Other candidates</span>
+            <span class="uc08-alts-count">${m.candidates.length - 1}</span>
+          </summary>
+          <div class="uc08-alts-list">
+            ${m.candidates.slice(1).map(c => {
+              const altPct = Math.round(c.cosine_score * 100);
+              const altTone = altPct >= 80 ? "high" : altPct >= 60 ? "mid" : "low";
+              return `
+              <div class="uc08-alt-row">
+                <div class="uc08-alt-text">
+                  <code class="uc08-alt-id">${escapeHtml(c.catalog_item_id)}</code>
+                  <span class="uc08-alt-name">${escapeHtml(c.name)}</span>
+                </div>
+                <div class="uc08-alt-bar-wrap" title="cosine ${c.cosine_score.toFixed(2)}">
+                  <div class="uc08-alt-bar uc08-conf-bar-${altTone}" style="width:${altPct}%"></div>
+                  <span class="uc08-alt-pct">${altPct}%</span>
+                </div>
+              </div>
+            `;}).join("")}
+          </div>
         </details>` : ""}
 
         ${isPreview ? "" : renderEnrichmentForm(sr, chosen, e)}

@@ -998,3 +998,128 @@ body {
 .uc08-final-counts { color: #b0bcc4; font-size: 13px; padding-left: 18px;
     margin: 6px 0; }
 .uc08-final-counts li { padding: 2px 0; }
+
+/* ── Polished UC-8 match card (2026-05-31) ─────────────────────────── */
+
+/* Banner (replaces the small pill) */
+.uc08-banner { display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-radius: 8px; font-size: 13px;
+    background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); }
+.uc08-banner-icon { font-size: 18px; line-height: 1; }
+.uc08-banner-text { color: #c5cdd6; line-height: 1.4; }
+.uc08-banner-text strong { color: #f0f3f7; }
+.uc08-banner-preview { background: rgba(130,170,255,.10);
+    border-color: rgba(130,170,255,.25); }
+.uc08-banner-sr { background: rgba(120,220,180,.10);
+    border-color: rgba(120,220,180,.25); }
+
+/* Hero catalog card */
+.uc08-catalog-hero { background: linear-gradient(180deg,
+    rgba(120,220,180,.10) 0%, rgba(120,220,180,.04) 100%);
+    border: 1px solid rgba(120,220,180,.22);
+    border-radius: 10px; padding: 16px 18px; display: flex;
+    flex-direction: column; gap: 14px; }
+.uc08-cat-header { display: flex; align-items: flex-start; gap: 14px; }
+.uc08-cat-icon { font-size: 28px; line-height: 1; padding-top: 2px; }
+.uc08-cat-titles { flex: 1; min-width: 0; }
+.uc08-cat-name { font-weight: 700; font-size: 17px; color: #f1f6f1;
+    line-height: 1.3; letter-spacing: .1px; }
+.uc08-cat-id-line { display: flex; flex-wrap: wrap; align-items: center;
+    gap: 6px; margin-top: 6px; }
+.uc08-cat-id-code { font-family: 'SF Mono', Menlo, monospace; font-size: 11px;
+    color: #8e98a3; background: rgba(255,255,255,.05);
+    padding: 2px 7px; border-radius: 4px; }
+.uc08-catalog-hero .uc08-cat-desc { color: #c5cdd6; font-size: 13.5px;
+    line-height: 1.5; margin: 0; padding: 0; }
+
+/* Coloured metadata chips */
+.uc08-chip { display: inline-block; padding: 2px 8px; border-radius: 12px;
+    font-size: 11px; font-weight: 500; line-height: 1.4;
+    background: rgba(255,255,255,.06); color: #b8c1cb;
+    border: 1px solid rgba(255,255,255,.06); }
+.uc08-chip-category { background: rgba(130,170,255,.14); color: #a4c1ff;
+    border-color: rgba(130,170,255,.25); }
+.uc08-chip-owner { background: rgba(255,180,90,.12); color: #ffc987;
+    border-color: rgba(255,180,90,.22); }
+.uc08-chip-status { background: rgba(120,220,180,.14); color: #87dab1;
+    border-color: rgba(120,220,180,.28); padding: 1px 6px; font-size: 10.5px; }
+
+/* Confidence bar */
+.uc08-conf-row { display: flex; align-items: center; gap: 12px;
+    background: rgba(255,255,255,.03); padding: 8px 12px;
+    border-radius: 8px; }
+.uc08-conf-label { font-size: 12px; color: #c5cdd6; font-weight: 600;
+    min-width: 145px; flex-shrink: 0; }
+.uc08-conf-sub { font-weight: 400; color: #8e98a3; }
+.uc08-conf-bar-wrap { position: relative; flex: 1; height: 16px;
+    background: rgba(255,255,255,.06); border-radius: 8px; overflow: hidden; }
+.uc08-conf-bar { height: 100%; transition: width .35s ease;
+    border-radius: 8px; }
+.uc08-conf-bar-high { background: linear-gradient(90deg, #5ac8a8, #87dab1); }
+.uc08-conf-bar-mid  { background: linear-gradient(90deg, #ffb45e, #ffc987); }
+.uc08-conf-bar-low  { background: linear-gradient(90deg, #ff7070, #ff9b9b); }
+.uc08-conf-pct { position: absolute; right: 8px; top: 50%;
+    transform: translateY(-50%); font-size: 11px; font-weight: 700;
+    color: #fff; text-shadow: 0 0 4px rgba(0,0,0,.6); }
+
+/* Reasoning blockquote (replaces inline reasoning) */
+blockquote.uc08-reasoning { margin: 0; padding: 10px 14px;
+    background: rgba(255,255,255,.04); border-left: 3px solid #87dab1;
+    border-radius: 0 6px 6px 0; color: #c5cdd6; font-size: 13px;
+    line-height: 1.5; font-style: normal; }
+.uc08-reasoning-tag { display: block; font-weight: 600;
+    color: #87dab1; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .8px; margin-bottom: 4px; }
+
+/* Judge box */
+.uc08-judge { background: rgba(255,255,255,.03); padding: 10px 12px;
+    border-radius: 8px; display: flex; flex-direction: column; gap: 5px; }
+.uc08-judge-header { display: flex; align-items: center; gap: 10px;
+    flex-wrap: wrap; }
+.uc08-judge-badge { display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 14px; font-weight: 700; font-size: 11px;
+    letter-spacing: .5px; }
+.uc08-judge-badge-faithful { background: rgba(120,220,180,.18);
+    color: #87dab1; border: 1px solid rgba(120,220,180,.4); }
+.uc08-judge-badge-unfaithful { background: rgba(255,90,90,.18);
+    color: #ff9b9b; border: 1px solid rgba(255,90,90,.4); }
+.uc08-judge-badge-uncertain { background: rgba(255,180,90,.18);
+    color: #ffc987; border: 1px solid rgba(255,180,90,.4); }
+.uc08-judge-badge-none { background: rgba(255,255,255,.06); color: #8e98a3; }
+.uc08-judge-pct { font-size: 11px; color: #8e98a3; }
+.uc08-judge-reason { font-size: 12px; color: #b0bcc4; line-height: 1.45; }
+
+/* Other candidates list */
+details.uc08-alts { background: rgba(255,255,255,.02); border-radius: 8px;
+    padding: 0; border: 1px solid rgba(255,255,255,.05); }
+details.uc08-alts summary { cursor: pointer; padding: 10px 14px;
+    display: flex; align-items: center; gap: 8px; user-select: none;
+    color: #c5cdd6; font-size: 13px; font-weight: 600;
+    list-style: none; }
+details.uc08-alts summary::-webkit-details-marker { display: none; }
+details.uc08-alts summary::before { content: "▸"; color: #8e98a3;
+    transition: transform .2s; display: inline-block; }
+details.uc08-alts[open] summary::before { transform: rotate(90deg); }
+.uc08-alts-count { background: rgba(130,170,255,.18); color: #a4c1ff;
+    font-size: 11px; padding: 1px 8px; border-radius: 10px;
+    font-weight: 600; margin-left: auto; }
+.uc08-alts-list { padding: 6px 10px 12px; display: flex;
+    flex-direction: column; gap: 6px; }
+.uc08-alt-row { display: flex; align-items: center; gap: 12px;
+    padding: 6px 8px; border-radius: 6px;
+    background: rgba(255,255,255,.02); }
+.uc08-alt-row:hover { background: rgba(255,255,255,.04); }
+.uc08-alt-text { flex: 1; min-width: 0; display: flex; align-items: center;
+    gap: 8px; }
+.uc08-alt-id { font-family: 'SF Mono', Menlo, monospace; font-size: 10.5px;
+    color: #8e98a3; background: rgba(255,255,255,.05);
+    padding: 1px 6px; border-radius: 3px; flex-shrink: 0; }
+.uc08-alt-name { color: #c5cdd6; font-size: 12.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uc08-alt-bar-wrap { position: relative; width: 110px; height: 12px;
+    background: rgba(255,255,255,.06); border-radius: 6px;
+    overflow: hidden; flex-shrink: 0; }
+.uc08-alt-bar { height: 100%; border-radius: 6px; }
+.uc08-alt-pct { position: absolute; right: 6px; top: 50%;
+    transform: translateY(-50%); font-size: 10px; font-weight: 700;
+    color: #fff; text-shadow: 0 0 3px rgba(0,0,0,.6); }
