@@ -1,0 +1,8 @@
+ts=2026-05-31T15:28:43Z  uc=uc01  status=200  latency_ms=14  note=summarize-known-incident
+ts=2026-05-31T15:28:43Z  uc=uc03  status=200  latency_ms=12  note=kb-lookup-mfa-reset
+ts=2026-05-31T15:28:43Z  uc=uc05  status=404  latency_ms=9  note=triage-propose-known-incident
+ts=2026-05-31T15:28:53Z  uc=uc08  status=200  latency_ms=10054  note=match-vpn-access
+ts=2026-05-31T15:29:23Z  uc=uc01  status=200  latency_ms=18  note=summarize-known-incident
+ts=2026-05-31T15:29:23Z  uc=uc03  status=200  latency_ms=18  note=kb-lookup-mfa-reset
+ts=2026-05-31T15:29:23Z  uc=uc05  status=404  latency_ms=14  note=triage-propose-known-incident
+ts=2026-05-31T15:29:31Z  uc=uc08  status=200  latency_ms=8419  note=match-vpn-access

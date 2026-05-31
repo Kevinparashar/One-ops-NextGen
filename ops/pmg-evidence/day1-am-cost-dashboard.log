@@ -1,0 +1,34 @@
+════════════════════════════════════════════════════════════════
+OneOps cost dashboard — live data evidence
+captured: 2026-05-31T15:31:58Z
+════════════════════════════════════════════════════════════════
+
+── Dashboard panels (15 total in oneops-overview.json) ──
+    id=  1  type=stat        Turns / minute
+    id=  2  type=stat        Active agents
+    id=  3  type=stat        Cumulative LLM cost ($)
+    id=  4  type=stat        Turn success ratio
+    id= 10  type=timeseries  Per-UC latency p50 / p95 / p99 (ms)
+    id= 20  type=timeseries  Turn rate by agent + status
+    id= 21  type=timeseries  LLM cost per minute by tenant ($/min)
+    id= 30  type=timeseries  Cache hit / miss
+    id= 31  type=stat        Cache hit ratio (5m)
+    id= 32  type=stat        Tokens (last 5m)
+    id= 39  type=row         LLM Cost & Usage — per model × per tenant
+    id= 40  type=piechart    Tokens by model (last 5m)
+    id= 41  type=timeseries  Cost $/min by model
+    id= 42  type=stat        Total LLM calls (last 5m) — by model
+    id= 43  type=table       Per-tenant × per-model breakdown (cumulative — finance/billing view)
+
+── Live cost data from Prometheus (the panels' source) ──
+
+Cumulative LLM cost per tenant × model (micro-dollars):
+    tenant=T001     model=gpt-4o-mini-2024-07-18           = $0.4236
+    tenant=T001     model=text-embedding-3-large           = $0.0001
+
+Tokens by tenant × model:
+    tenant=T001     model=gpt-4o-mini-2024-07-18           op=?            = 417795 tokens
+    tenant=T001     model=text-embedding-3-large           op=?            = 713 tokens
+
+── Dashboard URL ──
+    http://localhost:3041/d/oneops-overview

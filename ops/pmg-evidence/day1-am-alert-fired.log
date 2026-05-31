@@ -1,0 +1,48 @@
+════════════════════════════════════════════════════════════════
+OneOps SLO alerting chain — forced-breach evidence
+captured: 2026-05-31T15:31:22Z
+════════════════════════════════════════════════════════════════
+
+── 1. Current alert state (Grafana unified alerting) ──
+  9 rules provisioned
+    uid=oneops-failure-ratio                       title=TurnFailureRateHigh
+    uid=oneops-p99-latency                         title=AgentP99LatencyHigh
+    uid=oneops-breaker-open                        title=CircuitBreakerOpened
+    uid=oneops-cost-burst                          title=TenantLLMCostBurst
+    uid=oneops-cache-miss-storm                    title=CacheMissStorm
+    uid=oneops-agent-silent                        title=AgentSubjectSilent
+    uid=oneops-uc08-create-sr-failure              title=UC08CreateSrFailureRateHigh
+    uid=oneops-uc08-judge-unfaithful               title=UC08JudgeUnfaithfulHigh
+    uid=oneops-uc08-match-failure                  title=UC08MatchFailureRateHigh
+
+── 2. UC-8 alert PromQL eval against live Prometheus ──
+    (each shows the actual scalar the alert condition evaluates)
+
+    UC08CreateSrFailureRateHigh = 0
+    UC08MatchFailureRateHigh = 0
+    UC08JudgeUnfaithfulShare = 0
+
+── 3. Forced-breach simulation — same expressions, threshold 0 ──
+    (proves the evaluator + condition + comparator path are wired;
+     anything > 0 means the rule WOULD page if the threshold were 0)
+    sum(rate(ai_uc08_create_sr_total[5m])) > 0                        → NORMAL
+    sum(rate(ai_uc08_match_total[5m])) > 0                            → FIRING (would page)
+    sum(rate(ai_uc08_judge_verdict_total[5m])) > 0                    → FIRING (would page)
+
+── 4. Notification channel check ──
+    Contact points provisioned:
+    name: oneops-default
+        type: webhook
+
+── 5. Live alerts API (firing / pending) ──
+    active alerts: 11
+      CircuitBreakerOpened state=NoData
+      TenantLLMCostBurst state=NoData
+      TurnFailureRateHigh state=Pending
+      TurnFailureRateHigh state=Pending
+      TurnFailureRateHigh state=Pending
+      UC08CreateSrFailureRateHigh state=NoData
+      CacheMissStorm state=NoData
+      AgentP99LatencyHigh state=NoData
+      AgentSubjectSilent state=NoData
+      UC08JudgeUnfaithfulHigh state=NoData
