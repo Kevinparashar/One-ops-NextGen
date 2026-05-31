@@ -44,6 +44,8 @@ from typing import Any
 import structlog
 from opentelemetry import trace
 
+from oneops.observability.metrics import increment as _metric_inc
+
 from oneops.use_cases.uc08_fulfillment import db as _db
 from oneops.use_cases.uc08_fulfillment.adapters.protocol import (
     AdapterErrorClass,
@@ -644,6 +646,16 @@ async def _finalise(
         "failed": FulfillmentOutcome.FAILED,
         "blocked": FulfillmentOutcome.IN_PROGRESS,
     }[ritm_outcome]
+
+    # Production metrics — UC-8 fulfilment outcome distribution.
+    _metric_inc("ai.uc08.fulfilment.total", 1,
+                tenant_id=tenant_id,
+                outcome=ritm_outcome)
+    _metric_inc("ai.agent.runs.total", 1,
+                agent_id="uc08_fulfillment",
+                tenant_id=tenant_id,
+                source="executor",
+                status="ok" if ritm_outcome == "fulfilled" else ritm_outcome)
 
     return Outcome(
         tenant_id=tenant_id,

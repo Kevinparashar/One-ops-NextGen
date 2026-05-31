@@ -1,0 +1,104 @@
+{
+  "active_version": "1",
+  "id": "uc08_fulfillment",
+  "versions": {
+    "1": {
+      "abac_tags": {
+        "audience": [
+          "service_desk_agent",
+          "manager",
+          "admin",
+          "requester",
+          "end_user"
+        ],
+        "data_classification": "confidential",
+        "service": [
+          "request",
+          "catalog"
+        ],
+        "tier": "action"
+      },
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "fulfillment_orchestrate",
+          "fulfillment_read",
+          "fulfillment_execute"
+        ]
+      },
+      "compound_of": [],
+      "created_at": "2026-05-31T08:30:00.000000+00:00",
+      "depends_on": [],
+      "description": "Catalog item fulfillment orchestrator (DOC-09 \u00a7UC-8). Generic engine that fulfils ANY catalog item by reading its template from itsm.catalog_item, decomposing the request into a task DAG via a single LLM call, and orchestrating execution through LangGraph (parallel waves via Send, approval gates via interrupt(), retry with backoff, saga compensation on cancel). Both portal-submit and chat paths land in the same handler \u2014 parity guaranteed by `tools.fulfill_request`. Mock integration adapters (AD / email / VPN / GitHub / license / procurement) swap to real APIs via the IntegrationAdapter Protocol without handler changes. Tracks SR \u2192 RITM \u2192 tasks \u2192 approvals in itsm.* substrate; emits per-task OTel spans + per-tenant cost; lifecycle-gated by step-1 state machine (ships as draft, activated by quality gate).",
+      "determinism_level": "medium",
+      "excludes": [],
+      "hooks": {
+        "after_invocation": [
+          "builtin:emit_audit"
+        ],
+        "before_invocation": [
+          "builtin:authz_recheck"
+        ]
+      },
+      "id": "uc08_fulfillment",
+      "intent_family": "fulfillment_orchestrate",
+      "journey": null,
+      "owner": "team-itsm",
+      "policy_refs": [
+        "policy_pii_redact",
+        "policy_tenant_scope"
+      ],
+      "routing_shape": "single_agent",
+      "status": "active",
+      "tool_refs": [
+        {
+          "tool_id": "load_catalog_template"
+        },
+        {
+          "tool_id": "decompose_fulfillment_request"
+        },
+        {
+          "tool_id": "create_directory_account"
+        },
+        {
+          "tool_id": "provision_email_mailbox"
+        },
+        {
+          "tool_id": "grant_vpn_access"
+        },
+        {
+          "tool_id": "add_to_groups"
+        },
+        {
+          "tool_id": "assign_software_license"
+        },
+        {
+          "tool_id": "order_hardware_asset"
+        },
+        {
+          "tool_id": "request_human_approval"
+        },
+        {
+          "tool_id": "rollback_completed_steps"
+        },
+        {
+          "tool_id": "check_request_duplicate"
+        },
+        {
+          "tool_id": "get_fulfillment_status"
+        },
+        {
+          "tool_id": "notify_milestone"
+        },
+        {
+          "tool_id": "escalate_sla_breach"
+        }
+      ],
+      "updated_at": "2026-05-31T08:30:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

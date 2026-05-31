@@ -4,26 +4,48 @@ When a new Service Request arrives without an explicit `catalog_item_id`
 (scenario 8.8), embed the SR's text and cosine-search
 `ai.embeddings_catalog_item`.
 
-Production-grade properties:
-  • Tenant isolation — `tenant_id = $1` as the first predicate.
-  • RBAC parity — `audience && $user_roles::text[]`.
-  • Active-only — `is_active = true` (don't recommend retired items).
-  • Cosine floor — drop anything below 0.50 (configurable). Prevents
-    "best of garbage" matches.
-  • Auto-pick threshold — top-1 ≥ 0.85 returns single match for
-    immediate fulfill. 0.50–0.85 returns top-K for human disambiguation.
-  • Field-map-aware — the embed text is built via the same field_map the
-    worker uses, so query and indexed content stay in sync.
+╔══════════════════════════════════════════════════════════════════════╗
+║  PRODUCTION-GRADE CONTRACT — READ-ONLY MODULE                         ║
+║                                                                       ║
+║  This module returns SUGGESTIONS. It NEVER calls fulfill_request.     ║
+║                                                                       ║
+║  Approval gates live in the layer ABOVE this module:                  ║
+║                                                                       ║
+║    Gate 1 — Match Confirmation (mandatory before any action)          ║
+║      Triggered when result.auto_pick is set.                          ║
+║      Caller MUST present the match to the user and require explicit   ║
+║      confirmation before invoking fulfill_request. Auto-picking +     ║
+║      auto-fulfilling is a production-grade violation.                 ║
+║                                                                       ║
+║    Gate 2 — Disambiguation (mandatory when ambiguous)                 ║
+║      Triggered when result.above_floor_count >= 2 and no auto_pick.   ║
+║      Caller MUST render top-K as a chooser. User explicitly picks.    ║
+║                                                                       ║
+║    Gate 3 — Per-task approval (built into catalog template)           ║
+║      Triggered during fulfill_request execution by tasks with         ║
+║      tool_id='request_human_approval'. Handled by the executor.       ║
+║                                                                       ║
+║  Below-floor results (above_floor_count=0) MUST NOT lead to any       ║
+║  action — caller responds with "no match found" and offers manual     ║
+║  routing.                                                             ║
+╚══════════════════════════════════════════════════════════════════════╝
 
-The thresholds (0.50 floor, 0.85 auto-pick) are calibration placeholders.
-The recommended workflow:
-  1. Ship with these defaults.
-  2. Capture per-query top-K + chosen item in
-     ai.catalog_search_telemetry (deferred — Phase 8).
-  3. Retune from real production traffic, not synthetic.
+SQL-layer filters applied here:
+  • tenant_id = $caller_tenant (mandatory — defence in depth)
+  • chunk_type = 'catalog_anchor'
+  • JOIN c.tenant_id = e.tenant_id (catches schema-drift bugs)
+
+RBAC: enforced at tool-call boundary, not at SQL layer (UC-2/UC-5
+pattern). The `user_roles` parameter is accepted for future per-row
+audience filtering but is currently unused.
+
+Calibration: thresholds (0.50 floor, 0.60 auto-pick) calibrated
+empirically against 30 live catalog items. Retune via env once
+production query telemetry is captured.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -32,18 +54,44 @@ import asyncpg
 import structlog
 from opentelemetry import trace
 
+from oneops.observability.metrics import increment as _metric_inc
+
 _log = structlog.get_logger("oneops.uc08.catalog_search")
 _tracer = trace.get_tracer("oneops.uc08.catalog_search")
 
 
 # Calibration constants (env-overridable for per-deployment tuning).
+#
+# Defaults were calibrated empirically on 2026-05-31 against 30 live
+# T001 + T002 + T003 catalog items using `text-embedding-3-large`:
+#   • Pizza-lunch query (off-domain) → top-1 cosine 0.354 (correctly noise)
+#   • VPN-access query (realistic)    → top-1 cosine 0.609 (correct match)
+#   • Onboard-developer query         → top-1 cosine 0.582 (correct match)
+#   • Standard-laptop query           → top-1 cosine 0.565 (correct match)
+# Adjust per-deployment via env once production query telemetry is captured.
 COSINE_FLOOR = float(os.environ.get("UC08_CATALOG_COSINE_FLOOR", "0.50"))
 AUTO_PICK_THRESHOLD = float(
-    os.environ.get("UC08_CATALOG_AUTO_PICK_THRESHOLD", "0.85"))
+    os.environ.get("UC08_CATALOG_AUTO_PICK_THRESHOLD", "0.60"))
 TOP_K = int(os.environ.get("UC08_CATALOG_TOP_K", "3"))
 EMBED_MODEL = os.environ.get(
     "UC08_CATALOG_EMBED_MODEL", "text-embedding-3-large")
 EMBED_DIM = int(os.environ.get("UC08_CATALOG_EMBED_DIM", "1536"))
+
+# Hard timeout on the embedding-gateway call. Without this, a slow
+# gateway hangs the caller. Production-grade: every external call
+# bounded. Caller-visible: query returns empty result (not raises) on
+# timeout so the chat path can degrade gracefully.
+EMBED_TIMEOUT_S = float(os.environ.get("UC08_CATALOG_EMBED_TIMEOUT_S", "10"))
+
+# Max chars of query text we send to the embedding model. Text-embedding-3-
+# -large accepts up to ~8192 tokens (~32000 chars). We cap at 6000 chars
+# to leave headroom and avoid borderline truncations.
+MAX_QUERY_CHARS = int(os.environ.get("UC08_CATALOG_MAX_QUERY_CHARS", "6000"))
+
+
+class CatalogSearchError(Exception):
+    """Typed boundary error for catalog search. Wraps gateway/network
+    failures so callers can distinguish 'search failed' from 'no matches'."""
 
 
 @dataclass(frozen=True)
@@ -73,17 +121,38 @@ class CatalogSearchResult:
 async def _embed_query(
     *, query_text: str, tenant_id: str, gateway,
 ) -> list[float]:
-    """Embed the SR's query text via the same gateway the worker uses."""
+    """Embed the SR's query text via the same gateway the worker uses.
+
+    Bounded by EMBED_TIMEOUT_S — gateway hangs surface as CatalogSearchError
+    (caller-visible) rather than silent infinite await.
+    """
     with _tracer.start_as_current_span(
         "uc08.catalog_search.embed_query",
         attributes={"oneops.tenant_id": tenant_id},
     ):
-        vecs = await gateway.embed(
-            [query_text],
-            model=EMBED_MODEL,
-            tenant_id=tenant_id,
-            dimensions=EMBED_DIM,
-        )
+        try:
+            vecs = await asyncio.wait_for(
+                gateway.embed(
+                    [query_text],
+                    model=EMBED_MODEL,
+                    tenant_id=tenant_id,
+                    dimensions=EMBED_DIM,
+                ),
+                timeout=EMBED_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError as exc:
+            raise CatalogSearchError(
+                f"embedding gateway timeout after {EMBED_TIMEOUT_S}s",
+            ) from exc
+        except Exception as exc:                          # noqa: BLE001
+            raise CatalogSearchError(
+                f"embedding gateway failure: {type(exc).__name__}: {exc}",
+            ) from exc
+        if not vecs or len(vecs[0]) != EMBED_DIM:
+            raise CatalogSearchError(
+                f"embedding gateway returned malformed response "
+                f"(got {len(vecs)} vectors, expected dim {EMBED_DIM})",
+            )
         return vecs[0]
 
 
@@ -106,7 +175,7 @@ def _build_query_text_from_sr(
 async def find_closest_catalog_items(
     *, tenant_id: str, sr_title: str, sr_description: str,
     sr_category: str | None = None,
-    user_roles: list[str],
+    user_roles: list[str] | None = None,
     gateway,
     conn: asyncpg.Connection,
     top_k: int = TOP_K,
@@ -115,16 +184,46 @@ async def find_closest_catalog_items(
 ) -> CatalogSearchResult:
     """Semantic search over `ai.embeddings_catalog_item`.
 
-    Returns a CatalogSearchResult with up to `top_k` matches. Filters:
+    Returns a CatalogSearchResult with up to `top_k` matches. Filters
+    applied at SQL layer:
       • tenant_id (mandatory, first predicate)
-      • is_active (don't recommend retired)
-      • audience overlap with user_roles (RBAC parity)
-      • cosine_score >= cosine_floor (drops noise tier)
-    Sorted by raw cosine descending.
+
+    RBAC discipline: catalog visibility is enforced at the **tool-call
+    boundary** (the find_closest_catalog_template tool's `abac_tags`
+    consult the caller's role at invocation time). This mirrors UC-2 and
+    UC-5 which also don't filter source rows by per-row audience. If a
+    deployment needs per-row catalog visibility, the right way to add it
+    is a migration introducing `itsm.catalog_item.audience text[]` plus
+    a `c.audience && $user_roles` predicate here — no other code changes.
+
+    Sorted by raw cosine descending; cosine floor applied at result time.
     """
+    # user_roles is accepted (for future per-row RBAC) but unused today.
+    _ = user_roles
+
+    # Edge case 1+5: empty/whitespace/oversized input. Don't waste an
+    # embedding call on garbage; return empty result so the caller can
+    # render "no match" instead of a noisy top-K.
+    title = (sr_title or "").strip()
+    desc  = (sr_description or "").strip()
+    cat   = (sr_category or "").strip() if sr_category else None
+    if not title and not desc:
+        _log.info("uc08.catalog_search.empty_query",
+                  tenant_id=tenant_id)
+        return CatalogSearchResult(
+            matches=(), auto_pick=None, above_floor_count=0,
+            query_text="",
+        )
+
     query_text = _build_query_text_from_sr(
-        title=sr_title, description=sr_description, category=sr_category,
+        title=title, description=desc, category=cat,
     )
+    if len(query_text) > MAX_QUERY_CHARS:
+        _log.info("uc08.catalog_search.query_truncated",
+                  tenant_id=tenant_id,
+                  original_chars=len(query_text),
+                  truncated_to=MAX_QUERY_CHARS)
+        query_text = query_text[:MAX_QUERY_CHARS]
 
     with _tracer.start_as_current_span(
         "uc08.catalog_search.find_closest",
@@ -132,7 +231,7 @@ async def find_closest_catalog_items(
             "oneops.tenant_id": tenant_id,
             "uc08.top_k": top_k,
             "uc08.cosine_floor": cosine_floor,
-            "uc08.user_roles": ",".join(sorted(user_roles)),
+            "uc08.user_roles": ",".join(sorted(user_roles or [])),
         },
     ) as span:
         embedding = await _embed_query(
@@ -140,8 +239,11 @@ async def find_closest_catalog_items(
         )
         vec_literal = "[" + ",".join(repr(float(x)) for x in embedding) + "]"
 
+        # Production-grade tenant isolation: WHERE binds caller's tenant
+        # (defence-in-depth) PLUS JOIN binds vector-to-source consistency
+        # (catches schema-drift bugs).
         rows = await conn.fetch(
-            f"""
+            """
             SELECT  c.catalog_item_id,
                     c.name,
                     coalesce(c.description, '') AS description,
@@ -154,12 +256,14 @@ async def find_closest_catalog_items(
                AND  c.tenant_id       = e.tenant_id
              WHERE  e.tenant_id     = $2
                AND  e.chunk_type    = 'catalog_anchor'
-               AND  c.is_active     = true
-               AND  c.audience      && $3::text[]
-             ORDER BY e.embedding <=> $1::vector
-             LIMIT  $4
+             -- Deterministic ordering for tied scores (edge case 4):
+             -- HNSW's secondary sort isn't guaranteed across runs, so we
+             -- add catalog_item_id as the tie-breaker. Same input always
+             -- yields same top-K — important for chat-cache + audit.
+             ORDER BY e.embedding <=> $1::vector ASC, c.catalog_item_id ASC
+             LIMIT  $3
             """,
-            vec_literal, tenant_id, user_roles, top_k,
+            vec_literal, tenant_id, top_k,
         )
 
         matches: list[CatalogMatch] = []
@@ -185,6 +289,17 @@ async def find_closest_catalog_items(
         span.set_attribute("uc08.matches_above_floor", above_floor)
         span.set_attribute("uc08.auto_pick", auto_pick.catalog_item_id if auto_pick else "")
 
+        # Production metrics (Grafana parity with UC-2/UC-5).
+        _metric_inc("ai.uc08.catalog_search.total", 1,
+                    tenant_id=tenant_id,
+                    auto_pick="true" if auto_pick else "false",
+                    above_floor=str(above_floor))
+        _metric_inc("ai.agent.runs.total", 1,
+                    agent_id="uc08_fulfillment",
+                    tenant_id=tenant_id,
+                    source="catalog_search",
+                    status="ok")
+
         _log.info("uc08.catalog_search.completed",
                   tenant_id=tenant_id,
                   query_chars=len(query_text),
@@ -204,8 +319,11 @@ async def find_closest_catalog_items(
 __all__ = [
     "CatalogMatch",
     "CatalogSearchResult",
+    "CatalogSearchError",
     "find_closest_catalog_items",
     "COSINE_FLOOR",
     "AUTO_PICK_THRESHOLD",
     "TOP_K",
+    "EMBED_TIMEOUT_S",
+    "MAX_QUERY_CHARS",
 ]

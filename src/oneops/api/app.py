@@ -38,6 +38,7 @@ from oneops.executor.step_runner import HandlerStepExecutor
 from oneops.session import InMemoryEventLog, InMemoryHotWindow, SessionEventStore
 from oneops.toolrunner.resolver import HandlerResolver
 from oneops.observability import get_logger, get_tracer
+from oneops.observability.metrics import increment as _metric_inc
 from oneops.registry.loader import load_registry
 from oneops.router.fast_path import (
     FastPathDispatcher,
@@ -144,6 +145,38 @@ def _nats_connection_is_live() -> bool:
         return bool(_client and _client.is_connected)
     except Exception:                                       # noqa: BLE001 — boundary
         return False
+
+
+def _build_focus_intent_classifier(gateway: Any):
+    """Construct the focus-intent classifier with Dragonfly cache (when
+    available) for repeat-phrase fast-paths. Falls back to no-cache if
+    Dragonfly is not configured — classifier still works, just pays per call.
+    """
+    from oneops.router.intent_classifier import FocusIntentClassifier
+    cache = None
+    try:
+        from oneops.use_cases.uc01_summarization.cache import get_summary_cache_store
+        cache = get_summary_cache_store()
+    except Exception:                                              # noqa: BLE001
+        cache = None
+    return FocusIntentClassifier(gateway=gateway, cache=cache)
+
+
+def _build_time_filter_extractor(gateway: Any):
+    """Construct the conditional TimeFilter extractor. Same cache pattern
+    as the focus-intent classifier — Dragonfly when available, no-cache fall-
+    back. Skipped entirely when the gateway is unavailable; callers see
+    `time_filter` as an empty dict in context (which is correct: no scope)."""
+    if gateway is None:
+        return None
+    from oneops.router.time_filter_extractor import TimeFilterExtractor
+    cache = None
+    try:
+        from oneops.use_cases.uc01_summarization.cache import get_summary_cache_store
+        cache = get_summary_cache_store()
+    except Exception:                                                  # noqa: BLE001
+        cache = None
+    return TimeFilterExtractor(gateway=gateway, cache=cache)
 
 
 def _build_conversation_trimmer(gateway: Any, model: str):
@@ -330,6 +363,14 @@ async def _lifespan(app: FastAPI):
     except ImportError:
         pass
     registry = load_registry("registries/v2")
+    # Production-grade lifecycle visibility (2026-05-31). One log line per kind
+    # at boot — operators see "active=4 deprecated=0 retired=0 draft=0" in
+    # journalctl + Tempo. Every subsequent activate/deprecate/retire transition
+    # emits a `registry.lifecycle.transition` event on the same logger.
+    try:
+        registry.emit_boot_lifecycle_log()
+    except Exception:                                                  # noqa: BLE001
+        pass
     # ── LLM Gateway built FIRST so disambiguator selection is a
     # construction-time decision (not a post-hoc private-attr patch).
     gateway = _build_llm_gateway()
@@ -422,6 +463,14 @@ async def _lifespan(app: FastAPI):
         set_summarize_llm(build_cached_summarize_fn(
             gateway, cache_store=get_summary_cache_store(),
             model=chosen_model))
+        # UC-2 per-result discriminator label LLM (rule §UC-2 trust UX,
+        # 2026-05-31). One batched call per UC-2 request; both button and
+        # chat paths inherit it because both land in `tools.find_similar_
+        # entities` → `core.find_similar`.
+        from oneops.use_cases.uc02_similar_tickets.tools import (
+            set_discriminator_llm,
+        )
+        set_discriminator_llm(gateway, chosen_model)
         # Field-read LLM — extracts which Key Detail labels the user is
         # asking for on a follow-up question ("what is the priority of
         # it?"). Returns [] for full-summary or unrelated messages, so
@@ -555,6 +604,26 @@ async def _lifespan(app: FastAPI):
         # Durable checkpointer when postgres mode is on; else builder
         # falls back to InMemorySaver.
         checkpointer=checkpointer,
+        # Focus-intent classifier — small LLM call that drops focus on
+        # explicit topic-search turns BEFORE the disambiguator runs. Enabled
+        # by env flag so it can be turned off without code change. When the
+        # gateway is unwired we never instantiate it; behaviour falls back
+        # to legacy focus-carry.
+        focus_intent_classifier=(
+            _build_focus_intent_classifier(gateway)
+            if gateway is not None
+            and os.getenv("FOCUS_INTENT_CLASSIFIER_ENABLED", "true").strip().lower() != "false"
+            else None
+        ),
+        # Conditional TimeFilter extractor — fires only when the plan
+        # contains an agent whose registry record sets
+        # `consumes_time_filter: true` (currently UC-2 only). Env-gated so
+        # operators can disable without code changes.
+        time_filter_extractor=(
+            _build_time_filter_extractor(gateway)
+            if os.getenv("TIME_FILTER_EXTRACTOR_ENABLED", "true").strip().lower() != "false"
+            else None
+        ),
     )
     app.state.session_store = session_store
     app.state.graph = graph
@@ -647,6 +716,213 @@ async def _lifespan(app: FastAPI):
     else:
         _log.info("oneops.api.agent_transport_selected", transport="local")
 
+    # ── UC-5 Triage runner + agent wiring (Phase 6) ─────────────────────
+    # Wires the production runner (LangGraph + adapters + gateway) into the
+    # Section J FastAPI endpoints. Starts the NATS agent if a NATS client
+    # is available so the propose/decide hops travel via NATS in production.
+    app.state.uc05_agent = None
+    try:
+        if gateway is not None:
+            from oneops.api.uc05_routes import (
+                get_ticket_store as _uc05_get_store,
+                set_tools_runner as _uc05_set_runner,
+            )
+            from oneops.use_cases.uc05_triage.runner import build_runner
+
+            async def _uc05_conn_provider():
+                import asyncpg
+                pg_url = os.getenv("POSTGRES_URL")
+                if not pg_url:
+                    raise RuntimeError("POSTGRES_URL not set for UC-5 runner")
+                return await asyncpg.connect(pg_url)
+
+            uc05_runner = build_runner(
+                gateway=gateway, connection_provider=_uc05_conn_provider,
+            )
+            _uc05_set_runner(uc05_runner)
+            _log.info("oneops.api.uc05_runner_attached")
+
+            # Start NATS triage agent — listens on oneops.uc05.triage.{propose,decide}
+            if invoker_mode == "nats":
+                try:
+                    from oneops.adapters.nats_client import get_nats_client
+                    from oneops.use_cases.uc05_triage.agent import TriageAgent
+                    from oneops.use_cases.uc05_triage.nats_dispatcher import (
+                        dispatch_decide as _uc05_dispatch_decide,
+                        dispatch_propose as _uc05_dispatch_propose,
+                    )
+                    from oneops.api.uc05_routes import (
+                        set_decide_dispatcher as _uc05_set_decide_dispatcher,
+                        set_tools_runner as _uc05_set_runner_inner,
+                    )
+                    nats_client = await get_nats_client()
+                    agent = TriageAgent(
+                        nats=nats_client, runner=uc05_runner,
+                        store=_uc05_get_store(),
+                    )
+                    await agent.start()
+                    app.state.uc05_agent = agent
+
+                    # Re-route the API surface through NATS instead of local.
+                    async def _propose_over_nats(*, ticket_row, service_id, tenant_id):
+                        return await _uc05_dispatch_propose(
+                            nats=nats_client, tenant_id=tenant_id,
+                            service_id=service_id, ticket_row=ticket_row,
+                        )
+
+                    async def _decide_over_nats(*, proposal, proposal_id, choice,
+                                                actor_user_id, final_values):
+                        return await _uc05_dispatch_decide(
+                            nats=nats_client, proposal=proposal,
+                            proposal_id=proposal_id, choice=choice,
+                            actor_user_id=actor_user_id,
+                            final_values=final_values,
+                        )
+
+                    _uc05_set_runner_inner(_propose_over_nats)
+                    _uc05_set_decide_dispatcher(_decide_over_nats)
+                    _log.info("oneops.api.uc05_agent_started",
+                              dispatch="nats")
+                except Exception as exc:                          # noqa: BLE001
+                    _log.warning("oneops.api.uc05_agent_failed",
+                                  error=str(exc)[:160])
+    except Exception as exc:                                      # noqa: BLE001
+        _log.warning("oneops.api.uc05_wiring_failed",
+                      error=str(exc)[:160])
+
+    # ── UC-2 Similar Tickets runner wiring ──────────────────────────────
+    # Mirror of UC-5: in-process by default, NATS-swappable later. Same
+    # find_similar() backs both the button route and (later) chat handler,
+    # which is the structural guarantee that results are identical.
+    try:
+        from oneops.api.uc02_routes import (
+            set_result_cache as _uc02_set_result_cache,
+            set_similar_runner as _uc02_set_runner,
+        )
+        from oneops.use_cases.uc02_similar_tickets.core import (
+            find_similar as _uc02_find_similar,
+        )
+
+        async def _uc02_conn_provider():
+            import asyncpg
+            pg_url = os.getenv("POSTGRES_URL")
+            if not pg_url:
+                raise RuntimeError("POSTGRES_URL not set for UC-2 runner")
+            return await asyncpg.connect(pg_url)
+
+        # Read the discriminator gateway/model wired earlier in lifespan so
+        # the button-route path gets the same per-result trust labels as the
+        # chat path (which goes through `tools.find_similar_entities`).
+        # Use module-attribute lookup (not `from ... import x`) so a later
+        # `set_discriminator_llm` re-bind would still be picked up.
+        from oneops.use_cases.uc02_similar_tickets import (
+            tools as _uc02_tools_module,
+        )
+
+        async def _uc02_runner(**kwargs):
+            return await _uc02_find_similar(
+                connection_provider=_uc02_conn_provider,
+                discriminator_gateway=_uc02_tools_module._discriminator_gateway,
+                discriminator_model=_uc02_tools_module._discriminator_model,
+                **kwargs,
+            )
+
+        _uc02_set_runner(_uc02_runner)
+
+        # Wire the Dragonfly result cache if the chat-turn cache backend
+        # is the Dragonfly one — reuse the same client. Falls back to
+        # in-memory dict otherwise.
+        from oneops.api.chat_turn_cache import (
+            DragonflyChatTurnCache,
+            InMemoryChatTurnCache,
+        )
+        ctc = getattr(app.state, "chat_turn_cache", None)
+        # Cache will be wired AFTER chat_turn_cache builds below; set None now
+        # and revisit. The order below is intentional — UC-2 cache binds after.
+        _uc02_set_result_cache(getter=None, putter=None)
+        _log.info("oneops.api.uc02_runner_attached")
+    except Exception as exc:                                       # noqa: BLE001
+        _log.warning("oneops.api.uc02_wiring_failed",
+                      error=str(exc)[:160])
+
+    # Turn-level chat-response cache (semantic, no keywords). On a cache
+    # hit, /api/chat short-circuits the full routing pipeline and returns
+    # the prior response. Default in-memory; set CHAT_TURN_CACHE_BACKEND=
+    # dragonfly for production durable cache.
+    try:
+        from oneops.api.chat_turn_cache import build_cache as _build_chat_cache
+        app.state.chat_turn_cache = _build_chat_cache()
+        # Surface TTL in boot log so operators verify what's active without
+        # grepping env-files. Defensive: pull from the live cache instance.
+        _ttl_s = getattr(app.state.chat_turn_cache, "_ttl", None)
+        _log.info("oneops.api.chat_turn_cache_wired",
+                  backend=type(app.state.chat_turn_cache).__name__,
+                  ttl_seconds=_ttl_s,
+                  ttl_minutes=(_ttl_s // 60) if isinstance(_ttl_s, int) else None)
+
+        # UC-2 result cache rides on the same backend (key prefix
+        # 'uc02:sim:' keeps it disjoint from chat-turn entries).
+        try:
+            ctc = app.state.chat_turn_cache
+            from oneops.api.uc02_routes import (
+                set_result_cache as _uc02_set_result_cache,
+            )
+            _uc02_set_result_cache(getter=ctc.get, putter=ctc.put)
+            _log.info("oneops.api.uc02_cache_wired",
+                      backend=type(ctc).__name__)
+        except Exception as exc:                                   # noqa: BLE001
+            _log.warning("oneops.api.uc02_cache_bind_failed",
+                          error=str(exc)[:160])
+    except Exception as exc:                                       # noqa: BLE001
+        _log.warning("oneops.api.chat_turn_cache_failed",
+                      error=str(exc)[:160])
+        app.state.chat_turn_cache = None
+
+    # Embedding refresh worker — drains pgmq.embedding_refresh.
+    # Default ON as of 2026-05-30 (after UC-5 + UC-3 verified on new substrate).
+    # Set EMBEDDING_WORKER_ENABLED=false to disable; default keeps the new
+    # substrate fresh on every ticket UPDATE without per-deploy env knobs.
+    app.state.embedding_worker = None
+    if os.getenv("EMBEDDING_WORKER_ENABLED", "true").strip().lower() != "false":
+        try:
+            from oneops.embeddings.worker import EmbeddingRefreshWorker
+            import asyncpg as _asyncpg
+
+            async def _emb_conn():
+                return await _asyncpg.connect(os.environ["POSTGRES_URL"])
+
+            if gateway is None:
+                raise RuntimeError("EMBEDDING_WORKER_ENABLED but no LlmGateway")
+            worker = EmbeddingRefreshWorker(
+                gateway=gateway, connection_provider=_emb_conn,
+            )
+            await worker.start()
+            app.state.embedding_worker = worker
+            _log.info("oneops.api.embedding_worker_started")
+        except Exception as exc:                                  # noqa: BLE001
+            _log.warning("oneops.api.embedding_worker_failed",
+                          error=str(exc)[:160])
+
+    # Dashboard priming: emit one `ai.agent.runs.total{agent_id=<id>}` sample
+    # per registered agent at boot so the Grafana "Active agents" counter
+    # reflects the REGISTRY truth (4 agents wired today) instead of only
+    # those that happened to fire within the last 30-minute window. Without
+    # this, idle UCs (UC-3, UC-5) silently drop off the dashboard between
+    # demos.
+    #
+    # We emit +1 (not +0) because the Prometheus exporter only materialises
+    # a time-series when the counter has been incremented; `add(0)` is a
+    # no-op in many SDKs. The +1 per boot adds an immaterial 4 samples per
+    # restart — not worth a special-case filter.
+    try:
+        for _a in registry.agents.list_active():
+            _metric_inc("ai.agent.runs.total", 1,
+                        agent_id=_a.id, tenant_id="_boot",
+                        source="dashboard_priming",
+                        status="boot")
+    except Exception:                                                  # noqa: BLE001
+        pass
+
     _log.info(
         "oneops.api.ready",
         boot_ms=int((time.monotonic() - t0) * 1000),
@@ -655,6 +931,22 @@ async def _lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # Stop UC-5 triage agent if it was started.
+        try:
+            if getattr(app.state, "uc05_agent", None) is not None:
+                await app.state.uc05_agent.stop()
+                _log.info("oneops.api.uc05_agent_stopped")
+        except Exception:
+            pass
+
+        # Stop embedding refresh worker if it was started.
+        try:
+            if getattr(app.state, "embedding_worker", None) is not None:
+                await app.state.embedding_worker.stop()
+                _log.info("oneops.api.embedding_worker_stopped")
+        except Exception:
+            pass
+
         # Close the asyncpg pool if a Postgres ticket store opened one.
         # Best-effort: skip on any failure so shutdown stays clean.
         try:
@@ -734,15 +1026,85 @@ def build_app() -> FastAPI:
         expose_headers=["x-request-id", "x-trace-id"],
     )
 
+    # ── UC-5 Triage routes ────────────────────────────────────────────
+    # Section J — mounted on the same FastAPI app that serves UC-1 / UC-3
+    # so the existing frontend (with role + tenant switcher in headers)
+    # can call /api/uc05/* without any new auth wiring.
+    from oneops.api.uc05_routes import router as _uc05_router
+    app.include_router(_uc05_router)
+
+    # ── UC-2 Similar Tickets — button + chat both land at find_similar() ───
+    from oneops.api.uc02_routes import router as _uc02_router
+    app.include_router(_uc02_router)
+
+    # ── UC-8 Catalog Fulfillment — /api/uc08/match + fulfill + status ──────
+    from oneops.api import uc08_routes
+    from oneops.api.uc08_routes import router as _uc08_router
+    app.include_router(_uc08_router)
+    # Inject the LiteLLM gateway + cache so the routes can call them.
+    try:
+        uc08_routes.set_gateway(gateway)
+    except Exception as exc:                                  # noqa: BLE001
+        _log.warning("oneops.api.uc08_routes.gateway_wire_failed",
+                     error=str(exc)[:160])
+    try:
+        if getattr(app.state, "edge_cache", None) is not None:
+            uc08_routes.set_cache(app.state.edge_cache)
+    except Exception:                                          # noqa: BLE001
+        pass
+    _log.info("oneops.api.uc08_routes_registered")
+
     # ── frontend ──────────────────────────────────────────────────────
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def _index() -> HTMLResponse:
+        """Serve index.html with cache-busted asset URLs.
+
+        Production fix: browsers heuristically cache `.css`/`.js` for hours
+        when only `Last-Modified` / `ETag` are sent. After a frontend code
+        change (e.g. the 2026-05-30 UC-2 display_text render fix), the user
+        kept seeing the OLD bundle even after Ctrl+Shift+R. We stamp each
+        static URL with the file's mtime so any edit produces a different
+        URL → browser bypasses cache automatically. No template engine,
+        no service worker; a regex pass per page-load is cheap (~0.1 ms).
+
+        Also send `Cache-Control: no-cache` on the index itself so the
+        injected version stamps are picked up immediately.
+        """
+        import re as _re
+
         index_path = os.path.join(static_dir, "index.html")
         with open(index_path, encoding="utf-8") as f:
-            return HTMLResponse(f.read())
+            html = f.read()
+
+        def _stamp(match: "_re.Match[str]") -> str:
+            attr, url = match.group(1), match.group(2)
+            # Skip absolute URLs and already-stamped ones.
+            if url.startswith(("http://", "https://", "//")) or "?" in url:
+                return match.group(0)
+            # /static/foo.js → static/foo.js → on-disk path.
+            rel = url.lstrip("/").removeprefix("static/")
+            path = os.path.join(static_dir, rel)
+            try:
+                mtime = int(os.path.getmtime(path))
+            except OSError:
+                return match.group(0)
+            return f'{attr}="{url}?v={mtime}"'
+
+        # Stamp <script src="/static/...">, <link href="/static/...">,
+        # and <img src="/static/...">. Anything not under /static/ is left
+        # alone (CDN URLs, data-URIs, etc.).
+        html = _re.sub(
+            r'(src|href)="(/static/[^"?]+)"',
+            _stamp,
+            html,
+        )
+        return HTMLResponse(
+            html,
+            headers={"Cache-Control": "no-cache, must-revalidate"},
+        )
 
     # ── health ────────────────────────────────────────────────────────
     @app.get("/api/health")
@@ -963,6 +1325,10 @@ def build_app() -> FastAPI:
     @app.post("/api/chat", response_model=TurnResponse)
     async def _chat(req: ChatRequest, request: Request) -> TurnResponse:
         from oneops.session.lifecycle import get_lifecycle
+        from oneops.api.chat_turn_cache import (
+            cache_key as _chat_cache_key,
+            should_cache as _chat_should_cache,
+        )
         tenant_id, user_id, role = _principal_from_headers(request)
         request_id = _new_request_id()
         lifecycle = get_lifecycle()
@@ -1001,6 +1367,42 @@ def build_app() -> FastAPI:
                 title=(req.message or "")[:120])
             session_id = (fresh.session_id if fresh is not None
                           else _new_session_id())
+        # ── Turn-level cache check (semantic, no keywords) ───────────────
+        # Key hashes (tenant + user + role + session + normalized message).
+        # Different session → different key → no focus leak between users.
+        # On hit: short-circuit the full pipeline (decomposer + rewriter +
+        # focus classifier + disambiguator + UC handler) and return the
+        # prior turn's response. TTL bounds staleness against ticket edits.
+        cache = getattr(app.state, "chat_turn_cache", None)
+        ckey = _chat_cache_key(
+            tenant_id=tenant_id, user_id=user_id, role=role,
+            session_id=session_id, message=req.message or "",
+        )
+        if cache is not None:
+            try:
+                cached = await cache.get(tenant_id=tenant_id, key=ckey)
+            except Exception:                                     # noqa: BLE001
+                cached = None
+            if cached is not None:
+                # Bump request_id so OTel still distinguishes this turn
+                # from the original; the body is the cached one. Strict
+                # Pydantic TurnResponse rejects extras, so we only set
+                # fields in the schema.
+                cached["request_id"] = request_id
+                _metric_inc("ai.chat_turn_cache.hits.total", 1,
+                            tenant_id=tenant_id)
+                _log.info("oneops.api.chat_turn_cache_hit",
+                          tenant_id=tenant_id, session_id=session_id,
+                          request_id=request_id)
+                try:
+                    await lifecycle.touch(
+                        tenant_id=tenant_id, session_id=session_id,
+                        user_id=user_id,
+                        title=(req.message or "")[:120], bump_turn_count=True)
+                except Exception:
+                    pass
+                return TurnResponse(**cached)
+
         envelope: dict[str, Any] = {
             "request_id": request_id,
             "tenant_id": tenant_id,
@@ -1020,6 +1422,22 @@ def build_app() -> FastAPI:
                 title=(req.message or "")[:120], bump_turn_count=True)
         except Exception:
             pass
+
+        # ── Write to turn cache on a successful, useful response ──────────
+        # Refusals, clarifications, and tiny replies are deliberately not
+        # cached so the next turn re-runs the pipeline.
+        if cache is not None:
+            _metric_inc("ai.chat_turn_cache.misses.total", 1,
+                        tenant_id=tenant_id)
+            try:
+                payload = response.model_dump() if hasattr(response, "model_dump") else dict(response)
+                if _chat_should_cache(payload):
+                    await cache.put(tenant_id=tenant_id, key=ckey, value=payload)
+                    _metric_inc("ai.chat_turn_cache.writes.total", 1,
+                                tenant_id=tenant_id)
+            except Exception:                                     # noqa: BLE001
+                pass
+
         return response
 
     # ── chat door (WebSocket) ─────────────────────────────────────────
@@ -1140,6 +1558,38 @@ def build_app() -> FastAPI:
         request_id = _new_request_id()
         session_id = ((req and req.session_id) or _new_session_id()).strip()
         inputs = (req.inputs if req else {}) or {}
+
+        # ── API-edge cache (shared Dragonfly via chat_turn_cache) ──────────
+        # Matches /api/chat's pattern — return the cached response from the
+        # last identical call, short-circuiting the dispatcher + executor +
+        # handler entirely. Brings fast-path warm-hit latency from ~500ms
+        # down into the ~10ms band, matching UC-2 button and chat.
+        import hashlib
+        import json as _json
+        edge_cache = getattr(app.state, "chat_turn_cache", None)
+        ekey = None
+        if edge_cache is not None:
+            from oneops.api.cache_version import PIPELINE_CACHE_VERSION as _PV
+            _inputs_canon = _json.dumps(inputs, sort_keys=True, default=str)
+            _raw = (
+                f"fp:{uc_id}\x1f{tenant_id}\x1f{user_id}\x1f{role}\x1f"
+                f"{_inputs_canon}\x1fv={_PV}"
+            )
+            ekey = "fastpath:" + hashlib.sha256(_raw.encode()).hexdigest()[:32]
+            try:
+                cached = await edge_cache.get(tenant_id=tenant_id, key=ekey)
+            except Exception:                                       # noqa: BLE001
+                cached = None
+            if cached is not None:
+                cached["request_id"] = request_id
+                cached["cache_hit"] = True
+                _metric_inc("ai.fast_path.edge_cache.hits.total", 1,
+                            tenant_id=tenant_id, uc_id=uc_id)
+                _log.info("oneops.api.fast_path.edge_cache_hit",
+                          uc_id=uc_id, tenant_id=tenant_id,
+                          request_id=request_id)
+                return TurnResponse(**cached)
+
         try:
             dispatch = app.state.dispatcher.dispatch(FastPathRequest(
                 uc_id=uc_id, inputs=inputs))
@@ -1196,8 +1646,28 @@ def build_app() -> FastAPI:
             "route_outcome": "routed",
             "entry_mode": "fast_path",
         }
-        return await _run(request, envelope, door="fast_path",
-                          thread_id=request_id, session_id=session_id)
+        response = await _run(request, envelope, door="fast_path",
+                              thread_id=request_id, session_id=session_id)
+
+        # ── Edge-cache write (only on successful, useful responses) ────────
+        if edge_cache is not None and ekey is not None:
+            _metric_inc("ai.fast_path.edge_cache.misses.total", 1,
+                        tenant_id=tenant_id, uc_id=uc_id)
+            try:
+                payload = response.model_dump(mode="json")
+                # Reuse the chat-turn `should_cache` predicate — same rules
+                # (skip refusals/clarifications/empty).
+                from oneops.api.chat_turn_cache import (
+                    should_cache as _should_cache,
+                )
+                if _should_cache(payload):
+                    await edge_cache.put(
+                        tenant_id=tenant_id, key=ekey, value=payload)
+                    _metric_inc("ai.fast_path.edge_cache.writes.total", 1,
+                                tenant_id=tenant_id, uc_id=uc_id)
+            except Exception:                                       # noqa: BLE001
+                pass
+        return response
 
     return app
 
