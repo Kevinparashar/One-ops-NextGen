@@ -72,8 +72,97 @@
         <h1>ITSM Assistant</h1>
         <p class="muted small" id="kb-meta">Knowledge base · Cross-UC orchestration</p>
       </div>
-      <div class="header-actions" id="fast-path-actions"></div>
+      <div class="header-actions header-actions-row">
+        <div id="fast-path-actions"></div>
+        <button id="open-similar" type="button" class="action-btn">
+          🔎 Similar Tickets AI
+        </button>
+        <button id="open-triage" type="button" class="action-btn">
+          🤖 Triage AI
+          <span class="triage-pill" id="triage-pill-total">—</span>
+        </button>
+        <button id="open-fulfillment" type="button" class="action-btn">
+          ✨ Fulfill Catalog Request
+        </button>
+      </div>
     </header>
+
+    <!-- Modal: UC-8 Catalog Fulfillment -->
+    <div id="fulfillment-modal" class="modal hidden">
+      <div class="modal-card uc08-card">
+        <header>
+          <h3>✨ Fulfill Catalog Request</h3>
+          <button type="button" class="close" id="fulfillment-close">×</button>
+        </header>
+        <div id="fulfillment-body" class="uc08-body"></div>
+      </div>
+    </div>
+
+    <!-- Modal: UC-2 Similar Tickets -->
+    <div id="similar-modal" class="modal hidden">
+      <div class="modal-card similar-card">
+        <header>
+          <h3>🔎 Similar Tickets AI</h3>
+          <button type="button" class="close" id="similar-close">×</button>
+        </header>
+
+        <form id="similar-form" class="similar-form">
+          <div class="similar-field similar-field-wide">
+            <label for="similar-ticket-id">Ticket ID</label>
+            <input id="similar-ticket-id" type="text"
+                   placeholder="INC0001234 or REQ0001234"
+                   required autocomplete="off" />
+          </div>
+
+          <div class="similar-field">
+            <label for="similar-service-id">Service</label>
+            <select id="similar-service-id">
+              <option value="">Auto-detect from prefix</option>
+              <option value="incident">Incident</option>
+              <option value="request">Request</option>
+            </select>
+          </div>
+
+          <div class="similar-field">
+            <label for="similar-max-results">Top K</label>
+            <input id="similar-max-results" type="number" min="1" max="20" value="5" />
+          </div>
+
+          <div class="similar-field">
+            <label for="similar-window">Time window</label>
+            <select id="similar-window">
+              <option value="">No window</option>
+              <option value="168">Last 7 days</option>
+              <option value="720">Last 30 days</option>
+              <option value="2160">Last 90 days</option>
+              <option value="8760">Last year</option>
+            </select>
+          </div>
+
+          <div class="similar-field">
+            <label for="similar-prefer-status">Prefer status</label>
+            <select id="similar-prefer-status">
+              <option value="any">Any</option>
+              <option value="open">Open (duplicate hunt)</option>
+              <option value="resolved">Resolved (resolution reuse)</option>
+            </select>
+          </div>
+
+          <div class="similar-field similar-field-wide similar-checkbox">
+            <label>
+              <input id="similar-same-cat" type="checkbox" />
+              Same category only
+            </label>
+          </div>
+
+          <div class="similar-field similar-field-wide">
+            <button type="submit" class="similar-submit">Find similar</button>
+          </div>
+        </form>
+
+        <div id="similar-results" class="similar-results"></div>
+      </div>
+    </div>
 
     <div class="status-strip" id="status-strip"></div>
 
@@ -100,6 +189,63 @@
     </div>
   </div>
 
+  <!-- ─── UC-5 Triage modal ────────────────────────────────────────────── -->
+  <div id="triage-modal" class="modal hidden">
+    <div class="modal-card triage-card">
+      <header>
+        <h3 id="triage-title">Triage AI</h3>
+        <button type="button" class="close" id="triage-close">×</button>
+      </header>
+      <div id="triage-body" class="triage-body">
+        <!-- Stage 1: type selector + count summary -->
+        <div id="triage-landing">
+          <p class="muted">Pick a service to see its untriaged tickets.</p>
+          <div class="triage-type-grid">
+            <button type="button" class="triage-type-card" data-svc="incident">
+              <div class="triage-type-emoji">🚨</div>
+              <div class="triage-type-title">Incidents</div>
+              <div class="triage-type-count" id="triage-count-incident">—</div>
+              <div class="triage-type-sub">untriaged</div>
+            </button>
+            <button type="button" class="triage-type-card" data-svc="request">
+              <div class="triage-type-emoji">📋</div>
+              <div class="triage-type-title">Requests</div>
+              <div class="triage-type-count" id="triage-count-request">—</div>
+              <div class="triage-type-sub">untriaged</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Stage 2: list of tickets for the chosen service -->
+        <div id="triage-list" class="hidden">
+          <div class="triage-list-header">
+            <button type="button" class="ghost" id="triage-back-to-landing">← Back</button>
+            <span id="triage-list-title">Untriaged</span>
+          </div>
+          <div id="triage-rows"></div>
+        </div>
+
+        <!-- Stage 3: proposal card -->
+        <div id="triage-proposal" class="hidden">
+          <div class="triage-list-header">
+            <button type="button" class="ghost" id="triage-back-to-list">← Back to list</button>
+            <span id="triage-proposal-title">Proposal</span>
+          </div>
+          <div id="triage-meta" class="triage-meta"></div>
+          <div id="triage-fields"></div>
+          <div id="triage-dup-warning" class="triage-dup hidden"></div>
+          <div class="triage-actions">
+            <button type="button" class="primary" id="triage-apply">✅ Apply</button>
+            <button type="button" class="ghost" id="triage-discard">❌ Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/app.js"></script>
+  <script src="/static/uc05_triage.js"></script>
+  <script src="/static/uc02_similar.js"></script>
+  <script src="/static/uc08_fulfillment.js"></script>
 </body>
 </html>

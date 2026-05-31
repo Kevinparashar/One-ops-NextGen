@@ -611,6 +611,9 @@ body {
   z-index: 50;
 }
 .modal.hidden { display: none; }
+.hidden { display: none !important; }
+.triage-card { max-height: 88vh; display: flex; flex-direction: column; }
+.triage-card .triage-body { overflow-y: auto; max-height: calc(88vh - 60px); }
 .modal-card {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -658,3 +661,340 @@ body {
 
 #status.busy  { color: var(--accent); }
 #status.error { color: var(--error); }
+
+/* ── UC-5 Triage UI ──────────────────────────────────────────── */
+.triage-pill {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 6px;
+  background: var(--accent);
+  color: #0a0d12;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+.triage-card { max-width: 700px; }
+.triage-body { display: flex; flex-direction: column; gap: 14px; }
+
+.triage-type-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.triage-type-card {
+  background: var(--panel-deep);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 18px 14px;
+  cursor: pointer;
+  color: var(--text);
+  text-align: center;
+  transition: border-color 0.12s, background 0.12s;
+}
+.triage-type-card:hover { border-color: var(--accent); background: var(--panel); }
+.triage-type-emoji  { font-size: 26px; line-height: 1; }
+.triage-type-title  { margin-top: 6px; font-weight: 600; }
+.triage-type-count  { margin-top: 6px; font-size: 22px; font-weight: 700; color: var(--accent); }
+.triage-type-sub    { font-size: 11px; color: var(--muted); }
+
+.triage-list-header {
+  display: flex; align-items: center; gap: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.triage-row {
+  background: var(--panel-deep);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  cursor: pointer;
+}
+.triage-row:hover { border-color: var(--accent); }
+.triage-row-title  { font-weight: 600; font-size: 13px; }
+.triage-row-desc   { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.triage-row-meta   { color: var(--muted); font-size: 11px; margin-top: 6px; display: flex; gap: 10px; }
+.triage-row-miss   { color: var(--accent); font-weight: 600; }
+
+.triage-meta { color: var(--muted); font-size: 12px; }
+.triage-field-grid {
+  display: grid;
+  grid-template-columns: 130px 1fr 70px;
+  gap: 8px 12px;
+  align-items: center;
+}
+.triage-field-grid label { font-size: 12px; color: var(--muted); }
+.triage-field-grid input,
+.triage-field-grid select {
+  background: var(--panel-deep);
+  border: 1px solid var(--border-soft);
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.triage-field-grid .basis { font-size: 11px; color: var(--muted); text-align: right; }
+
+.triage-dup {
+  background: rgba(255, 196, 0, 0.08);
+  border: 1px solid #c79b1f;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 12px;
+}
+.triage-actions {
+  display: flex; justify-content: flex-end; gap: 10px;
+  margin-top: 6px;
+}
+.triage-actions button.primary {
+  background: var(--accent);
+  color: #0a0d12;
+  border: 0;
+  padding: 9px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.triage-actions button.ghost { padding: 9px 14px; }
+
+.triage-empty {
+  padding: 14px; text-align: center; color: var(--muted); font-size: 13px;
+}
+.triage-toast {
+  position: fixed; right: 22px; bottom: 22px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: 6px;
+  z-index: 9999;
+  font-size: 13px;
+}
+
+/* Sibling layout so Triage stays alongside Summarization fast-path buttons */
+.header-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header-actions-row #fast-path-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── UC-2 Similar Tickets modal ──────────────────────────────────────── */
+.similar-card {
+  width: min(600px, 94vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.similar-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 14px;
+  margin-bottom: 4px;
+}
+.similar-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.similar-field-wide { grid-column: 1 / -1; }
+.similar-field > label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.similar-field input[type="text"],
+.similar-field input[type="number"],
+.similar-field select {
+  background: var(--panel-deep);
+  color: var(--text);
+  border: 1px solid var(--border-soft);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.similar-checkbox > label {
+  text-transform: none;
+  font-size: 13px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.similar-submit {
+  width: 100%;
+  background: var(--accent);
+  color: #0a0d12;
+  border: 0;
+  padding: 10px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.similar-results {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+  overflow-y: auto;
+  flex: 1;
+}
+.similar-results > h4 { margin: 0 0 10px; font-size: 14px; color: var(--text); }
+
+.similar-source {
+  background: var(--panel-deep);
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.similar-source-head { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.similar-source-id { font-weight: 700; font-size: 14px; margin-right: 8px; }
+.similar-source-title { font-style: italic; font-size: 13px; margin-top: 4px; }
+.similar-source-meta {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.similar-source-meta span strong { color: var(--text); font-weight: 600; }
+
+.similar-list { list-style: none; padding: 0; margin: 0; }
+.similar-item {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--panel-deep);
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.similar-item:hover { border-color: var(--accent); }
+.similar-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.similar-pct {
+  background: var(--accent);
+  color: #0a0d12;
+  padding: 1px 8px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.similar-status {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.similar-toggle { margin-left: auto; color: var(--muted); font-size: 11px; }
+.flag-warn { background: rgba(255,180,0,.18); color: #ffba33; padding: 1px 7px; border-radius: 9px; font-size: 11px; font-weight: 600; }
+.flag-ok   { background: rgba(80,200,120,.18); color: #50c878; padding: 1px 7px; border-radius: 9px; font-size: 11px; font-weight: 600; }
+.similar-title  { margin-top: 4px; font-style: italic; font-size: 13px; }
+.similar-discriminator { margin-top: 4px; font-size: 12px; color: var(--accent, #3b82f6); font-weight: 500; }
+.similar-common { margin-top: 4px; font-size: 12px; color: var(--muted); }
+.similar-details {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-soft);
+  font-size: 12px;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+}
+.similar-details > .k { color: var(--muted); }
+.similar-details > .v { color: var(--text); word-break: break-word; }
+.similar-cache-pill { background: rgba(120,160,255,.18); color: #7aa0ff; padding: 1px 7px; border-radius: 9px; font-size: 10px; font-weight: 600; margin-left: 6px; }
+
+/* ─── UC-8 Catalog Fulfillment ─────────────────────────────────────── */
+.uc08-card { max-width: 760px; width: 92vw; max-height: 92vh; overflow: auto; }
+.uc08-body { padding: 18px 22px 22px; }
+.uc08-step { display: flex; flex-direction: column; gap: 12px; }
+.uc08-help { color: #aab2bd; font-size: 13px; line-height: 1.45; margin: 0; }
+.uc08-label { font-weight: 600; font-size: 13px; color: #d7dee6; margin-top: 6px; }
+.uc08-step textarea { width: 100%; box-sizing: border-box; padding: 10px 12px;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 8px; color: #e6e9ee; font-family: inherit; font-size: 14px;
+    resize: vertical; min-height: 80px; }
+.uc08-step input[type="text"] { width: 100%; box-sizing: border-box; padding: 7px 10px;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 6px; color: #e6e9ee; font-family: inherit; font-size: 13px; }
+.uc08-step input[readonly] { background: rgba(255,255,255,.02); color: #98a1ad; }
+.uc08-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+.uc08-error { background: rgba(255,90,90,.12); color: #ffb0b0; padding: 10px 12px;
+    border-radius: 6px; font-size: 13px; }
+.uc08-error.hidden { display: none; }
+
+/* SR pill */
+.uc08-sr-pill { display: inline-block; background: rgba(130,170,255,.15);
+    color: #b9d0ff; padding: 4px 10px; border-radius: 14px;
+    font-size: 12px; font-weight: 600; margin-bottom: 6px; align-self: flex-start; }
+
+/* Catalog card */
+.uc08-catalog-card { background: rgba(120,220,180,.08);
+    border: 1px solid rgba(120,220,180,.25); border-radius: 8px;
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.uc08-cat-id { font-family: 'SF Mono', Menlo, monospace; font-size: 12px;
+    color: #87dab1; }
+.uc08-cat-name { font-weight: 600; font-size: 15px; color: #e8f0e8; }
+.uc08-cat-desc { color: #b0bcc4; font-size: 13px; }
+.uc08-cat-meta { color: #97a3ad; font-size: 12px; margin-top: 4px; }
+.uc08-reasoning { background: rgba(255,255,255,.04); padding: 6px 10px;
+    border-radius: 6px; color: #c0c8d2; font-size: 12px; margin-top: 6px; }
+.uc08-confidence { font-weight: 400; font-size: 13px; color: #97a3ad; }
+
+/* Alternates */
+.uc08-alts { font-size: 12px; color: #97a3ad; }
+.uc08-alts summary { cursor: pointer; padding: 6px 0; user-select: none; }
+.uc08-alts ul { margin: 4px 0 0; padding-left: 16px; }
+.uc08-alts code { background: rgba(255,255,255,.06); padding: 1px 4px;
+    border-radius: 3px; font-size: 11px; }
+.uc08-cos { color: #6b97c7; font-size: 11px; margin-left: 6px; }
+
+/* Editable fields */
+.uc08-fields { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.uc08-row { display: flex; flex-direction: column; gap: 3px; }
+.uc08-row-label { font-size: 11px; color: #97a3ad; text-transform: uppercase;
+    letter-spacing: .04em; font-weight: 600; }
+.uc08-hist-evidence { font-size: 10px; color: #87dab1; font-weight: 400;
+    margin-left: 6px; text-transform: none; letter-spacing: 0; }
+.uc08-hist-evidence.uc08-no-history { color: #97a3ad; }
+
+/* Priority row */
+.uc08-priority-row { display: flex; align-items: center; gap: 12px;
+    flex-wrap: wrap; padding: 8px 0; }
+.uc08-priority-pill { background: rgba(255,180,90,.18); color: #ffc987;
+    padding: 4px 10px; border-radius: 12px; font-weight: 700;
+    font-family: 'SF Mono', Menlo, monospace; }
+.uc08-priority-inputs { color: #97a3ad; font-size: 12px; }
+
+/* Empty / wrong-intent state */
+.uc08-empty { text-align: left; }
+.uc08-empty h4 { margin: 12px 0 6px; color: #e6e9ee; }
+.uc08-empty ul { color: #b0bcc4; padding-left: 18px; }
+
+/* Progress */
+.uc08-progress h4 { margin: 6px 0; }
+.uc08-tasks { background: rgba(255,255,255,.03); border-radius: 8px;
+    padding: 14px 16px; min-height: 80px; }
+.uc08-bar { background: rgba(255,255,255,.08); border-radius: 4px;
+    height: 8px; overflow: hidden; margin-bottom: 8px; }
+.uc08-bar-fill { background: linear-gradient(90deg, #5ac8a8, #87dab1);
+    height: 100%; transition: width .4s; }
+.uc08-counts { font-size: 13px; color: #e6e9ee; }
+.uc08-state-label { font-size: 12px; color: #97a3ad; margin-top: 8px; }
+.uc08-approvals { background: rgba(255,180,90,.1); color: #ffc987;
+    padding: 8px 10px; border-radius: 6px; font-size: 12px; margin-top: 8px; }
+.uc08-spinner { color: #97a3ad; font-size: 13px; text-align: center; padding: 14px; }
+
+/* Completion */
+.uc08-completion h4 { color: #87dab1; }
+.uc08-final-counts { color: #b0bcc4; font-size: 13px; padding-left: 18px;
+    margin: 6px 0; }
+.uc08-final-counts li { padding: 2px 0; }

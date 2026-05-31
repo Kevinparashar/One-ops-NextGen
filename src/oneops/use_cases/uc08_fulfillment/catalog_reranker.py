@@ -72,7 +72,7 @@ RERANK_CONFIDENCE_FLOOR = float(
 
 # Hard timeout on the rerank LLM call. Caller gets CatalogSearchError on
 # timeout — never a silent hang.
-RERANK_TIMEOUT_S = float(os.environ.get("UC08_RERANK_TIMEOUT_S", "8.0"))
+RERANK_TIMEOUT_S = float(os.environ.get("UC08_RERANK_TIMEOUT_S", "60.0"))
 
 # Model. Default to a fast JSON-capable model. Overridable per-deployment.
 RERANK_MODEL = os.environ.get("UC08_RERANK_MODEL", "gpt-4o-mini")

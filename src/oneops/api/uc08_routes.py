@@ -2,6 +2,13 @@
 
 Endpoints (matches UC-2 / UC-5 conventions):
 
+  POST /api/uc08/create-sr
+       Mint a new SR id (SR + 7 digits per tenant), LLM-extract a clean
+       title and preserved description from the user's free text, and
+       INSERT into itsm.request with status='new' / stage='intake'.
+       Reads back the inserted row. The embedding refresh trigger on
+       itsm.request fires automatically on the INSERT (no extra wiring).
+
   POST /api/uc08/match
        Semantic search → top-K catalog candidates. Returns suggestion +
        optional auto-pick. Read-only — never invokes fulfillment.
@@ -26,6 +33,7 @@ Production wiring:
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 
@@ -92,6 +100,38 @@ class MatchCandidate(BaseModel):
     is_auto_pick: bool
 
 
+class HistoricalSuggestion(BaseModel):
+    """A field value suggested from past SRs on this catalog item."""
+    value: str | None
+    evidence_count: int
+    total_population: int
+    evidence_label: str       # e.g. "15 of 20 similar SRs"
+
+
+class EnrichedFields(BaseModel):
+    """Production-grade enrichment for the editable variables form.
+
+    All fields are SUGGESTIONS. The technician can override any of them
+    in the form before clicking Proceed."""
+
+    # Catalog-derived (deterministic when match is set)
+    category: str | None
+    assignment_group_from_catalog: str | None
+    sla_due_iso: str | None              # now() + catalog.estimated_total_minutes
+
+    # Priority matrix (computed in-memory)
+    impact: str | None                   # Low / On Users / On Department / On Business
+    urgency: str | None                  # Low / Medium / High / Urgent
+    priority_canonical: str | None       # Low / Medium / High / Urgent
+    priority_p_letter: str | None        # P1 / P2 / P3 / P4
+
+    # Historical pattern suggestions
+    assigned_to: HistoricalSuggestion | None
+    approved_by: HistoricalSuggestion | None
+    ci_id: HistoricalSuggestion | None
+    assignment_group_historical: HistoricalSuggestion | None
+
+
 class MatchResponse(BaseModel):
     candidates: list[MatchCandidate]
     auto_pick: MatchCandidate | None
@@ -100,6 +140,14 @@ class MatchResponse(BaseModel):
     rerank_confidence: float
     rerank_reasoning: str
     query_text: str
+    enrichment: EnrichedFields | None    # populated when verdict picks a catalog
+    enrichment_catalog_item_id: str | None  # which catalog the enrichment is for
+    # LLM-as-judge verification of the rerank/auto-pick decision.
+    # Always present when a catalog was chosen. UNCERTAIN when the judge
+    # itself failed (timeout / parse error) — never blocks the flow.
+    judge_verdict: str | None        # "FAITHFUL" | "UNFAITHFUL" | "UNCERTAIN" | null
+    judge_confidence: float | None   # 0.0 – 1.0
+    judge_reasoning: str | None      # one-sentence rationale
 
 
 class FulfillRequest(BaseModel):
@@ -151,6 +199,172 @@ async def _connect() -> asyncpg.Connection:
     return await asyncpg.connect(os.environ["POSTGRES_URL"])
 
 
+# ── POST /api/uc08/create-sr ───────────────────────────────────────────
+
+
+class CreateSrRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_text: str = Field(min_length=1, max_length=8000)
+    """Raw free-text the user typed in the chat box."""
+
+    requested_for: str | None = Field(default=None, max_length=64)
+    """Optional explicit beneficiary; if absent, defaults to the caller."""
+
+
+class CreateSrResponse(BaseModel):
+    request_id: str
+    tenant_id: str
+    title: str
+    description: str
+    status: str
+    stage: str
+    requested_by: str
+    requested_for: str | None
+    created_at: str
+    title_source: str
+    description_source: str
+    title_reasoning: str
+    # LLM-as-judge verification of the title/description extraction.
+    # UNCERTAIN when the judge itself failed (timeout / parse error) —
+    # never blocks the flow.
+    judge_verdict: str         # "FAITHFUL" | "UNFAITHFUL" | "UNCERTAIN"
+    judge_confidence: float    # 0.0 – 1.0
+    judge_reasoning: str       # one-sentence rationale
+
+
+@router.post("/create-sr", response_model=CreateSrResponse)
+async def create_sr(
+    payload: CreateSrRequest,
+    request: Request,
+) -> CreateSrResponse:
+    """Mint an SR id + LLM-extract title/description + INSERT itsm.request.
+
+    Side effects (intended):
+      • One row added to itsm.request with status='new', stage='intake'.
+      • The first user comment is inserted into the comments JSONB.
+      • The existing embedding-refresh trigger fires asynchronously;
+        within ~5s the new SR becomes searchable by UC-2.
+
+    Failure modes:
+      • 401  — missing principal headers
+      • 403  — role not permitted
+      • 422  — Pydantic validation (empty body, extra field, …)
+      • 502  — LLM gateway timeout or failure
+      • 500  — unexpected DB failure (re-raised after structured log)
+    """
+    tenant_id, user_id, role = _principal(request)
+    _require_role(role, _PERMITTED_MATCH_ROLES, "create-sr")
+
+    gateway = _gateway or getattr(request.app.state, "gateway", None)
+    if gateway is None:
+        raise HTTPException(503, detail="LLM gateway not initialised")
+
+    from oneops.use_cases.uc08_fulfillment.sr_id import next_sr_id
+    from oneops.use_cases.uc08_fulfillment.text_extract import (
+        TextExtractError, extract_title_and_description,
+    )
+    from oneops.use_cases.uc08_fulfillment.judge import judge_extraction
+
+    # ── 1. LLM extract title + description ─────────────────────────────
+    try:
+        extract = await extract_title_and_description(
+            user_text=payload.user_text,
+            gateway=gateway,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
+    except TextExtractError as exc:
+        _metric_inc("ai.uc08.create_sr.failed.total", 1,
+                    tenant_id=tenant_id, reason="text_extract_failure")
+        raise HTTPException(502, detail=f"text-extract failure: {exc}")
+
+    # ── 1b. LLM-as-judge — verify the extraction is faithful ───────────
+    # Runs concurrently with the INSERT below (see asyncio.gather). Never
+    # raises into business code — UNCERTAIN on failure.
+    judge_task = asyncio.create_task(judge_extraction(
+        gateway=gateway,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        user_text=payload.user_text,
+        extracted_title=extract.title,
+        extracted_description=extract.description,
+    ))
+
+    # ── 2. INSERT — mint SR id + the row in a single connection ────────
+    requested_for = (payload.requested_for or user_id).strip()
+    conn = await _connect()
+    try:
+        sr_id = await next_sr_id(tenant_id=tenant_id, conn=conn)
+
+        # First user comment captures the original free text verbatim.
+        comment_id = f"COM-{sr_id}-01"
+        import datetime as _dt
+        import json as _json
+        first_comment = [{
+            "comment_id":  comment_id,
+            "author":      user_id,
+            "author_role": "agent",
+            "is_public":   True,
+            "timestamp":   _dt.datetime.now(_dt.timezone.utc)
+                              .replace(microsecond=0).isoformat(),
+            "text":        payload.user_text.strip(),
+        }]
+
+        row = await conn.fetchrow(
+            """
+            INSERT INTO itsm.request (
+              tenant_id, request_id, title, description,
+              status, stage, requested_by, requested_for,
+              comments, created_at, updated_at
+            ) VALUES (
+              $1, $2, $3, $4,
+              'new', 'intake', $5, $6,
+              $7::jsonb, now(), now()
+            )
+            RETURNING tenant_id, request_id, title, description,
+                      status, stage, requested_by, requested_for,
+                      created_at
+            """,
+            tenant_id, sr_id,
+            extract.title, extract.description,
+            user_id, requested_for or None,
+            _json.dumps(first_comment),
+        )
+    finally:
+        await conn.close()
+
+    # ── 3. Await the judge verdict (concurrent with the INSERT above) ──
+    judge_result = await judge_task
+
+    _metric_inc("ai.uc08.create_sr.total", 1,
+                tenant_id=tenant_id, status="ok",
+                judge_verdict=judge_result.verdict.value)
+    _log.info("uc08.create_sr.completed",
+              tenant_id=tenant_id, request_id=sr_id,
+              title_source=extract.title_source,
+              user_text_chars=len(payload.user_text),
+              judge_verdict=judge_result.verdict.value,
+              judge_confidence=judge_result.confidence)
+
+    return CreateSrResponse(
+        request_id=row["request_id"],
+        tenant_id=row["tenant_id"],
+        title=row["title"],
+        description=row["description"],
+        status=row["status"],
+        stage=row["stage"],
+        requested_by=row["requested_by"],
+        requested_for=row["requested_for"],
+        created_at=row["created_at"].isoformat(),
+        title_source=extract.title_source,
+        description_source=extract.description_source,
+        title_reasoning=extract.reasoning,
+        judge_verdict=judge_result.verdict.value,
+        judge_confidence=judge_result.confidence,
+        judge_reasoning=judge_result.reasoning,
+    )
+
+
 # ── POST /api/uc08/match ───────────────────────────────────────────────
 
 
@@ -171,7 +385,8 @@ async def match_catalog(
     tenant_id, user_id, role = _principal(request)
     _require_role(role, _PERMITTED_MATCH_ROLES, "match")
 
-    if _gateway is None:
+    gateway = _gateway or getattr(request.app.state, "gateway", None)
+    if gateway is None:
         raise HTTPException(503, detail="LLM gateway not initialised")
 
     from oneops.use_cases.uc08_fulfillment.catalog_search import (
@@ -189,7 +404,7 @@ async def match_catalog(
                 sr_title=payload.sr_title,
                 sr_description=payload.sr_description,
                 sr_category=payload.sr_category,
-                gateway=_gateway, conn=conn, top_k=payload.top_k,
+                gateway=gateway, conn=conn, top_k=payload.top_k,
             )
         except CatalogSearchError as exc:
             _metric_inc("ai.uc08.match.failed.total", 1,
@@ -224,10 +439,18 @@ async def match_catalog(
                 auto_pick_resp = candidates[0]
             elif do_rerank:
                 rerank_used = True
+                # PRODUCTION FIX: pass the ORIGINAL user text (description)
+                # to the reranker, not the LLM-cleaned title. Title
+                # normalisation strips intent signals ("How do I..." →
+                # "Installation of...") which fools the intent classifier
+                # into reading a how-to question as a fulfilment request.
+                # Industry pattern: preserve original user intent at the
+                # boundary, transform only for display.
+                rerank_input = payload.sr_description or payload.sr_title
                 try:
                     rr = await rerank(
-                        tenant_id=tenant_id, sr_text=payload.sr_title,
-                        candidates=r.matches, gateway=_gateway,
+                        tenant_id=tenant_id, sr_text=rerank_input,
+                        candidates=r.matches, gateway=gateway,
                         cache=_cache, user_id=user_id,
                     )
                 except CatalogSearchError as exc:
@@ -247,9 +470,113 @@ async def match_catalog(
                         None,
                     )
 
+        # ── Enrichment — only when we have a concrete catalog pick ─────
+        # Auto-pick OR rerank chose one. NO_MATCH / WRONG_INTENT → null.
+        enrichment: EnrichedFields | None = None
+        enrichment_cat_id: str | None = None
+        judge_task = None
+
+        chosen_catalog_id = None
+        if auto_pick_resp is not None:
+            chosen_catalog_id = auto_pick_resp.catalog_item_id
+
+        # ── LLM-as-judge — verify the chosen catalog matches user intent
+        # Fires concurrently with the enrichment SQL below. Never raises.
+        if chosen_catalog_id is not None:
+            from oneops.use_cases.uc08_fulfillment.judge import judge_rerank
+            judge_task = asyncio.create_task(judge_rerank(
+                gateway=gateway,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                user_text=(payload.sr_description or payload.sr_title),
+                chosen_catalog_id=chosen_catalog_id,
+                chosen_catalog_label=auto_pick_resp.name,
+                chosen_catalog_description=(auto_pick_resp.description or ""),
+            ))
+        elif verdict == "RERANK_CHOSEN" and auto_pick_resp is None:
+            # Reranker chose, but the candidate may not be top-1 by cosine.
+            # Pull the chosen id out of the candidate list using the
+            # rerank reasoning (which we already have).
+            pass  # auto_pick_resp covers this path
+
+        if chosen_catalog_id is not None:
+            from oneops.use_cases.uc08_fulfillment.priority import (
+                derive_and_compute,
+            )
+            from oneops.use_cases.uc08_fulfillment.historical_suggest import (
+                suggest_for_catalog_item,
+            )
+            from datetime import datetime, timezone, timedelta
+
+            # Catalog metadata: estimated_total_minutes + owner_group + category
+            cat_row = await conn.fetchrow(
+                "SELECT category, owner_group, estimated_total_minutes "
+                "FROM itsm.catalog_item "
+                "WHERE tenant_id=$1 AND catalog_item_id=$2",
+                tenant_id, chosen_catalog_id,
+            )
+            cat_category = cat_row["category"] if cat_row else None
+            cat_owner_group = cat_row["owner_group"] if cat_row else None
+            cat_minutes = int(
+                cat_row["estimated_total_minutes"]) if (
+                    cat_row and cat_row["estimated_total_minutes"]) else 240
+
+            # SLA = now() + estimated minutes
+            sla_due = datetime.now(timezone.utc) + timedelta(minutes=cat_minutes)
+
+            # Priority matrix derivation (in-memory)
+            prio = derive_and_compute(
+                catalog_category=cat_category,
+                requested_for_is_vip=False,        # VIP lookup is a future hook
+                sla_minutes_remaining=cat_minutes,
+                explicit_urgency_signal=None,
+            )
+
+            # Historical pattern suggestions
+            hist = await suggest_for_catalog_item(
+                tenant_id=tenant_id,
+                catalog_item_id=chosen_catalog_id,
+                conn=conn,
+            )
+
+            def _to_hist(h) -> HistoricalSuggestion:
+                return HistoricalSuggestion(
+                    value=h.value,
+                    evidence_count=h.evidence_count,
+                    total_population=h.total_population,
+                    evidence_label=h.evidence_label,
+                )
+
+            enrichment = EnrichedFields(
+                category=cat_category,
+                assignment_group_from_catalog=cat_owner_group,
+                sla_due_iso=sla_due.replace(microsecond=0).isoformat(),
+                impact=prio["impact"],
+                urgency=prio["urgency"],
+                priority_canonical=prio["priority_canonical"],
+                priority_p_letter=prio["priority_p"],
+                assigned_to=_to_hist(hist.assigned_to),
+                approved_by=_to_hist(hist.approved_by),
+                ci_id=_to_hist(hist.ci_id),
+                assignment_group_historical=_to_hist(hist.assignment_group),
+            )
+            enrichment_cat_id = chosen_catalog_id
+
+        # ── Collect judge verdict (concurrent with enrichment above) ───
+        judge_verdict: str | None = None
+        judge_confidence: float | None = None
+        judge_reasoning: str | None = None
+        if judge_task is not None:
+            jr = await judge_task
+            judge_verdict = jr.verdict.value
+            judge_confidence = jr.confidence
+            judge_reasoning = jr.reasoning
+
         _metric_inc("ai.uc08.match.total", 1,
                     tenant_id=tenant_id, verdict=verdict,
-                    rerank_used=str(rerank_used).lower())
+                    rerank_used=str(rerank_used).lower(),
+                    enriched=str(enrichment is not None).lower(),
+                    judge_verdict=judge_verdict or "none")
         return MatchResponse(
             candidates=candidates,
             auto_pick=auto_pick_resp,
@@ -258,6 +585,11 @@ async def match_catalog(
             rerank_confidence=rerank_conf,
             rerank_reasoning=rerank_reason,
             query_text=r.query_text,
+            enrichment=enrichment,
+            enrichment_catalog_item_id=enrichment_cat_id,
+            judge_verdict=judge_verdict,
+            judge_confidence=judge_confidence,
+            judge_reasoning=judge_reasoning,
         )
     finally:
         await conn.close()
@@ -321,6 +653,36 @@ async def fulfill(
         _metric_inc("ai.uc08.fulfill.failed.total", 1,
                     tenant_id=tenant_id, reason="duplicate")
         raise HTTPException(409, detail=str(exc))
+
+    # ── Async executor kickoff (ServiceNow / Temporal pattern) ────────
+    # core.fulfill_request only PERSISTS the RITM + tasks. The workflow
+    # itself runs via executor.execute_plan, which we fire as a background
+    # asyncio task so this route returns immediately. Status polling
+    # against /api/uc08/status/{ritm_id} reflects executor progress.
+    # The InProcessIntegrationAdapter is the demo seam — production
+    # deployments swap in a real adapter via dependency injection.
+    import asyncio as _asyncio
+    from oneops.use_cases.uc08_fulfillment.adapters.inprocess import (
+        InProcessIntegrationAdapter,
+    )
+    from oneops.use_cases.uc08_fulfillment.executor import execute_plan
+
+    async def _kick(ritm_id: str, tenant_id: str, trace_id: str | None):
+        try:
+            await execute_plan(
+                tenant_id=tenant_id, ritm_id=ritm_id,
+                adapter=InProcessIntegrationAdapter(),
+                connection_provider=_cp,
+                trace_id=trace_id,
+            )
+        except Exception as exc:                                  # noqa: BLE001
+            _log.warning("uc08.fulfill.executor_kick_failed",
+                         tenant_id=tenant_id, ritm_id=ritm_id,
+                         error=str(exc)[:200])
+
+    _asyncio.create_task(_kick(
+        outcome.ritm_id, tenant_id, outcome.trace_id,
+    ))
 
     _metric_inc("ai.uc08.fulfill.total", 1,
                 tenant_id=tenant_id, outcome=outcome.outcome.value)

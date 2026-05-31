@@ -81,7 +81,7 @@ EMBED_DIM = int(os.environ.get("UC08_CATALOG_EMBED_DIM", "1536"))
 # gateway hangs the caller. Production-grade: every external call
 # bounded. Caller-visible: query returns empty result (not raises) on
 # timeout so the chat path can degrade gracefully.
-EMBED_TIMEOUT_S = float(os.environ.get("UC08_CATALOG_EMBED_TIMEOUT_S", "10"))
+EMBED_TIMEOUT_S = float(os.environ.get("UC08_CATALOG_EMBED_TIMEOUT_S", "60"))
 
 # Max chars of query text we send to the embedding model. Text-embedding-3-
 # -large accepts up to ~8192 tokens (~32000 chars). We cap at 6000 chars
