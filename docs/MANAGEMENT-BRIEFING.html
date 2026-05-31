@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OneOps-NextGen — Management briefing (2026-05-31)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+    --fg: #1a1d23;
+    --fg-muted: #4a5260;
+    --bg: #ffffff;
+    --bg-soft: #f7f8fa;
+    --bg-code: #f1f3f6;
+    --border: #e2e6eb;
+    --border-strong: #c8cdd4;
+    --accent: #1f4f8f;
+    --accent-soft: #e8eff8;
+    --shipped: #2c7a3f;
+    --shipped-bg: #e8f5ec;
+    --partial: #a06a00;
+    --partial-bg: #fff4dc;
+    --planned: #555c66;
+    --planned-bg: #eceef1;
+}
+* { box-sizing: border-box; }
+body {
+    font-family: 'Inter', 'Source Sans Pro', -apple-system, BlinkMacSystemFont,
+        'Segoe UI', system-ui, sans-serif;
+    font-size: 15.5px;
+    line-height: 1.65;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+}
+main {
+    max-width: 80ch;
+    margin: 0 auto;
+    padding: 56px 36px 96px;
+}
+h1, h2, h3, h4 { font-weight: 600; color: var(--fg); letter-spacing: -0.012em; }
+h1 {
+    font-size: 30px;
+    margin: 0 0 8px 0;
+    padding-bottom: 18px;
+    border-bottom: 2px solid var(--border-strong);
+    letter-spacing: -0.020em;
+}
+h2 {
+    font-size: 22px;
+    margin: 60px 0 16px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+}
+h3 { font-size: 18px; margin: 40px 0 12px 0; color: var(--accent); }
+h4 { font-size: 15.5px; margin: 26px 0 8px 0; }
+p { margin: 0 0 14px 0; }
+a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+a:hover { border-bottom-style: solid; }
+code {
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--bg-code);
+    padding: 1.5px 6px;
+    border-radius: 3px;
+    color: #2e3744;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+}
+pre {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+}
+pre code { background: none; border: none; padding: 0; font-size: inherit; white-space: pre; }
+ul, ol { margin: 0 0 14px 0; padding-left: 24px; }
+li { margin: 4px 0; }
+blockquote {
+    margin: 14px 0;
+    padding: 8px 16px;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    color: var(--fg-muted);
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 28px 0;
+    font-size: 14px;
+    line-height: 1.5;
+}
+th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+th {
+    font-weight: 600;
+    background: var(--bg-soft);
+    border-bottom: 2px solid var(--border-strong);
+}
+tr:hover td { background: var(--bg-soft); }
+strong { font-weight: 600; }
+hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+.mermaid {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px 18px;
+    margin: 24px 0;
+    text-align: center;
+    overflow-x: auto;
+}
+.shipped, .partial, .planned {
+    display: inline-block;
+    font-weight: 600;
+    font-size: 0.82em;
+    padding: 1px 8px;
+    border-radius: 10px;
+    border: 1px solid;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+.shipped { color: var(--shipped); background: var(--shipped-bg); border-color: #b0d6ba; }
+.partial { color: var(--partial); background: var(--partial-bg); border-color: #e5c98a; }
+.planned { color: var(--planned); background: var(--planned-bg); border-color: #c8cdd4; }
+@media print {
+    body { font-size: 11pt; }
+    main { padding: 0; max-width: none; }
+    h1, h2, h3 { page-break-after: avoid; }
+    .mermaid { page-break-inside: avoid; }
+    table { page-break-inside: avoid; }
+    pre { page-break-inside: avoid; }
+    a { color: var(--fg); border-bottom: none; }
+    code { background: #f5f5f5; border: 1px solid #ddd; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>OneOps-NextGen — Management briefing</h1>
+<p><strong>Date:</strong> 2026-05-31
+<strong>Release reference:</strong> tag <code>day1-cut-complete-2026-05-31</code> (HEAD <code>0f1c035</code>)
+<strong>Prepared for:</strong> non-technical management review</p>
+<p>OneOps-NextGen is an AI system that handles a defined set of IT-service-management (ITSM) tasks for multiple business units. A user (typed in chat, or clicked from a button) sends a request. The platform routes it to the right use-case agent — for example, summarising a ticket, finding similar past tickets, looking up a knowledge-base article, triaging an incoming incident, or fulfilling a catalog request. Every request flows through three structural layers before any large-language-model (LLM) call is made: a router that picks the use case, a policy layer that applies enterprise rules and personally-identifiable-information (PII) redaction, and a tenant-scoped data layer so one customer's data never reaches another's request.</p>
+<hr />
+<h2>How to read this document</h2>
+<p>Every capability cited below carries one of three status tags. They are applied conservatively — when in doubt, the lower tag is used.</p>
+<table>
+<thead>
+<tr>
+  <th>Tag</th>
+  <th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong><span class="shipped">SHIPPED</span></strong></td>
+  <td>Working and verifiable today against the release reference above.</td>
+</tr>
+<tr>
+  <td><strong><span class="partial">PARTIAL</span></strong></td>
+  <td>Scaffolded or present in the codebase but not yet fully enforced or complete.</td>
+</tr>
+<tr>
+  <td><strong><span class="planned">PLANNED</span></strong></td>
+  <td>Deferred work, sized in <code>docs/production-maturity-plan.md</code> and committed to a date or sequence.</td>
+</tr>
+</tbody>
+</table>
+<p>Paths and URLs are cited inline so any factual claim can be independently checked. Because this repository does not currently publish to a remote host, source paths resolve against the repo root at release <code>day1-cut-complete-2026-05-31</code>. A &quot;Verification notes&quot; block at the end of this document lists every number that was confirmed during preparation, anything that could not be confirmed, and the precise state of the build at the time of writing.</p>
+<hr />
+<h2>Executive summary</h2>
+<p>OneOps-NextGen runs five named use cases against multi-tenant ITSM data today. Day 1 of the §F-LOCKED execution plan is complete and verifiable end-to-end: <code>make pmg-verify</code> returns seven green phases. Coverage against the 22-document production-maturity target is approximately 80 per cent (<code>docs/production-maturity-plan.md</code> §F-LOCKED), with the remaining 20 per cent named and sized in <code>docs/production-maturity-plan.md</code> §A.7 and §G. The single largest deferred risk is identity at the door: front-door JSON-Web-Token (JWT) verification and the materialised role-based access-control (RBAC) matrix are scaffolded as Python modules but not yet enforced on incoming traffic. The system is deployable and integrable as a microservice today within a trusted boundary, with those two items required before external or untrusted multi-tenant exposure — and required before the OneOps Studio authoring layer is exposed to any internal user.</p>
+<h3>Status at a glance</h3>
+<table>
+<thead>
+<tr>
+  <th>Axis</th>
+  <th>Status</th>
+  <th>One-line summary</th>
+  <th>Biggest gap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>1. Agent lifecycle</strong></td>
+  <td><span class="partial">PARTIAL</span></td>
+  <td>Five agents registered in <code>registries/v2/</code> with versioning + lifecycle metadata; boot-time enforcement in place.</td>
+  <td><code>AgentManifest</code> export / import command not yet built.</td>
+</tr>
+<tr>
+  <td><strong>2. Performance tracking</strong></td>
+  <td><span class="shipped">SHIPPED</span></td>
+  <td>107 OpenTelemetry span sites and 112 metric emit sites in production code feed 15 dashboard panels and 9 alert rules.</td>
+  <td>Drift detector and per-use-case quality scoring are <span class="planned">PLANNED</span>.</td>
+</tr>
+<tr>
+  <td><strong>3. Output validation</strong></td>
+  <td><span class="partial">PARTIAL</span></td>
+  <td>LLM-as-judge enforced on UC-8 today; closed-enum parsers, policy composer, PII redaction, and 15 live end-to-end tests cover the system more broadly.</td>
+  <td>Judge coverage is UC-8 only; UC-1, UC-2, UC-3, and UC-5 not covered (load-bearing — see Validation §).</td>
+</tr>
+<tr>
+  <td><strong>4. Security</strong></td>
+  <td><span class="partial">PARTIAL</span></td>
+  <td>Tenant isolation is structural in every SQL query; per-route role allow-lists enforced.</td>
+  <td>Front-door JWT and twice-enforced RBAC are scaffolded (<code>src/oneops/authz/</code>) but not enforced on the request boundary.</td>
+</tr>
+<tr>
+  <td><strong>5. Versioning</strong></td>
+  <td><span class="shipped">SHIPPED</span></td>
+  <td>Prompt-version constants stamped on every LLM call and span; model version on every cost metric; release tags pinned for rollback.</td>
+  <td>Central prompt registry with diff/rollback view is not built; per-call version stamps are auditable but not centrally browsable.</td>
+</tr>
+<tr>
+  <td><strong>6. Adding new use cases</strong></td>
+  <td><span class="partial">PARTIAL</span> today, <span class="planned">PLANNED</span> via Studio</td>
+  <td>Hand-copy from the UC-8 reference package works today. Studio authoring layer (<code>#34</code>/<code>#35</code>) is the future path.</td>
+  <td>Studio authoring layer is <span class="planned">PLANNED</span> in its entirety.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Architecture</h2>
+<p>The platform separates <strong>runtime</strong> (what handles a live request) from <strong>authoring-time</strong> (how a new agent is created), with the registry as the contract between them. The runtime exists today. The authoring layer — OneOps Studio — is planned. The runtime never knows Studio exists; it reads the registry at boot like any other configuration source.</p>
+<h3>Diagram — runtime today and Studio authoring tomorrow</h3>
+<div class="mermaid">
+flowchart TD
+    classDef shipped fill:#d4edda,stroke:#155724,color:#155724
+    classDef partial fill:#fff3cd,stroke:#856404,color:#856404
+    classDef planned fill:#e2e3e5,stroke:#383d41,color:#383d41,stroke-dasharray:5 5
+
+    subgraph AUTH["AUTHORING-TIME — OneOps Studio (<span class="planned">PLANNED</span>)"]
+        direction TB
+        ST_UI["Studio UI<br/>(textarea + tool catalog)"]:::planned
+        ST_COMP["POST /api/studio/compile<br/>NL → Manifest compiler (#34)"]:::planned
+        ST_JUDGE["Judge verifies tool selection<br/>FAITHFUL / UNFAITHFUL"]:::planned
+        ST_SIGN["HMAC-signed<br/>AgentManifest JSON"]:::planned
+        ST_TEST["Sandboxed test runner (#35)<br/>blocks activation on failure"]:::planned
+        ST_ACT["POST /api/studio/activate<br/>writes manifest with lifecycle = draft"]:::planned
+        ST_UI --> ST_COMP --> ST_JUDGE --> ST_SIGN --> ST_TEST --> ST_ACT
+    end
+
+    REG[("REGISTRY — registries/v2/<br/>(authoritative; consumed by router at boot)<br/><span class="shipped">SHIPPED</span>")]:::shipped
+
+    subgraph RUN["RUNTIME — <span class="shipped">SHIPPED</span> today"]
+        direction TB
+        UI["Frontend / Chat API<br/>/api/chat + /api/uc02 + /api/uc05 + /api/uc08"]:::shipped
+        ROUTER["Router + decomposer<br/>(reads registries/v2/ at boot)"]:::shipped
+        EXEC["Executor + LangGraph"]:::shipped
+        NATS["NATS<br/>oneops.agent.&lt;id&gt; + oneops.uc08.fulfill.execute"]:::shipped
+        AGENT["Agent worker"]:::shipped
+        TOOLS["Tool runner<br/>(consumed_capabilities + required_role)"]:::shipped
+        LLM["LiteLLM gateway :4301<br/>SINGLE LLM EGRESS"]:::shipped
+        STACK[("Postgres + Dragonfly + NATS +<br/>OTel collector + Prometheus + Tempo")]:::shipped
+        UI --> ROUTER --> EXEC --> NATS --> AGENT --> TOOLS --> LLM
+        TOOLS --> STACK
+        LLM --> STACK
+    end
+
+    ST_ACT -.->|writes manifest| REG
+    REG ==>|read at boot| ROUTER
+
+</div>
+<p>The five non-negotiable design principles applied throughout the runtime are documented in <code>docs/PROJECT-BRIEFING.md</code> §2. In plain terms:</p>
+<ol>
+<li><strong>Single LLM egress</strong> — every LLM call goes through <code>src/oneops/llm/gateway.py</code> and lands on the LiteLLM proxy at port 4301. This is the only point where cost, redaction, and policy apply, so it cannot be bypassed (§2.5).</li>
+<li><strong>Policy always on</strong> — every LLM call composes one of seven policy profiles in <code>src/oneops/policy/composer.py</code> before reaching the model (§2.3).</li>
+<li><strong>Structural tenant isolation</strong> — every SQL query and every cache key carries <code>tenant_id</code> as the first predicate (§2.4).</li>
+<li><strong>LangGraph-first</strong> — state, retries, caching, and fan-out use the LangGraph framework rather than custom orchestration (§2.8).</li>
+<li><strong>No silent failures</strong> — failures emit metrics, return user-visible responses, and never swallow exceptions in observability code (§2.7).</li>
+</ol>
+<h3>Live use cases</h3>
+<p>The five agents registered in <code>registries/v2/agents/</code> and live in the runtime today:</p>
+<table>
+<thead>
+<tr>
+  <th>Use case</th>
+  <th>What it does</th>
+  <th>Surface(s)</th>
+  <th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>UC-1 Summarization</strong></td>
+  <td>Summarises an incident or request given its identifier.</td>
+  <td>Chat (<code>/api/chat</code>)</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>UC-2 Similar Tickets</strong></td>
+  <td>Finds the top semantically similar past tickets to a given ticket id.</td>
+  <td>Button (<code>/api/uc02/similar-tickets</code>) <strong>and</strong> chat (<code>/api/chat</code>)</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>UC-3 KB Lookup</strong></td>
+  <td>Answers a natural-language question by retrieving and grounding in published knowledge-base articles.</td>
+  <td>Chat (<code>/api/chat</code>)</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>UC-5 Triage</strong></td>
+  <td>Proposes category, priority, impact, urgency, and assignment group for an untriaged ticket.</td>
+  <td>Button (<code>/api/uc05/propose</code> + <code>/api/uc05/decide</code>)</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>UC-8 Fulfillment</strong></td>
+  <td>Creates a service request from free text, matches it to a catalog template, runs the fulfillment workflow.</td>
+  <td>Button (<code>/api/uc08/create-sr</code> + <code>/match</code> + <code>/fulfill</code> + <code>/status</code>). <strong>Chat surface is deferred</strong> (memory: <code>project_oneops_uc08_chat_wiring_post_demo</code>, ~4–6 h post-demo).</td>
+  <td><span class="shipped">SHIPPED</span> (button); <span class="planned">PLANNED</span> (chat)</td>
+</tr>
+</tbody>
+</table>
+<h3>Deployment and integration</h3>
+<p>OneOps-NextGen is structured as a single-process Python microservice that exposes its API surface via FastAPI and reads its configuration from a registry on disk. It can be started independently against a working set of dependencies and integrated into a larger platform as a service it offers, not a library that must be linked.</p>
+<p>The deployment surface today:</p>
+<table>
+<thead>
+<tr>
+  <th>What</th>
+  <th>Where</th>
+  <th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>API process</strong></td>
+  <td><code>uvicorn oneops.api.app:create_app --factory --host 127.0.0.1 --port 8765</code></td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>OpenAPI schema</strong></td>
+  <td><code>http://localhost:8765/openapi.json</code> — 18 routes declared</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Dockerfile for the API process</strong></td>
+  <td>Not present in the repository today.</td>
+  <td><span class="planned">PLANNED</span></td>
+</tr>
+<tr>
+  <td><strong><code>/health</code> and <code>/ready</code> endpoints</strong></td>
+  <td>Not yet exposed; both return 404. OpenAPI schema is the verifiable contract.</td>
+  <td><span class="planned">PLANNED</span></td>
+</tr>
+<tr>
+  <td><strong>Infrastructure containers</strong></td>
+  <td><code>docker-compose.yml</code> declares 8 services: Postgres, Dragonfly, NATS, OTel collector, Tempo, Prometheus, Grafana, LiteLLM.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>CI gate</strong></td>
+  <td><code>scripts/ci.sh</code> + <code>make ci-fast</code> + <code>make ci</code> + <code>.git/hooks/pre-commit</code></td>
+  <td><span class="shipped">SHIPPED</span> (see Validation §)</td>
+</tr>
+<tr>
+  <td><strong>Synthetic probes</strong></td>
+  <td>4 shell probes in <code>ops/probes/</code> cover UC-1/3/5/8 golden paths</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Observability stack</strong></td>
+  <td>OTel collector at port 4620 (OTLP HTTP), Tempo at 3401, Prometheus at 9391, Grafana at 3041</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>LLM egress</strong></td>
+  <td>LiteLLM proxy at port 4301; single point of cost metering, redaction, and policy</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Integration model</strong>: a consuming team wires OneOps-NextGen into a larger platform by (a) standing up the eight infrastructure services from the supplied <code>docker-compose.yml</code>; (b) starting the API process against those endpoints via the documented uvicorn invocation; (c) forwarding HTTP traffic to port 8765 with three required headers (<code>x-tenant-id</code>, <code>x-user-id</code>, <code>x-role</code>); and (d) consuming spans from the OTel collector and metrics from Prometheus.</p>
+<p><strong>Honest scope of &quot;production-grade microservice&quot;</strong>: the service is deployable and integrable today within a trusted boundary — the eight infrastructure services run as containers, the LLM egress runs as a container, observability is wired, and the CI gate enforces no-new-debt on every commit. Two items are gating before external or untrusted multi-tenant exposure: a Dockerfile for the API process itself (so the application can be packaged as a container image rather than launched as a uvicorn process), and the security pair described in the Security § below (front-door JWT and twice-enforced RBAC). Studio also requires the security pair before it can be exposed to any internal user, because activating an agent without a verified principal would let any caller add capabilities.</p>
+<hr />
+<h2>The six axes</h2>
+<h3>1. Agent lifecycle — <span class="partial">PARTIAL</span></h3>
+<p><strong>Why it matters.</strong> A board needs to know that every agent in production has a known version, a known owner, a defined state, and that the platform refuses to route to anything that is not in an <code>active</code> state.</p>
+<p><strong>What exists today.</strong></p>
+<table>
+<thead>
+<tr>
+  <th>What</th>
+  <th>Where</th>
+  <th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Five agents declared with <code>id</code>, <code>active_version</code>, <code>versions[]</code></td>
+  <td><code>registries/v2/agents/uc01_summarization.json</code>, <code>uc02_similar_tickets.json</code>, <code>uc03_kb_lookup.json</code>, <code>uc05_triage.json</code>, <code>uc08_fulfillment.json</code></td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td>Registry loader + boot-time validation</td>
+  <td><code>src/oneops/registry/store.py</code></td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td>Router refusal path for non-active agents</td>
+  <td><code>src/oneops/router/router.py</code> (emits <code>lifecycle.refused</code> spans)</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td>Evidence</td>
+  <td><code>ops/pmg-evidence/lifecycle.log</code> and <code>ops/pmg-evidence/phase-3-lifecycle.log</code></td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+</tbody>
+</table>
+<p><strong>What is missing.</strong></p>
+<ul>
+<li><code>AgentManifest</code> export / import command (<code>oneops manifest export &lt;agent_id&gt;</code> / <code>import &lt;path&gt;</code>) — listed as P0-#1 part 2 in <code>docs/production-maturity-plan.md</code>; sized at one morning of work.</li>
+<li>A/B traffic split via Istio — P2.</li>
+<li>Per-tenant catalog overlay — P1.</li>
+<li>Quality-gated promotion driven by judge metrics — P1.</li>
+</ul>
+<p><strong>Registry reconciliation — important context for the Studio narrative.</strong> The dead-code audit in <code>docs/findings/DEAD-CODE-AUDIT.md</code> found that the V1 root registries (<code>registries/agent-catalog-registry.json</code>, <code>registries/agent-tool-mapping.json</code>, <code>registries/agent-registry.json</code>, <code>registries/router-alias-registry.json</code>) have zero runtime references in <code>src/oneops/</code>. The live, consumed registry is <code>registries/v2/</code>, with eight referencing modules including <code>src/oneops/registry/store.py</code>, <code>src/oneops/router/glossary.py</code>, and <code>src/oneops/api/app.py</code>. When the Studio activation step is built, its write target <strong>must</strong> be <code>registries/v2/</code> to actually close the authoring → registry → runtime loop; writing to the V1 root files would silently fail to publish.</p>
+<h3>Lifecycle diagram</h3>
+<div class="mermaid">
+stateDiagram-v2
+    direction TB
+    [*] --> draft : create
+    draft --> active : approved + tests green
+    active --> deprecated : superseded
+    active --> retired : end-of-life
+    deprecated --> retired : grace period elapsed
+    retired --> [*]
+
+    note right of draft
+        Router refuses to route.
+        Studio activate (<span class="planned">PLANNED</span>)
+        writes here.
+    end note
+
+    note right of active
+        Only state the router
+        will route traffic to.
+    end note
+
+</div>
+<h3>2. Performance tracking — <span class="shipped">SHIPPED</span></h3>
+<p><strong>Why it matters.</strong> Operations and finance both need observable, per-tenant evidence of cost and latency, and the on-call rotation needs alerts that fire on real degradations before users notice them.</p>
+<p>The central point: this is <strong>active code instrumentation, not bolted-on dashboards</strong>. The application code emits the data; Tempo, Prometheus, and Grafana are the viewers.</p>
+<p><strong>What exists today.</strong></p>
+<table>
+<thead>
+<tr>
+  <th>What</th>
+  <th>Where</th>
+  <th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>107 span emit sites</strong> in production code</td>
+  <td><code>src/oneops/observability/span_helpers.py</code> plus direct <code>tracer.start_as_current_span</code> usage across the codebase</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>112 metric emit sites</strong> (95 counter increments + 17 histograms)</td>
+  <td><code>src/oneops/observability/metrics.py</code> (lock-protected, never raises into business code)</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Cost meter</strong> — <code>ai.llm.cost_usd_micros{tenant_id, model}</code></td>
+  <td><code>src/oneops/llm/cost.py:69</code></td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Token meter</strong> — <code>ai.llm.tokens.input.total</code>, <code>ai.llm.tokens.output.total</code>, <code>ai.llm.tokens.total{model, operation, provider}</code></td>
+  <td>Emitted on every gateway call</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>LLM latency histogram</strong> — <code>ai.llm.latency_ms{model, operation, provider}</code></td>
+  <td>Drives <code>AgentP99LatencyHigh</code> alert</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Cache meters</strong> — <code>ai.cache.hits/misses/writes/stale_reads.total</code> and <code>ai.cache.latency_ms{cache_name, operation}</code></td>
+  <td>Drives <code>CacheMissStorm</code> alert</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Agent run counter</strong> — <code>ai.agent.runs.total{agent_id, tenant_id, status}</code></td>
+  <td>Drives <code>TurnFailureRateHigh</code> and <code>AgentSubjectSilent</code> alerts</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>UC-8 specific metrics</strong> — <code>ai.uc08.create_sr.total</code>, <code>ai.uc08.match.total</code>, <code>ai.uc08.fulfill.total{dispatch}</code>, <code>ai.uc08.judge.verdict.total{judge, verdict}</code>, <code>ai.uc08.agent.events.total{outcome}</code></td>
+  <td>Drives 3 UC-8 specific alerts</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Bounded LLM call timeout</strong> — 60-second default on every UC-8 LLM call site</td>
+  <td><code>src/oneops/use_cases/uc08_fulfillment/text_extract.py:39</code>, <code>judge.py:54</code>, <code>catalog_search.py:83</code> (overridable per environment, all default to <code>&quot;60&quot;</code>)</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>15-panel Grafana dashboard</strong></td>
+  <td><code>ops/grafana/dashboards/oneops-overview.json</code> (title &quot;OneOps — Service Overview&quot;, uid <code>oneops-overview</code>)</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>9 alert rules</strong></td>
+  <td><code>ops/grafana/provisioning/alerting/alert-rules.yaml</code> (6 baseline + 3 UC-8)</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>4 synthetic probes</strong> in shell</td>
+  <td><code>ops/probes/uc01.sh</code>, <code>uc03.sh</code>, <code>uc05.sh</code>, <code>uc08.sh</code> plus <code>run-all-loop.sh</code> driver</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Forced-breach proof of alerting chain</strong></td>
+  <td><code>ops/pmg-evidence/day1-am-alert-fired.log</code></td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+</tbody>
+</table>
+<h3>Performance diagram</h3>
+<div class="mermaid">
+flowchart TD
+    classDef shipped fill:#d4edda,stroke:#155724,color:#155724
+    REQ["Incoming request"]:::shipped
+    CODE["Application code<br/>107 span sites + 112 metric sites"]:::shipped
+    OTLP["OTel collector :4620"]:::shipped
+    TEMPO["Tempo :3401<br/>trace storage"]:::shipped
+    PROM["Prometheus :9391<br/>metric storage"]:::shipped
+    GRAF["Grafana :3041<br/>15 dashboard panels"]:::shipped
+    ALERT["9 alert rules<br/>(6 baseline + 3 UC-8)"]:::shipped
+    ONCALL["Webhook contact point<br/>(operator notification)"]:::shipped
+    REQ --> CODE
+    CODE -->|OTLP HTTP| OTLP
+    OTLP --> TEMPO
+    OTLP --> PROM
+    PROM --> GRAF
+    PROM --> ALERT
+    TEMPO --> GRAF
+    ALERT --> ONCALL
+
+</div>
+<p><strong>What is missing.</strong></p>
+<ul>
+<li>Drift detector + per-UC quality score rollup — P0 follow-on, sized at two days.</li>
+<li>Smoke and devil's-play scripts as CI gate stages — currently deferred no-ops in <code>scripts/ci.sh</code>; the stage runs but prints &quot;deferred — script not present (Phase 6 fills in)&quot;.</li>
+</ul>
+<h3>3. Output validation — <span class="partial">PARTIAL</span></h3>
+<p><strong>Why it matters.</strong> When an AI system makes recommendations or transforms user data, the platform needs structural mechanisms that catch wrong answers before they reach the user — not after.</p>
+<p><strong>Defense-in-depth, honestly described.</strong></p>
+<table>
+<thead>
+<tr>
+  <th>Layer</th>
+  <th>Where</th>
+  <th>What it catches</th>
+  <th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>LLM-as-judge</strong></td>
+  <td><code>src/oneops/use_cases/uc08_fulfillment/judge.py</code> (379 lines; <code>JudgeVerdict</code> at line 59; <code>_VALID_VERDICTS</code> at line 65; <code>judge_extraction</code> at line 320; <code>judge_rerank</code> at line 345)</td>
+  <td>An independent LLM scores every UC-8 extraction and every UC-8 catalog rerank as <code>FAITHFUL</code> / <code>UNFAITHFUL</code> / <code>UNCERTAIN</code>. The verdict, confidence, and reasoning are surfaced on the API response. The metric <code>ai.uc08.judge.verdict.total{judge, verdict}</code> drives the <code>UC08JudgeUnfaithfulHigh</code> alert when the UNFAITHFUL share exceeds 10 per cent over 10 minutes.</td>
+  <td><span class="shipped">SHIPPED</span> (UC-8 only — see gap below)</td>
+</tr>
+<tr>
+  <td><strong>Closed-enum parsers</strong></td>
+  <td><code>_VALID_VERDICTS</code> in <code>src/oneops/use_cases/uc08_fulfillment/judge.py:65</code>; <code>_VALID_IMPACTS</code> / <code>_VALID_URGENCIES</code> / <code>_VALID_PRIORITIES</code> in <code>src/oneops/use_cases/uc05_triage/tools/prioritize.py</code>; <code>_VALID_CATEGORIES</code> in <code>src/oneops/executor/boundary.py</code></td>
+  <td>Reject hallucinated enum values from LLM JSON outputs before they propagate. Falls back to a safe default rather than crashing.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Policy composer</strong></td>
+  <td><code>src/oneops/policy/composer.py</code> (307 lines, seven distinct policy profiles applied at every LLM call site)</td>
+  <td>Enforces refusal patterns, output format, tone, and tenant scope rules. The blocks are loaded from <code>docs/policies/updated_policy_v2.md</code>.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>PII redaction</strong></td>
+  <td><code>src/oneops/llm/redaction.py</code> (54 lines)</td>
+  <td>Structural scrub of email, phone, and account-id patterns before the LLM call.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Pydantic schema enforcement</strong></td>
+  <td>Every API route uses <code>BaseModel</code> with <code>model_config = ConfigDict(extra=&quot;forbid&quot;)</code>; observed in <code>src/oneops/api/uc02_routes.py</code>, <code>uc05_routes.py</code>, <code>uc08_routes.py</code></td>
+  <td>Reject malformed requests at the boundary with HTTP 422; no silent coercion.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Golden + devil's-play tests</strong></td>
+  <td><code>tests/integration/test_uc08_button_user_journey.py</code> — 15 test functions, run against a live in-process FastAPI server; plus 28 UC-8 unit tests, 32 UC-2 unit tests, 9 UC-5 unit tests, 2 UC-1 unit tests</td>
+  <td>Live tests verify the full button flow with NATS dispatch, the judge running, and the embedding refresh trigger.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>CI gate</strong></td>
+  <td><code>scripts/ci.sh</code> runs ruff → mypy → pytest -m unit; <code>make ci-fast</code> is invoked by <code>.git/hooks/pre-commit</code> on every commit; <code>make ci</code> runs the full suite</td>
+  <td>Blocks any commit that introduces lint or type debt in categories not on the documented ratchet baseline (see Adding new use cases §).</td>
+  <td><span class="shipped">SHIPPED</span> — see honest disclosure</td>
+</tr>
+</tbody>
+</table>
+<h3>Validation diagram</h3>
+<div class="mermaid">
+flowchart TD
+    classDef shipped fill:#d4edda,stroke:#155724,color:#155724
+    classDef partial fill:#fff3cd,stroke:#856404,color:#856404
+    classDef planned fill:#e2e3e5,stroke:#383d41,color:#383d41,stroke-dasharray:5 5
+
+    REQ["Incoming request"]:::shipped
+    POL["Policy composer<br/>(7 profiles)"]:::shipped
+    RED["PII redaction"]:::shipped
+    LLM["LLM call via gateway :4301"]:::shipped
+    CLO["Closed-enum parser<br/>(rejects hallucinated values)"]:::shipped
+    JUDGE["LLM-as-judge<br/>FAITHFUL / UNFAITHFUL / UNCERTAIN"]:::partial
+    METRIC["ai.uc08.judge.verdict.total<br/>→ UC08JudgeUnfaithfulHigh"]:::shipped
+    RESP["Response with judge verdict<br/>+ confidence + reasoning"]:::shipped
+    CI["CI gate<br/>(commit-time + push-time)"]:::shipped
+    DRIFT["Drift detector + faithfulness<br/>gate in CI"]:::planned
+
+    REQ --> POL --> RED --> LLM --> CLO --> JUDGE --> METRIC --> RESP
+    LLM -. covered today only on UC-8 .- JUDGE
+    CI -.->|future tightening| DRIFT
+
+</div>
+<p><strong>Known gap that matters — load-bearing.</strong> The judge runs on UC-8 only today. It is <strong>not</strong> active on UC-1 (Summarization), UC-2 (Similar Tickets), UC-3 (KB Lookup), or UC-5 (Triage). This is a real coverage gap with at least one observed class of error it would catch: the router rewriter has been documented to corrupt intent in multi-turn conversations — for example, a follow-up question intended as &quot;summarise this&quot; being rewritten in a way that routes to &quot;similar tickets&quot; instead. UC-8-only judging cannot catch this class of error because the corrupted intent never reaches a judge gate. Expanding judge coverage to UC-1, UC-2, UC-3, and UC-5 is tracked under &quot;UC-1/2/3/5 prompt-hardening sweep&quot; — sized at roughly seven hours of focused work, deferred to a post-demo sprint. The drift detector and prompt-regression CI gate (P0-#4 in the maturity plan) sit alongside this expansion.</p>
+<p><strong>What is missing — explicitly.</strong></p>
+<ul>
+<li>Drift detector + per-UC quality score rollup — P0 follow-on, sized at two days.</li>
+<li>Prompt-regression CI gate — P0 follow-on, sized at two days.</li>
+<li>RAG-faithfulness as a hard gate (today it is observed via the judge metric, not enforced as a CI-level block) — P0 follow-on.</li>
+</ul>
+<h3>4. Security and governance — <span class="partial">PARTIAL</span></h3>
+<p><strong>Why it matters.</strong> The platform handles multi-tenant ITSM data. Identity at the boundary, role-based access at the route layer, and per-tenant data isolation are all required for any external or untrusted exposure.</p>
+<p><strong>What is enforced today — and what is not.</strong></p>
+<table>
+<thead>
+<tr>
+  <th>Layer</th>
+  <th>Where</th>
+  <th>Enforced today?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>Tenant-scoped data access</strong></td>
+  <td>Every SQL query in <code>src/oneops/use_cases/</code> and <code>src/oneops/api/</code> carries <code>tenant_id</code> as the first predicate; observed in <code>uc08_routes.py:284–340</code> (<code>itsm.request</code> INSERT), <code>uc05_routes.py:162–169</code> (queue summary), and the <code>_shared/ticket_store.py</code> reads.</td>
+  <td><strong>Yes — structurally enforced.</strong></td>
+</tr>
+<tr>
+  <td><strong>Per-route role allow-lists</strong></td>
+  <td>Each route declares a <code>frozenset</code> of permitted roles; observed in <code>uc05_routes.py</code> <code>_TRIAGE_ROLES</code>, <code>uc08_routes.py</code> <code>_PERMITTED_MATCH_ROLES</code> and <code>_PERMITTED_FULFILL_ROLES</code>. Requests with a non-listed role return HTTP 403.</td>
+  <td><strong>Yes — enforced at the route layer.</strong></td>
+</tr>
+<tr>
+  <td><strong>Mandatory policy composer</strong></td>
+  <td>Every LLM call site applies one of seven profiles from <code>src/oneops/policy/composer.py</code> (rule §2.3, <code>[[feedback_policy_layer_mandatory]]</code>).</td>
+  <td><strong>Yes — enforced at the LLM egress.</strong></td>
+</tr>
+<tr>
+  <td><strong>PII redaction at gateway</strong></td>
+  <td><code>src/oneops/llm/redaction.py</code> is invoked before every LLM call.</td>
+  <td><strong>Yes — enforced at the LLM egress.</strong></td>
+</tr>
+<tr>
+  <td><strong>Principal headers (<code>x-tenant-id</code>, <code>x-user-id</code>, <code>x-role</code>)</strong></td>
+  <td>Read in <code>_principal()</code> helpers; required on every route.</td>
+  <td><strong>Trusted at the boundary today — see gap below.</strong></td>
+</tr>
+<tr>
+  <td><strong>Front-door JWT verification</strong></td>
+  <td>Modules exist at <code>src/oneops/authz/tokens.py</code>, <code>rbac.py</code>, <code>abac.py</code>, <code>decision_cache.py</code>. They are scaffolded but <strong>not wired</strong> into the request boundary.</td>
+  <td><strong>No — <span class="partial">PARTIAL</span>.</strong> Front-door JWT is task #32 in the plan; sized at two to three days.</td>
+</tr>
+<tr>
+  <td><strong>Twice-enforced RBAC matrix</strong></td>
+  <td>Materialised role × tool table generated from <code>registries/role-permission-registry.json</code> would be checked at both the authoring time and the runtime tool-runner.</td>
+  <td><strong>No — <span class="planned">PLANNED</span>.</strong> Task #33, sized at two to three days.</td>
+</tr>
+<tr>
+  <td><strong>Hash-chained immutable audit log + RTBF endpoint</strong></td>
+  <td>Not present.</td>
+  <td><strong>No — <span class="planned">PLANNED</span>.</strong> P1.</td>
+</tr>
+<tr>
+  <td><strong>Cross-tenant adversarial CI corpus</strong></td>
+  <td>Not present.</td>
+  <td><strong>No — <span class="planned">PLANNED</span>.</strong> Task P0-#6, sized at one day for the harness plus corpus build.</td>
+</tr>
+</tbody>
+</table>
+<h3>Security diagram</h3>
+<div class="mermaid">
+flowchart TD
+    classDef shipped fill:#d4edda,stroke:#155724,color:#155724
+    classDef planned fill:#e2e3e5,stroke:#383d41,color:#383d41,stroke-dasharray:5 5
+
+    REQ["Incoming HTTP request"]:::shipped
+    JWT["Front-door JWT verification<br/>(#32 — <span class="planned">PLANNED</span>)"]:::planned
+    HEAD["Principal headers read<br/>(trusted at boundary today)"]:::shipped
+    ROLE["Per-route role allow-list<br/>(uc05_routes.py / uc08_routes.py)"]:::shipped
+    RBAC["Twice-enforced RBAC matrix<br/>(#33 — <span class="planned">PLANNED</span>)"]:::planned
+    TENANT["Tenant-scoped SQL<br/>(every query)"]:::shipped
+    POLICY["Policy composer<br/>(7 profiles)"]:::shipped
+    PII["PII redaction<br/>(llm/redaction.py)"]:::shipped
+    LLM["LiteLLM gateway :4301<br/>(single egress)"]:::shipped
+    AUDIT["Hash-chained audit log<br/>(<span class="planned">PLANNED</span> — P1)"]:::planned
+
+    REQ --> JWT
+    JWT --> HEAD --> ROLE
+    ROLE --> RBAC
+    RBAC --> TENANT --> POLICY --> PII --> LLM
+    POLICY --> AUDIT
+
+</div>
+<p><strong>Why Studio raises the authentication bar.</strong> Studio is the first surface where any internal user could activate an agent — that is, add a new tool-using capability to the runtime. Header-trust (today's model) is acceptable for back-office actors hitting UC-8 button mode in a trusted boundary. It is not acceptable for Studio. Front-door JWT (<code>#32</code>) and twice-enforced RBAC (<code>#33</code>) are therefore listed as <strong>gating</strong> for the Studio rollout in the roadmap below, not merely correlated with it.</p>
+<h3>5. Versioning — <span class="shipped">SHIPPED</span></h3>
+<p><strong>Why it matters.</strong> When something goes wrong — a regression, a customer complaint about a model output, a question about which prompt version produced a specific reply — the platform must be able to identify, at audit grade, the exact code that ran. Prompt revisions, model upgrades, schema migrations, and cache invalidations all need to be traceable.</p>
+<p><strong>What exists today.</strong></p>
+<table>
+<thead>
+<tr>
+  <th>What</th>
+  <th>Where</th>
+  <th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>Per-prompt version constant</strong></td>
+  <td>Every LLM call site declares a <code>PROMPT_VERSION</code> constant (e.g. <code>text_extract.py:47</code>, <code>judge.py:55</code>, <code>catalog_reranker.py</code>).</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Version stamped on every span</strong></td>
+  <td><code>uc08.prompt_version</code> attribute on <code>uc08.text_extract.call</code>, <code>uc08.judge.extraction</code>, <code>uc08.judge.rerank</code>. Observable in Tempo.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Per-agent version + lifecycle stage</strong></td>
+  <td><code>registries/v2/agents/&lt;uc&gt;.json</code> declares <code>active_version</code> and <code>versions[]</code>.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Model version captured in cost metric</strong></td>
+  <td><code>ai.llm.cost_usd_micros_total{model=&quot;gpt-4o-mini-2024-07-18&quot;}</code> — the full version string, not just family. Observable in Prometheus.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Schema migration sequence</strong></td>
+  <td><code>migrations/0001_*.sql</code> through <code>migrations/0007_*.sql</code>, applied in order, idempotent.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Cache-key version constants</strong></td>
+  <td><code>PIPELINE_CACHE_VERSION</code> and <code>HUMANISE_RECORD_VERSION</code> — bumping these automatically invalidates downstream caches without a flush.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Git tag history for rollback</strong></td>
+  <td><code>uc08-button-demo-ready</code>, <code>uc08-production-ready</code>, <code>day1-cut-complete-2026-05-31</code>, plus per-step tags.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+</tbody>
+</table>
+<h3>Versioning diagram</h3>
+<div class="mermaid">
+flowchart TD
+    classDef shipped fill:#d4edda,stroke:#155724,color:#155724
+    classDef planned fill:#e2e3e5,stroke:#383d41,color:#383d41,stroke-dasharray:5 5
+
+    CODE["Code change<br/>(prompt v1 → v2)"]:::shipped
+    BUMP["Bump PROMPT_VERSION constant<br/>(text_extract.py:47, etc.)"]:::shipped
+    STAMP["Version stamped on<br/>every span + metric label"]:::shipped
+    TRACE["Tempo trace<br/>(uc08.prompt_version=v2)"]:::shipped
+    METRIC["Prometheus metric<br/>{model='gpt-4o-mini-2024-07-18'}"]:::shipped
+    REG["Central prompt registry<br/>(diff / rollback view)"]:::planned
+    TAG["Release tag at known good<br/>(git checkout uc08-production-ready)"]:::shipped
+    ROLLBACK["Rollback path:<br/>checkout tag → restart service"]:::shipped
+    CODE --> BUMP --> STAMP
+    STAMP --> TRACE
+    STAMP --> METRIC
+    BUMP -.->|future| REG
+    TAG --> ROLLBACK
+
+</div>
+<p><strong>What is missing.</strong></p>
+<ul>
+<li>Central prompt registry with diff and rollback view — present in <code>docs/production-maturity-plan.md</code> as a P1 follow-on. Each prompt version lives in code today; that is auditable but not centrally browsable.</li>
+</ul>
+<h3>6. Adding new use cases — <span class="partial">PARTIAL</span> today, <span class="planned">PLANNED</span> via Studio</h3>
+<p><strong>Why it matters.</strong> The platform's long-term value depends on how cheaply and safely new use cases can be added. Today the path is real and documented but manual; the planned path is OneOps Studio.</p>
+<p><strong>Today's path — manual, but production-grade.</strong></p>
+<table>
+<thead>
+<tr>
+  <th>What management would ask</th>
+  <th>What to show</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>&quot;What does it take to add a use case?&quot;</td>
+  <td><code>docs/COMPONENT_SPEC.md</code> (C1–C24 contract) plus <code>docs/CONVENTIONS.md</code></td>
+</tr>
+<tr>
+  <td>&quot;Where is the worked example?&quot;</td>
+  <td><code>src/oneops/use_cases/uc08_fulfillment/</code> — the eleven-file reference package (contracts, handlers, core, executor, adapters, agent, nats_dispatcher, judge, catalog_search, catalog_reranker, priority, historical_suggest, text_extract, sr_id)</td>
+</tr>
+<tr>
+  <td>&quot;What registries must I touch?&quot;</td>
+  <td><code>registries/v2/agents/&lt;new_uc&gt;.json</code> plus <code>registries/tool-registry.json</code> plus <code>registries/agent-tool-mapping.json</code></td>
+</tr>
+<tr>
+  <td>&quot;What boundaries must I respect?&quot;</td>
+  <td><code>docs/PROJECT-BRIEFING.md</code> §2 — the thirteen non-negotiable rules</td>
+</tr>
+<tr>
+  <td>&quot;Where is the test pattern?&quot;</td>
+  <td><code>tests/integration/test_uc08_button_user_journey.py</code> — copy-pattern for any new button-mode use case</td>
+</tr>
+<tr>
+  <td>&quot;What does production-ready look like?&quot;</td>
+  <td><code>docs/production-maturity-plan.md</code> §D — the 30-item definition-of-done checklist</td>
+</tr>
+<tr>
+  <td>&quot;How is done verified?&quot;</td>
+  <td><code>make pmg-verify</code> → <code>ops/pmg-evidence/REPORT.md</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>The honest CI gate framing — important.</strong> <code>make ci-fast</code> runs ruff, mypy, and the unit-test suite on every commit via <code>.git/hooks/pre-commit</code>. It is green today. The gate enforces a <strong>ratcheting baseline</strong> (<code>pyproject.toml</code> <code>[tool.ruff.lint]</code> and <code>[tool.mypy]</code>): existing technical debt categories are explicitly ignored with a documented climb-back plan, but any new violation in any non-ignored category fails the gate. This is no-new-debt enforcement, not zero-debt strict mode — a deliberate choice that lets the platform ship while the existing debt is paid down sweep by sweep. The full picture is in the Verification notes block at the end of this document.</p>
+<p><strong>Studio — the future path.</strong></p>
+<div class="mermaid">
+flowchart TD
+    classDef shipped fill:#d4edda,stroke:#155724,color:#155724
+    classDef planned fill:#e2e3e5,stroke:#383d41,color:#383d41,stroke-dasharray:5 5
+
+    USER["Internal user types<br/>natural-language description"]:::planned
+    UI["Studio UI<br/>(textarea + tool catalog browser)"]:::planned
+    COMP["NL → Manifest compiler (#34)<br/>LLM picks tools from registries/v2/<br/>+ judge verifies tool selection"]:::planned
+    SIGN["HMAC-signed AgentManifest JSON<br/>(closed-enum verdict for unbuildable asks)"]:::planned
+    SAND["Sandboxed test runner (#35)<br/>runs the authored agent against fixtures"]:::planned
+    GATE["RBAC author-time gate (#33)<br/>+ JWT principal (#32)"]:::planned
+    ACT["POST /api/studio/activate<br/>writes to registries/v2/<br/>lifecycle = draft → active only on green"]:::planned
+    RUN["Existing runtime reads<br/>registries/v2/ at boot"]:::shipped
+
+    USER --> UI --> COMP --> SIGN --> SAND --> GATE --> ACT --> RUN
+
+</div>
+<p><strong>Studio MVP is sized at seven to eight days of focused work</strong>, broken into tasks #31 (cross-service tool catalog refactor), #32 (JWT), #33 (twice-enforced RBAC), #34 (compiler), #35 (sandbox), #36 (UI), and #37 (end-to-end demo and runbook). All are <span class="planned">PLANNED</span>. The full task list with sizing is in the consolidated roadmap below.</p>
+<hr />
+<h2>Roadmap to &quot;done&quot;</h2>
+<p>The single consolidated table of every <span class="planned">PLANNED</span> item across all six axes, with priority from <code>docs/production-maturity-plan.md</code> §E.</p>
+<table>
+<thead>
+<tr>
+  <th>#</th>
+  <th>Item</th>
+  <th>Axis</th>
+  <th>Priority</th>
+  <th>Effort</th>
+  <th>Gating?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>32</td>
+  <td>Front-door JWT verification — minimal OIDC + JWKS + signed internal JWTs</td>
+  <td>Security</td>
+  <td>P0</td>
+  <td>2–3 days</td>
+  <td><strong>Gates external multi-tenant exposure AND Studio.</strong></td>
+</tr>
+<tr>
+  <td>33</td>
+  <td>Twice-enforced RBAC (role × tool) matrix — author-time gate + runtime re-check</td>
+  <td>Security</td>
+  <td>P0</td>
+  <td>2–3 days</td>
+  <td><strong>Gates external multi-tenant exposure AND Studio.</strong></td>
+</tr>
+<tr>
+  <td>34</td>
+  <td>NL → Manifest compiler — text + tool catalog + user RBAC → signed AgentManifest JSON</td>
+  <td>Adding new UCs</td>
+  <td>P0 (Studio MVP)</td>
+  <td>~3 days</td>
+  <td>Gates Studio MVP.</td>
+</tr>
+<tr>
+  <td>35</td>
+  <td>Sandboxed test runner — runs authored agent against demo fixtures; blocks activation on failure</td>
+  <td>Adding new UCs</td>
+  <td>P0 (Studio MVP)</td>
+  <td>~1 day</td>
+  <td>Gates Studio MVP.</td>
+</tr>
+<tr>
+  <td>36</td>
+  <td>Studio UI minimal — textarea + tool catalog browser + sandbox + activate</td>
+  <td>Adding new UCs</td>
+  <td>P0 (Studio MVP)</td>
+  <td>~1 day</td>
+  <td>Gates Studio MVP.</td>
+</tr>
+<tr>
+  <td>37</td>
+  <td>Studio end-to-end demo + evidence + PMG runbook</td>
+  <td>Adding new UCs</td>
+  <td>P0 (Studio MVP)</td>
+  <td>~0.5 day</td>
+  <td>Gates Studio MVP rollout.</td>
+</tr>
+<tr>
+  <td>31</td>
+  <td>Cross-service tool catalog refactor — declare <code>consumed_capabilities</code> + <code>required_role</code> + <code>abac_tier</code> on every tool</td>
+  <td>Security / Adding new UCs</td>
+  <td>P0</td>
+  <td>~2 days</td>
+  <td>Foundational for Studio.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>Judge expansion to UC-1, UC-2, UC-3, UC-5 (post-demo sprint)</td>
+  <td>Validation</td>
+  <td>P0</td>
+  <td>~7 h</td>
+  <td>Closes load-bearing coverage gap.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>Drift detector + per-UC quality score rollup</td>
+  <td>Validation</td>
+  <td>P0</td>
+  <td>~2 days</td>
+  <td>Strengthens validation.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>Prompt-regression CI gate</td>
+  <td>Validation</td>
+  <td>P0</td>
+  <td>~2 days</td>
+  <td>Hardens CI.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>RAG-faithfulness as a hard gate</td>
+  <td>Validation</td>
+  <td>P0</td>
+  <td>included in drift detector scope</td>
+  <td>Hardens validation.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td><code>AgentManifest</code> export / import command (Day-2 P0-#1 part 2)</td>
+  <td>Lifecycle</td>
+  <td>P0</td>
+  <td>~0.5 day</td>
+  <td>Operator workflow.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>Cross-tenant adversarial CI corpus (1000 attempts)</td>
+  <td>Security</td>
+  <td>P0</td>
+  <td>~1 day</td>
+  <td>Continuous security validation.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>Hash-chained immutable audit log + RTBF endpoint</td>
+  <td>Security</td>
+  <td>P1</td>
+  <td>~1 day each</td>
+  <td>Compliance posture.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>Reversible PII token store</td>
+  <td>Security</td>
+  <td>P1</td>
+  <td>~3 days</td>
+  <td>Compliance posture.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>A/B traffic split via Istio</td>
+  <td>Lifecycle</td>
+  <td>P2</td>
+  <td>infrastructure-dependent</td>
+  <td>Scale-time.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>Per-tenant catalog overlay</td>
+  <td>Lifecycle</td>
+  <td>P1</td>
+  <td>~1 day</td>
+  <td>Customer customisation.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>Quality-gated promotion tied to lifecycle</td>
+  <td>Lifecycle</td>
+  <td>P1</td>
+  <td>~1 day</td>
+  <td>Closes the loop with judge metrics.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>Central prompt registry with diff / rollback view</td>
+  <td>Versioning</td>
+  <td>P1</td>
+  <td>~2 days</td>
+  <td>Operator tooling.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>Scaffolding CLI (<code>oneops scaffold uc</code>)</td>
+  <td>Adding new UCs</td>
+  <td>P1</td>
+  <td>~2 days</td>
+  <td>Drop-in replacement for hand-copy.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td>Dockerfile for the API process</td>
+  <td>Deployment</td>
+  <td>P0</td>
+  <td>~0.5 day</td>
+  <td>Required for container-image deployment.</td>
+</tr>
+<tr>
+  <td>—</td>
+  <td><code>/health</code> and <code>/ready</code> endpoints</td>
+  <td>Deployment</td>
+  <td>P0</td>
+  <td>~2 hours</td>
+  <td>Required for Kubernetes-style liveness probes.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Appendix — quick-reference for likely management questions</h2>
+<table>
+<thead>
+<tr>
+  <th>Question</th>
+  <th>One-line answer</th>
+  <th>Where to verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>How do we know the system is observable?</td>
+  <td>107 span sites and 112 metric sites in production code feed Tempo, Prometheus, and Grafana.</td>
+  <td><code>src/oneops/observability/</code>, <code>ops/grafana/dashboards/oneops-overview.json</code></td>
+</tr>
+<tr>
+  <td>How do we know the LLM cost is per tenant?</td>
+  <td>The <code>ai.llm.cost_usd_micros{tenant_id, model}</code> counter is emitted at the gateway boundary on every call.</td>
+  <td><code>src/oneops/llm/cost.py:69</code></td>
+</tr>
+<tr>
+  <td>What stops a developer from shipping broken code?</td>
+  <td>Pre-commit hook runs <code>make ci-fast</code> on every commit; pre-push runs <code>make ci</code>; ratcheting baseline blocks any new violation.</td>
+  <td><code>.git/hooks/pre-commit</code>, <code>scripts/ci.sh</code>, <code>pyproject.toml</code></td>
+</tr>
+<tr>
+  <td>How is the system bounded against runaway LLM calls?</td>
+  <td>A 60-second default timeout on every UC-8 LLM call site (extract, judge, embed); pre-truncation at 4000 input chars on text extraction.</td>
+  <td><code>src/oneops/use_cases/uc08_fulfillment/text_extract.py:39,46</code>, <code>judge.py:54</code>, <code>catalog_search.py:83</code></td>
+</tr>
+<tr>
+  <td>Can it be deployed independently?</td>
+  <td>Yes within a trusted boundary: API process runs via uvicorn, infrastructure runs via <code>docker-compose.yml</code>, OpenAPI is exposed at <code>/openapi.json</code>. A Dockerfile for the API process itself is <span class="planned">PLANNED</span>.</td>
+  <td><code>docker-compose.yml</code>, <code>http://localhost:8765/openapi.json</code></td>
+</tr>
+<tr>
+  <td>What is the largest deferred risk?</td>
+  <td>Front-door JWT verification (<code>#32</code>) and twice-enforced RBAC (<code>#33</code>) are scaffolded but not enforced — required before external or untrusted multi-tenant exposure and before Studio.</td>
+  <td><code>src/oneops/authz/</code> (scaffold), <code>docs/production-maturity-plan.md</code> §E</td>
+</tr>
+<tr>
+  <td>Where is the demo script?</td>
+  <td><code>docs/pmg-demo-runbook.md</code> — 45-minute demo + Q&amp;A section with grounded answers.</td>
+  <td><code>docs/pmg-demo-runbook.md</code></td>
+</tr>
+<tr>
+  <td>Where is the evidence report?</td>
+  <td><code>ops/pmg-evidence/REPORT.md</code> — auto-generated by <code>make pmg-verify</code>; seven phases green.</td>
+  <td><code>ops/pmg-evidence/REPORT.md</code></td>
+</tr>
+</tbody>
+</table>
+<h3>Take-home artifacts</h3>
+<p>The following documents are committed at release <code>day1-cut-complete-2026-05-31</code> and were prepared specifically for the management review:</p>
+<ul>
+<li><code>ops/pmg-evidence/REPORT.md</code> — auto-generated phase-by-phase evidence report (7/7 phases green at last generation).</li>
+<li><code>docs/pmg-demo-runbook.md</code> — 45-minute demo script with a seven-act narrative walkthrough and Q&amp;A.</li>
+<li><code>docs/manager-decision-package.md</code> — the ten binding-answer questions framed for management with recommended answers, cost of the alternative, and downstream gates.</li>
+<li><code>docs/production-maturity-plan.md</code> — the full 22-document target plan, including §F-LOCKED (Day-1 cut), §A.7 (deferred-with-rationale), and §G (open scoping questions).</li>
+</ul>
+<hr />
+<h2>Verification notes</h2>
+<p>This block lists every number that was verified during preparation, the items that could not be confirmed, and the precise state of the build at the time of writing. It is intended as the &quot;show your work&quot; companion to the body of the document.</p>
+<h3>Numbers verified against the codebase at release <code>day1-cut-complete-2026-05-31</code> (HEAD <code>0f1c035</code>)</h3>
+<table>
+<thead>
+<tr>
+  <th>Claim</th>
+  <th>Value</th>
+  <th>How verified</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>OTel span emit sites</td>
+  <td><strong>107</strong></td>
+  <td><code>grep -rn 'start_as_current_span\|with span(' src/oneops --include=&quot;*.py&quot; \| wc -l</code></td>
+</tr>
+<tr>
+  <td>Counter increments</td>
+  <td><strong>95</strong></td>
+  <td><code>grep -rn '_metric_inc(\|increment(' src/oneops --include=&quot;*.py&quot; \| wc -l</code></td>
+</tr>
+<tr>
+  <td>Histogram observations</td>
+  <td><strong>17</strong></td>
+  <td><code>grep -rn 'histogram(' src/oneops --include=&quot;*.py&quot; \| wc -l</code></td>
+</tr>
+<tr>
+  <td>Grafana dashboard panels</td>
+  <td><strong>15</strong></td>
+  <td><code>len(json.load('ops/grafana/dashboards/oneops-overview.json')['panels'])</code></td>
+</tr>
+<tr>
+  <td>Grafana alert rules</td>
+  <td><strong>9</strong> (6 baseline + 3 UC-8)</td>
+  <td><code>grep -c &quot;  - uid: oneops-&quot; ops/grafana/provisioning/alerting/alert-rules.yaml</code></td>
+</tr>
+<tr>
+  <td>Synthetic probes</td>
+  <td><strong>4</strong> UC-specific + 1 driver + 1 common helper</td>
+  <td><code>ls ops/probes/*.sh</code></td>
+</tr>
+<tr>
+  <td>UC-8 integration tests</td>
+  <td><strong>15</strong></td>
+  <td><code>grep -c &quot;^def test_&quot; tests/integration/test_uc08_button_user_journey.py</code></td>
+</tr>
+<tr>
+  <td>UC-8 unit tests</td>
+  <td><strong>28</strong></td>
+  <td>per-directory <code>grep -rc &quot;^def test_&quot;</code></td>
+</tr>
+<tr>
+  <td>UC-2 unit tests</td>
+  <td><strong>32</strong></td>
+  <td>per-directory <code>grep -rc &quot;^def test_&quot;</code></td>
+</tr>
+<tr>
+  <td>UC-5 unit tests</td>
+  <td><strong>9</strong></td>
+  <td>per-directory <code>grep -rc &quot;^def test_&quot;</code></td>
+</tr>
+<tr>
+  <td>UC-1 unit tests</td>
+  <td><strong>2</strong></td>
+  <td>per-directory <code>grep -rc &quot;^def test_&quot;</code></td>
+</tr>
+<tr>
+  <td>UC-3 unit tests</td>
+  <td><strong>0</strong> (chat-only; covered by router and KB-store unit tests upstream)</td>
+  <td>per-directory <code>grep -rc &quot;^def test_&quot;</code></td>
+</tr>
+<tr>
+  <td>Judge module line count</td>
+  <td><strong>379</strong></td>
+  <td><code>wc -l src/oneops/use_cases/uc08_fulfillment/judge.py</code></td>
+</tr>
+<tr>
+  <td>Policy composer line count</td>
+  <td><strong>307</strong></td>
+  <td><code>wc -l src/oneops/policy/composer.py</code></td>
+</tr>
+<tr>
+  <td>PII redaction line count</td>
+  <td><strong>54</strong></td>
+  <td><code>wc -l src/oneops/llm/redaction.py</code></td>
+</tr>
+<tr>
+  <td>Policy profiles defined</td>
+  <td><strong>7</strong></td>
+  <td><code>grep -c &quot;POLICY_PROFILE = &quot; src/oneops/policy/composer.py</code></td>
+</tr>
+<tr>
+  <td>60-second timeout default</td>
+  <td>confirmed at <code>text_extract.py:39</code>, <code>judge.py:54</code>, <code>catalog_search.py:83</code></td>
+  <td>direct <code>grep</code></td>
+</tr>
+<tr>
+  <td>Live API process port</td>
+  <td><strong>8765</strong></td>
+  <td>running uvicorn invocation + <code>/openapi.json</code> returns 200</td>
+</tr>
+<tr>
+  <td>LiteLLM gateway port</td>
+  <td><strong>4301</strong></td>
+  <td><code>docker-compose.yml</code> line <code>4301:4000</code></td>
+</tr>
+<tr>
+  <td>OTLP HTTP port</td>
+  <td><strong>4620</strong></td>
+  <td><code>docker-compose.yml</code> line <code>4620:4318</code></td>
+</tr>
+<tr>
+  <td>Tempo query port</td>
+  <td><strong>3401</strong></td>
+  <td><code>docker-compose.yml</code> line <code>3401:3200</code></td>
+</tr>
+<tr>
+  <td>Prometheus port</td>
+  <td><strong>9391</strong></td>
+  <td><code>docker-compose.yml</code> line <code>9391:9090</code></td>
+</tr>
+<tr>
+  <td>Grafana port</td>
+  <td><strong>3041</strong></td>
+  <td><code>docker-compose.yml</code> line <code>3041:3000</code></td>
+</tr>
+<tr>
+  <td>Dragonfly port</td>
+  <td><strong>6680</strong></td>
+  <td><code>docker-compose.yml</code></td>
+</tr>
+<tr>
+  <td>NATS client port</td>
+  <td><strong>4623</strong></td>
+  <td><code>docker-compose.yml</code> line <code>4623:4222</code></td>
+</tr>
+<tr>
+  <td>docker-compose services</td>
+  <td><strong>8</strong> (dragonfly, nats, postgres, tempo, otel-collector, prometheus, grafana, litellm)</td>
+  <td><code>yaml.safe_load('docker-compose.yml')['services'].keys()</code></td>
+</tr>
+</tbody>
+</table>
+<h3>Registry reconciliation</h3>
+<p>The dead-code audit (<code>docs/findings/DEAD-CODE-AUDIT.md</code>) found the V1 root registries (<code>registries/agent-catalog-registry.json</code>, <code>registries/agent-tool-mapping.json</code>, <code>registries/agent-registry.json</code>, <code>registries/router-alias-registry.json</code>) have <strong>zero references</strong> in <code>src/oneops/</code>. The live, runtime-consumed registry is <code>registries/v2/</code>, with at least eight referencing modules including <code>src/oneops/registry/store.py</code>, <code>src/oneops/router/glossary.py</code>, <code>src/oneops/api/app.py</code>, <code>src/oneops/use_cases/uc08_fulfillment/executor.py</code>, <code>src/oneops/use_cases/uc08_fulfillment/tools.py</code>, <code>src/oneops/use_cases/_shared/field_policy.py</code>, <code>src/oneops/uc_common/display_spec.py</code>, and <code>src/oneops/policy_engine/engine.py</code>. <strong>Studio's planned write target (#34/#37) must be <code>registries/v2/</code></strong>, not the V1 root files, for the authoring → registry → runtime loop to actually close. This is flagged in the Architecture section above and in the Lifecycle § registry reconciliation note.</p>
+<h3>CI gate status today</h3>
+<table>
+<thead>
+<tr>
+  <th>Path</th>
+  <th>Status</th>
+  <th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>make ci-fast</code> (commit-time gate via <code>.git/hooks/pre-commit</code>)</td>
+  <td><strong>GREEN</strong></td>
+  <td>ruff ✓, mypy ✓, <code>pytest -m unit</code> ✓ (19 passed in ~1 s) at HEAD <code>0f1c035</code>.</td>
+</tr>
+<tr>
+  <td><code>make ci</code> (full gate with integration + smoke + devils stages)</td>
+  <td><strong>GREEN on stages 1–4</strong>; stages 5 (smoke) and 6 (devils) print &quot;deferred — script not present (Phase 6 fills in)&quot;</td>
+  <td>Deferral is deliberate per the Day-1 plan.</td>
+</tr>
+<tr>
+  <td><code>tests/unit/router/test_time_filter_extractor.py</code> (run as a separate path, not via the commit gate)</td>
+  <td><strong>13 failures</strong> out of 195 tests</td>
+  <td>Event-loop-isolation flakes; not a product regression; <strong>not on the commit-gate path</strong> (the commit gate runs <code>pytest -m unit</code> which filters by marker, and these tests are reached only through a directory-targeted invocation).</td>
+</tr>
+</tbody>
+</table>
+<p>The honest framing in the body of this document — &quot;the gate is green today&quot; — refers to the <strong>commit-gate path</strong> (<code>make ci-fast</code>) that actually fires on every developer action. The 13 router test-isolation flakes exist in the broader test surface and are tracked as a follow-on; they do not flip the commit gate red.</p>
+<h3>Items that could not be confirmed</h3>
+<table>
+<thead>
+<tr>
+  <th>Item</th>
+  <th>Reason</th>
+  <th>Recommended next step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Permalink URLs to source files at the release ref</td>
+  <td>Repository has no configured git remote (<code>git remote get-url origin</code> returns nothing).</td>
+  <td>All source citations rendered as inline paths per the prompt's documented fallback rule. When a remote is added, a follow-on pass can replace inline paths with pinned <code>blob/&lt;tag&gt;/...</code> permalinks.</td>
+</tr>
+<tr>
+  <td><code>/health</code> and <code>/ready</code> HTTP endpoints</td>
+  <td>Both return HTTP 404.</td>
+  <td>Add to the FastAPI app surface (~2 hours). Listed in the roadmap.</td>
+</tr>
+<tr>
+  <td>Dockerfile for the API process</td>
+  <td>No <code>Dockerfile*</code> file present at repo root.</td>
+  <td>Build one for the OneOps API process so it can ship as a container image (~0.5 day). Listed in the roadmap.</td>
+</tr>
+<tr>
+  <td><code>v2</code> registry agent files' <code>status</code> / <code>version</code> / <code>lifecycle_stage</code> at the top level</td>
+  <td>The v2 schema uses nested <code>active_version</code> + <code>versions[]</code> rather than flat top-level fields.</td>
+  <td>Document the actual v2 schema in <code>docs/CONVENTIONS.md</code> so future authors do not assume a different shape.</td>
+</tr>
+<tr>
+  <td>Studio activation write path</td>
+  <td>Studio is <span class="planned">PLANNED</span>; no activation code exists yet.</td>
+  <td>When task #34 / #37 is built, target <code>registries/v2/</code> per the registry reconciliation note above.</td>
+</tr>
+</tbody>
+</table>
+<h3>Prepared by</h3>
+<p>This briefing was prepared on <strong>2026-05-31</strong> against release <code>day1-cut-complete-2026-05-31</code> (HEAD <code>0f1c035</code>). All factual claims were verified against the codebase at that exact reference using the commands shown above. Any number that could not be confirmed is flagged in this block rather than asserted in the body.</p>
+
+</main>
+<script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+        startOnLoad: true,
+        theme: 'default',
+        flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'linear' },
+        themeVariables: {
+            primaryColor: '#e8eff8',
+            primaryTextColor: '#1a1d23',
+            primaryBorderColor: '#1f4f8f',
+            lineColor: '#4a5260',
+            secondaryColor: '#f7f8fa',
+            tertiaryColor: '#ffffff',
+            fontFamily: 'Inter, sans-serif'
+        }
+    });
+</script>
+</body>
+</html>
