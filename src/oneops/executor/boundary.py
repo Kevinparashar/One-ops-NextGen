@@ -264,6 +264,26 @@ ITSM-domain vocabulary (treat as IN-SCOPE — never out_of_scope):
                                               service or tenant scope?")
     user: "tell me a joke"                  → out_of_scope
     user: "what's the weather"              → out_of_scope
+
+  OS / device qualifiers are context modifiers, NOT domain switches:
+
+  When a message names an OS (macOS, Mac, Windows, Linux, Ubuntu, RHEL,
+  ChromeOS), a device family (laptop, desktop, phone, tablet, iPhone,
+  Android, iOS, iPad), or a browser (Chrome, Safari, Firefox, Edge)
+  ALONGSIDE an IT/ITSM/ITOM topic (VPN, MFA, email, SSO, Wi-Fi, Outlook,
+  Teams, install, setup, configure, reset, troubleshoot), the OS / device
+  / browser is qualifying the IT topic — it does NOT make the message
+  off-domain. Keep `mentions_it_topic=true` and classify by the IT topic.
+
+  Examples (the OS qualifier does not change scope):
+    user: "any kb about VPN setup on macOS"   → in_scope_kb_search
+    user: "how to install Outlook on Windows" → in_scope_kb_search
+    user: "MFA enrollment on iPhone"          → in_scope_kb_search
+    user: "Wi-Fi keeps dropping on my Linux laptop" → in_scope_unclear
+                                              (incident-shaped; ask for
+                                              ticket id or KB intent)
+    user: "Safari can't reach the corp SSO page" → in_scope_unclear
+    user: "how do I uninstall Chrome on macOS" → in_scope_kb_search
 """
 
 
