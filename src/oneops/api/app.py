@@ -790,6 +790,43 @@ async def _lifespan(app: FastAPI):
         _log.warning("oneops.api.uc05_wiring_failed",
                       error=str(exc)[:160])
 
+    # ── UC-8 Fulfillment NATS agent wiring ──────────────────────────────
+    # When NATS is available, the /api/uc08/fulfill route publishes the
+    # executor-kick over NATS instead of running it in-process. Symmetric
+    # with UC-5. Graceful fallback to asyncio task if NATS is down.
+    try:
+        from oneops.adapters.nats_client import get_nats_client
+        from oneops.use_cases.uc08_fulfillment.agent import (
+            UC8FulfillmentAgent,
+        )
+        from oneops.use_cases.uc08_fulfillment.executor import execute_plan
+        from oneops.use_cases.uc08_fulfillment.adapters.inprocess import (
+            InProcessIntegrationAdapter,
+        )
+        import asyncpg as _asyncpg
+        import os as _os
+
+        nats_client_uc08 = await get_nats_client()
+
+        async def _uc08_cp():
+            return await _asyncpg.connect(_os.environ["POSTGRES_URL"])
+
+        uc08_agent = UC8FulfillmentAgent(
+            nats=nats_client_uc08,
+            execute_plan=execute_plan,
+            connection_provider=_uc08_cp,
+            adapter_factory=InProcessIntegrationAdapter,
+        )
+        await uc08_agent.start()
+        app.state.uc08_agent = uc08_agent
+
+        from oneops.api import uc08_routes as _uc08_routes
+        _uc08_routes.set_nats_dispatcher(nats_client_uc08)
+        _log.info("oneops.api.uc08_agent_started", dispatch="nats")
+    except Exception as exc:                                      # noqa: BLE001
+        _log.warning("oneops.api.uc08_wiring_failed",
+                      error=str(exc)[:160])
+
     # ── UC-2 Similar Tickets runner wiring ──────────────────────────────
     # Mirror of UC-5: in-process by default, NATS-swappable later. Same
     # find_similar() backs both the button route and (later) chat handler,

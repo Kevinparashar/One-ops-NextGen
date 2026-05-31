@@ -76,10 +76,17 @@
       headers: headers(),
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
+    // Read the body ONCE as text, then try to parse as JSON. Calling
+    // .json() and .text() both consumes the stream — the second call
+    // throws "body stream already read".
+    const raw = await res.text();
     let data;
-    try { data = await res.json(); } catch (_) { data = { _raw: await res.text() }; }
+    try { data = raw ? JSON.parse(raw) : {}; } catch (_) { data = { _raw: raw }; }
     if (!res.ok) {
-      const e = new Error(`HTTP ${res.status}: ${data.detail || data._raw || ""}`);
+      const detailMsg = typeof data.detail === "string"
+        ? data.detail
+        : (Array.isArray(data.detail) && data.detail[0]?.msg) || data._raw || res.statusText;
+      const e = new Error(`HTTP ${res.status}: ${detailMsg}`);
       e.status = res.status;
       e.data = data;
       throw e;

@@ -66,6 +66,7 @@ _PERMITTED_FULFILL_ROLES: frozenset[str] = frozenset({
 
 _gateway = None  # set via set_gateway() at boot
 _cache = None    # set via set_cache() at boot
+_nats_dispatcher = None  # set via set_nats_dispatcher() — when present, /fulfill routes the executor kick over NATS instead of an in-process asyncio task
 
 
 def set_gateway(g: Any) -> None:
@@ -76,6 +77,14 @@ def set_gateway(g: Any) -> None:
 def set_cache(c: Any) -> None:
     global _cache
     _cache = c
+
+
+def set_nats_dispatcher(nats: Any) -> None:
+    """Enable NATS-routed executor kick. When set, /fulfill publishes the
+    execute-event to the UC-8 agent instead of running an in-process task.
+    """
+    global _nats_dispatcher
+    _nats_dispatcher = nats
 
 
 # ── Request / response models ──────────────────────────────────────────
@@ -278,9 +287,10 @@ async def create_sr(
                     tenant_id=tenant_id, reason="text_extract_failure")
         raise HTTPException(502, detail=f"text-extract failure: {exc}")
 
-    # ── 1b. LLM-as-judge — verify the extraction is faithful ───────────
-    # Runs concurrently with the INSERT below (see asyncio.gather). Never
-    # raises into business code — UNCERTAIN on failure.
+    # ── 1b. LLM-as-judge — validate the extraction (does not reject) ───
+    # Runs concurrently with the INSERT below. Verdict is surfaced in
+    # the response so the caller can flag low-confidence outputs to the
+    # user. We never block, retry, or demote the row based on the judge.
     judge_task = asyncio.create_task(judge_extraction(
         gateway=gateway,
         tenant_id=tenant_id,
@@ -333,7 +343,7 @@ async def create_sr(
     finally:
         await conn.close()
 
-    # ── 3. Await the judge verdict (concurrent with the INSERT above) ──
+    # ── 3. Collect judge verdict (concurrent with the INSERT above) ────
     judge_result = await judge_task
 
     _metric_inc("ai.uc08.create_sr.total", 1,
@@ -654,38 +664,67 @@ async def fulfill(
                     tenant_id=tenant_id, reason="duplicate")
         raise HTTPException(409, detail=str(exc))
 
-    # ── Async executor kickoff (ServiceNow / Temporal pattern) ────────
+    # ── Async executor kickoff ────────────────────────────────────────
     # core.fulfill_request only PERSISTS the RITM + tasks. The workflow
-    # itself runs via executor.execute_plan, which we fire as a background
-    # asyncio task so this route returns immediately. Status polling
-    # against /api/uc08/status/{ritm_id} reflects executor progress.
-    # The InProcessIntegrationAdapter is the demo seam — production
-    # deployments swap in a real adapter via dependency injection.
-    import asyncio as _asyncio
-    from oneops.use_cases.uc08_fulfillment.adapters.inprocess import (
-        InProcessIntegrationAdapter,
-    )
-    from oneops.use_cases.uc08_fulfillment.executor import execute_plan
-
-    async def _kick(ritm_id: str, tenant_id: str, trace_id: str | None):
+    # itself runs via executor.execute_plan. Production routing:
+    #   • If a NATS dispatcher is wired (set_nats_dispatcher at boot),
+    #     publish to oneops.uc08.fulfill.execute → UC8FulfillmentAgent
+    #     picks it up in a queue group worker. Agent-to-agent flow is
+    #     visible in NATS + Tempo.
+    #   • Otherwise, fall back to an in-process asyncio task so the
+    #     demo still works when NATS is unavailable. Status polling
+    #     against /api/uc08/status/{ritm_id} reflects executor progress
+    #     either way (state is persisted to Postgres).
+    dispatch_via = "asyncio"
+    if _nats_dispatcher is not None:
         try:
-            await execute_plan(
-                tenant_id=tenant_id, ritm_id=ritm_id,
-                adapter=InProcessIntegrationAdapter(),
-                connection_provider=_cp,
-                trace_id=trace_id,
+            from oneops.use_cases.uc08_fulfillment.nats_dispatcher import (
+                dispatch_execute,
             )
+            await dispatch_execute(
+                nats=_nats_dispatcher,
+                tenant_id=tenant_id,
+                ritm_id=outcome.ritm_id,
+                trace_id=outcome.trace_id,
+            )
+            dispatch_via = "nats"
         except Exception as exc:                                  # noqa: BLE001
-            _log.warning("uc08.fulfill.executor_kick_failed",
-                         tenant_id=tenant_id, ritm_id=ritm_id,
-                         error=str(exc)[:200])
+            _log.warning(
+                "uc08.fulfill.nats_dispatch_failed_falling_back_to_asyncio",
+                tenant_id=tenant_id, ritm_id=outcome.ritm_id,
+                error=str(exc)[:200],
+            )
 
-    _asyncio.create_task(_kick(
-        outcome.ritm_id, tenant_id, outcome.trace_id,
-    ))
+    if dispatch_via == "asyncio":
+        import asyncio as _asyncio
+        from oneops.use_cases.uc08_fulfillment.adapters.inprocess import (
+            InProcessIntegrationAdapter,
+        )
+        from oneops.use_cases.uc08_fulfillment.executor import execute_plan
+
+        async def _kick(ritm_id: str, tenant_id: str, trace_id: str | None):
+            try:
+                await execute_plan(
+                    tenant_id=tenant_id, ritm_id=ritm_id,
+                    adapter=InProcessIntegrationAdapter(),
+                    connection_provider=_cp,
+                    trace_id=trace_id,
+                )
+            except Exception as exc:                              # noqa: BLE001
+                _log.warning("uc08.fulfill.executor_kick_failed",
+                             tenant_id=tenant_id, ritm_id=ritm_id,
+                             error=str(exc)[:200])
+
+        _asyncio.create_task(_kick(
+            outcome.ritm_id, tenant_id, outcome.trace_id,
+        ))
 
     _metric_inc("ai.uc08.fulfill.total", 1,
-                tenant_id=tenant_id, outcome=outcome.outcome.value)
+                tenant_id=tenant_id, outcome=outcome.outcome.value,
+                dispatch=dispatch_via)
+    _log.info("uc08.fulfill.completed",
+              tenant_id=tenant_id, ritm_id=outcome.ritm_id,
+              dispatch=dispatch_via)
     return FulfillResponse(
         ritm_id=outcome.ritm_id,
         run_id=outcome.run_id,
