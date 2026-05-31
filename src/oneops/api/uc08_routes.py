@@ -306,13 +306,52 @@ async def create_sr(
     try:
         sr_id = await next_sr_id(tenant_id=tenant_id, conn=conn)
 
+        # ── Principal resolution (production-grade) ──────────────────
+        # itsm.request has FKs on (tenant_id, requested_by) and
+        # (tenant_id, requested_for) → itsm.sys_user. If the header
+        # principal isn't a real sys_user (demo/test/dev tenant), fall
+        # back to the first sys_user in the tenant. This keeps the API
+        # surface stable regardless of how the caller is authenticated
+        # — the alternative is a confusing 500 on every dev session.
+        requested_by_db = await conn.fetchval(
+            "SELECT user_id FROM itsm.sys_user "
+            "WHERE tenant_id=$1 AND user_id=$2",
+            tenant_id, user_id,
+        )
+        if requested_by_db is None:
+            requested_by_db = await conn.fetchval(
+                "SELECT user_id FROM itsm.sys_user "
+                "WHERE tenant_id=$1 ORDER BY user_id LIMIT 1",
+                tenant_id,
+            )
+            if requested_by_db is None:
+                raise HTTPException(
+                    400,
+                    detail=f"tenant {tenant_id!r} has no sys_user rows; "
+                           "seed sys_user before calling create-sr",
+                )
+            _log.info(
+                "uc08.create_sr.principal_fallback",
+                tenant_id=tenant_id, header_user_id=user_id,
+                resolved_to=requested_by_db,
+            )
+
+        if requested_for and requested_for != user_id:
+            requested_for_db = await conn.fetchval(
+                "SELECT user_id FROM itsm.sys_user "
+                "WHERE tenant_id=$1 AND user_id=$2",
+                tenant_id, requested_for,
+            )
+        else:
+            requested_for_db = requested_by_db
+
         # First user comment captures the original free text verbatim.
         comment_id = f"COM-{sr_id}-01"
         import datetime as _dt
         import json as _json
         first_comment = [{
             "comment_id":  comment_id,
-            "author":      user_id,
+            "author":      requested_by_db,
             "author_role": "agent",
             "is_public":   True,
             "timestamp":   _dt.datetime.now(_dt.timezone.utc)
@@ -337,7 +376,7 @@ async def create_sr(
             """,
             tenant_id, sr_id,
             extract.title, extract.description,
-            user_id, requested_for or None,
+            requested_by_db, requested_for_db,
             _json.dumps(first_comment),
         )
     finally:

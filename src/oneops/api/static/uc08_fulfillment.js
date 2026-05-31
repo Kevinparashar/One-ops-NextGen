@@ -58,8 +58,16 @@
   function closeModal() { modal.classList.add("hidden"); reset(); }
   openBtn.addEventListener("click", openModal);
   closeBtn.addEventListener("click", closeModal);
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
+  // Close on backdrop click ONLY when both mousedown AND mouseup landed
+  // on the backdrop. Otherwise a text-selection drag (mousedown inside,
+  // mouseup outside) would close the modal mid-copy.
+  let _backdropDown = false;
+  modal.addEventListener("mousedown", (e) => {
+    _backdropDown = (e.target === modal);
+  });
+  modal.addEventListener("mouseup", (e) => {
+    if (_backdropDown && e.target === modal) closeModal();
+    _backdropDown = false;
   });
 
   // ── Tiny helpers ───────────────────────────────────────────────────
@@ -95,17 +103,17 @@
   }
 
   // ═════════════════════════════════════════════════════════════════
-  // STEP 1 — Compose: textarea + Auto-create SR
+  // STEP 1 — Compose: two distinct capabilities
+  //   (A) Find match — read-only catalog lookup, no DB writes
+  //   (B) Auto-create SR & match — persists SR then matches
   // ═════════════════════════════════════════════════════════════════
   function renderCompose() {
     body.innerHTML = `
       <div class="uc08-step uc08-compose">
         <p class="uc08-help">
-          Describe what you need in plain language. The system will:
-          (1) create a Service Request,
-          (2) match it to a catalog item,
-          (3) let you review &amp; edit values,
-          (4) execute the fulfillment workflow.
+          Describe what you need in plain language. Two capabilities:
+          <br/><strong>Find match</strong> — preview catalog match without creating anything.
+          <br/><strong>Auto-create SR &amp; match</strong> — persists a Service Request, matches it, lets you review &amp; fulfill.
         </p>
 
         <label for="uc08-text" class="uc08-label">Your request</label>
@@ -115,18 +123,61 @@
         <div class="uc08-actions">
           <button type="button" class="ghost"
             id="uc08-cancel">Cancel</button>
+          <button type="button" class="ghost"
+            id="uc08-find-match"
+            title="Read-only catalog lookup. Nothing is persisted.">🔍 Find match</button>
           <button type="button" class="primary"
-            id="uc08-create-sr">✨ Auto-create SR &amp; find match</button>
+            id="uc08-create-sr"
+            title="Creates a Service Request, runs catalog match, lets you review & execute.">✨ Auto-create SR &amp; match</button>
         </div>
 
         <div id="uc08-error" class="uc08-error hidden"></div>
       </div>
     `;
     $("#uc08-cancel").addEventListener("click", closeModal);
+    $("#uc08-find-match").addEventListener("click", onFindMatch);
     $("#uc08-create-sr").addEventListener("click", onCreateSr);
     $("#uc08-text").focus();
   }
 
+  // (A) Find match — preview only, no SR persistence.
+  async function onFindMatch() {
+    const text = ($("#uc08-text").value || "").trim();
+    const err  = $("#uc08-error");
+    err.classList.add("hidden");
+    if (!text) {
+      err.textContent = "Please describe what you need.";
+      err.classList.remove("hidden");
+      return;
+    }
+    const btn = $("#uc08-find-match");
+    btn.disabled = true;
+    btn.textContent = "⏳ Finding match…";
+    try {
+      // Use the raw text as both title + description — /match doesn't
+      // require a persisted SR. Mark state.sr as null so the next-step
+      // render knows this is a preview (no Proceed button).
+      const match = await api("/api/uc08/match", {
+        body: {
+          sr_title: text.slice(0, 120),
+          sr_description: text,
+          top_k: 5,
+        },
+      });
+      state.sr = null;          // preview mode — no SR yet
+      state.match = match;
+      state.previewText = text; // keep so we can promote-to-SR later
+      state.step = "match";
+      render();
+    } catch (e) {
+      err.textContent = `${e.message || e}`;
+      err.classList.remove("hidden");
+      btn.disabled = false;
+      btn.textContent = "🔍 Find match";
+    }
+  }
+
+  // (B) Auto-create SR & match — persists SR then matches.
   async function onCreateSr() {
     const text = ($("#uc08-text").value || "").trim();
     const err  = $("#uc08-error");
@@ -138,11 +189,11 @@
     }
     const btn = $("#uc08-create-sr");
     btn.disabled = true;
-    btn.textContent = "⏳ Creating SR + finding match…";
+    btn.textContent = "⏳ Creating SR + matching…";
     try {
       const sr = await api("/api/uc08/create-sr", { body: { user_text: text } });
       state.sr = sr;
-      // chain straight into match
+      state.previewText = null;
       const match = await api("/api/uc08/match", {
         body: {
           sr_title: sr.title,
@@ -157,7 +208,7 @@
       err.textContent = `${e.message || e}`;
       err.classList.remove("hidden");
       btn.disabled = false;
-      btn.textContent = "✨ Auto-create SR & find match";
+      btn.textContent = "✨ Auto-create SR & match";
     }
   }
 
@@ -175,13 +226,19 @@
     const chosen = m.auto_pick || (m.candidates && m.candidates[0]) || null;
     const e = m.enrichment || null;
 
+    const isPreview = !sr;
+
     body.innerHTML = `
       <div class="uc08-step uc08-match">
+        ${isPreview ? `
+        <div class="uc08-sr-pill uc08-preview-pill">
+          🔍 <strong>PREVIEW</strong> — no SR has been created yet
+        </div>` : `
         <div class="uc08-sr-pill">
           🆕 ${escapeHtml(sr.request_id)} &nbsp;|&nbsp;
           status: <strong>${escapeHtml(sr.status)}</strong>
           / stage: <strong>${escapeHtml(sr.stage)}</strong>
-        </div>
+        </div>`}
 
         <h4>${m.rerank_used ? "🤖 Best match" : "🎯 Best match"}
           <span class="uc08-confidence">
@@ -203,6 +260,12 @@
           <div class="uc08-reasoning">
             <em>Reasoning:</em> ${escapeHtml(m.rerank_reasoning)}
           </div>` : ""}
+          ${m.judge_verdict ? `
+          <div class="uc08-judge">
+            <em>Judge:</em>
+            <strong class="uc08-judge-${m.judge_verdict.toLowerCase()}">${escapeHtml(m.judge_verdict)}</strong>
+            (${pct(m.judge_confidence || 0)}%) — ${escapeHtml(m.judge_reasoning || "")}
+          </div>` : ""}
         </div>
 
         ${(m.candidates || []).length > 1 ? `
@@ -219,13 +282,17 @@
           </ul>
         </details>` : ""}
 
-        ${renderEnrichmentForm(sr, chosen, e)}
+        ${isPreview ? "" : renderEnrichmentForm(sr, chosen, e)}
 
         <div class="uc08-actions">
           <button type="button" class="ghost" id="uc08-back">← Back</button>
+          ${isPreview ? `
+          <button type="button" class="primary" id="uc08-promote">
+            ✨ Create SR &amp; proceed
+          </button>` : `
           <button type="button" class="primary" id="uc08-proceed">
             ✅ Proceed with these values
-          </button>
+          </button>`}
         </div>
 
         <div id="uc08-error" class="uc08-error hidden"></div>
@@ -235,7 +302,43 @@
     $("#uc08-back").addEventListener("click", () => {
       state.step = "compose"; render();
     });
-    $("#uc08-proceed").addEventListener("click", onProceed);
+    if (isPreview) {
+      $("#uc08-promote").addEventListener("click", onPromotePreviewToSr);
+    } else {
+      $("#uc08-proceed").addEventListener("click", onProceed);
+    }
+  }
+
+  // Preview → real SR. Calls /create-sr with the text the user originally
+  // typed, then re-renders the match step in "post-SR" mode so the
+  // enrichment form + Proceed button appear.
+  async function onPromotePreviewToSr() {
+    const err = $("#uc08-error");
+    err.classList.add("hidden");
+    const btn = $("#uc08-promote");
+    btn.disabled = true;
+    btn.textContent = "⏳ Creating SR…";
+    try {
+      const sr = await api("/api/uc08/create-sr", {
+        body: { user_text: state.previewText || "" },
+      });
+      state.sr = sr;
+      // Re-run match against the LLM-cleaned title to refresh enrichment.
+      const match = await api("/api/uc08/match", {
+        body: {
+          sr_title: sr.title,
+          sr_description: sr.description,
+          top_k: 5,
+        },
+      });
+      state.match = match;
+      render();
+    } catch (e) {
+      err.textContent = `${e.message || e}`;
+      err.classList.remove("hidden");
+      btn.disabled = false;
+      btn.textContent = "✨ Create SR & proceed";
+    }
   }
 
   function renderEnrichmentForm(sr, chosen, e) {
@@ -339,7 +442,7 @@
   function renderWrongIntent(sr, m) {
     body.innerHTML = `
       <div class="uc08-step uc08-empty">
-        <div class="uc08-sr-pill">🆕 ${escapeHtml(sr.request_id)}</div>
+        <div class="uc08-sr-pill">${sr ? `🆕 ${escapeHtml(sr.request_id)}` : "🔍 PREVIEW — no SR created"}</div>
         <h4>This doesn't look like a catalog request</h4>
         <p>${escapeHtml(m.rerank_reasoning || "The reranker classified this as a non-fulfilment intent.")}</p>
         <p>Did you mean to:</p>
@@ -360,7 +463,7 @@
   function renderNoMatch(sr, m) {
     body.innerHTML = `
       <div class="uc08-step uc08-empty">
-        <div class="uc08-sr-pill">🆕 ${escapeHtml(sr.request_id)}</div>
+        <div class="uc08-sr-pill">${sr ? `🆕 ${escapeHtml(sr.request_id)}` : "🔍 PREVIEW — no SR created"}</div>
         <h4>No matching catalog item</h4>
         <p>The catalog doesn't have an item that matches your request. The SR
            was saved so service desk can pick it up manually.</p>
