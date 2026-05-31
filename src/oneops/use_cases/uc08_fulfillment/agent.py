@@ -18,7 +18,8 @@ to the publisher (the publish already succeeded).
 from __future__ import annotations
 
 import json
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from oneops.adapters.nats_client import NATSClient
 from oneops.observability import get_logger, span

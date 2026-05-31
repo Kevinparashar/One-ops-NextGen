@@ -29,9 +29,8 @@ that did not route are reported in `RouteResult.unrouted`.
 """
 from __future__ import annotations
 
-from typing import Any
-
 from dataclasses import dataclass
+from typing import Any
 
 from oneops.authz.descriptors import from_agent_record
 from oneops.authz.models import Principal
@@ -39,14 +38,13 @@ from oneops.authz.service import AuthzService
 from oneops.observability import get_logger, get_tracer
 from oneops.registry.service import RegistryService
 from oneops.router.conditions import evaluate, survives_filter
-from oneops.router.signals import Ternary
-from oneops.router.decompose import Decomposer, PassthroughDecomposer, SubQuery
+from oneops.router.decompose import Decomposer, PassthroughDecomposer
 from oneops.router.disambiguation import Disambiguator
 from oneops.router.glossary import Glossary
 from oneops.router.plan import RouteResult, SubQueryRoute, assemble_plan
 from oneops.router.retrieval import CandidateRetriever
 from oneops.router.rewrite import ConversationTurn, PassthroughRewriter, Rewriter
-from oneops.router.signals import RequestSignals, with_intents
+from oneops.router.signals import RequestSignals, Ternary, with_intents
 
 _log = get_logger("oneops.router")
 _tracer = get_tracer("oneops.router")
@@ -169,6 +167,7 @@ class Router:
                 # otherwise N plan steps run with N copies of the same
                 # ticket_id.
                 from dataclasses import replace as _replace
+
                 from oneops.router.entity_id import EntityIdNormalizer
                 normalizer = EntityIdNormalizer.from_registry_file()
                 sq_text_for_extract = rewrite.text if rewrite.changed else sq.text
@@ -292,7 +291,7 @@ class Router:
         *,
         original_text: str | None = None,
     ) -> _FunnelOutcome:
-        none = _FunnelOutcome([], {}, "", False)
+        _FunnelOutcome([], {}, "", False)
 
         # Stage 1 — glossary normalization.
         normalized = self._glossary.normalize(text)

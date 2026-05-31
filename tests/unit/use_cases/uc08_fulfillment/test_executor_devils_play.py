@@ -19,7 +19,7 @@ import uuid
 import asyncpg
 import pytest
 
-from oneops.use_cases.uc08_fulfillment import core, db, executor
+from oneops.use_cases.uc08_fulfillment import core, executor
 from oneops.use_cases.uc08_fulfillment.adapters.inprocess import (
     FailurePolicy,
     InProcessIntegrationAdapter,
@@ -154,7 +154,8 @@ async def test_devil_format_string_injection_rejected(conn):
     must be silently dropped by the sanitiser, leaving placeholders
     untouched. The adapter then fails the call (visible, fail-loud)."""
     from oneops.use_cases.uc08_fulfillment.core import (
-        _sanitise_variables, _substitute_input_template,
+        _sanitise_variables,
+        _substitute_input_template,
     )
     malicious = {
         "employee_name": "OK",

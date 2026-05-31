@@ -15,8 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
-from typing import Any
 
 import asyncpg
 import pytest
@@ -249,6 +247,7 @@ async def test_gateway_hang_caught_by_timeout(conn):
     try:
         # Force module re-read of timeout
         import importlib
+
         from oneops.use_cases.uc08_fulfillment import catalog_search as cs
         importlib.reload(cs)
         with pytest.raises(cs.CatalogSearchError) as exc_info:
@@ -262,6 +261,7 @@ async def test_gateway_hang_caught_by_timeout(conn):
         os.environ.pop("UC08_CATALOG_EMBED_TIMEOUT_S", None)
         # Restore module
         import importlib
+
         from oneops.use_cases.uc08_fulfillment import catalog_search
         importlib.reload(catalog_search)
 

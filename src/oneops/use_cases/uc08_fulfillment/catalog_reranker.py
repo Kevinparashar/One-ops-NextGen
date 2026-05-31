@@ -37,10 +37,9 @@ from dataclasses import dataclass
 import structlog
 from opentelemetry import trace
 
-from oneops.observability.metrics import increment as _metric_inc
-
 from oneops.llm.gateway import LlmGateway
 from oneops.llm.models import LlmMessage, LlmRequest, ResponseFormat
+from oneops.observability.metrics import increment as _metric_inc
 from oneops.policy.composer import Profile, compose
 from oneops.use_cases.uc08_fulfillment.catalog_search import (
     CatalogMatch,
@@ -354,7 +353,7 @@ def _build_user_prompt(
     *, sr_text: str, candidates: tuple[CatalogMatch, ...],
 ) -> str:
     lines = [
-        f"USER REQUEST:",
+        "USER REQUEST:",
         f"  {sr_text}",
         "",
         f"CANDIDATES ({len(candidates)} from semantic search, ranked by cosine):",
@@ -489,9 +488,7 @@ async def rerank(
         )
 
         # Intent gate: if classifier says non-fulfilment, that's the verdict.
-        if intent_class in ("problem_report", "how_to"):
-            verdict, chosen, chosen_match = "WRONG_INTENT", None, None
-        elif intent_class == "off_topic":
+        if intent_class in ("problem_report", "how_to") or intent_class == "off_topic":
             verdict, chosen, chosen_match = "WRONG_INTENT", None, None
         elif intent_class == "fulfilment":
             if chosen_raw and chosen_raw in by_id:

@@ -36,8 +36,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import os
-from typing import Any, Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Any
 
 import asyncpg
 
@@ -248,7 +248,7 @@ async def _process_kb_message(
             vectors = await gateway.embed(
                 body_chunks, model=_EMBED_MODEL,
                 tenant_id=tenant_id, dimensions=_EMBED_DIM)
-            for i, (chunk_text, vec) in enumerate(zip(body_chunks, vectors)):
+            for i, (chunk_text, vec) in enumerate(zip(body_chunks, vectors, strict=False)):
                 await _upsert_embedding(
                     conn, target_table=target_table,
                     entity_id=entity_id, tenant_id=tenant_id,
@@ -292,7 +292,8 @@ async def _process_catalog_message(
     without redeploy (Scenario A new field, Scenario C column rename).
     """
     from oneops.embeddings.catalog_input import (
-        build_catalog_anchor_text, load_field_map,
+        build_catalog_anchor_text,
+        load_field_map,
     )
 
     if chunk_type != "catalog_anchor":
@@ -381,7 +382,7 @@ async def _process_message(
     tenant_id    = body["tenant_id"]
     chunk_type   = body["chunk_type"]
     enqueued_hex = body.get("enqueued_hash", "")
-    enqueued_hash = bytes.fromhex(enqueued_hex) if enqueued_hex else None
+    bytes.fromhex(enqueued_hex) if enqueued_hex else None
 
     # KB takes a separate code path: one trigger fires for the article,
     # worker emits anchor (1 row) + body (1..N rows with chunking + overlap).
@@ -503,7 +504,7 @@ class EmbeddingRefreshWorker:
         if self._task is not None:
             try:
                 await asyncio.wait_for(self._task, timeout=10)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._task.cancel()
             finally:
                 self._task = None

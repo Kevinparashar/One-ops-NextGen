@@ -14,21 +14,21 @@ so a cached decision can never be invalidated by a caller mutating its key.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
+from enum import StrEnum
 
 
-class Effect(str, Enum):
+class Effect(StrEnum):
     ALLOW = "allow"
     DENY = "deny"
 
 
-class Tier(str, Enum):
+class Tier(StrEnum):
     READ = "read"
     ACTION = "action"
 
 
-class DataClass(str, Enum):
+class DataClass(StrEnum):
     PUBLIC = "public"
     INTERNAL = "internal"
     CONFIDENTIAL = "confidential"
@@ -89,16 +89,16 @@ class AuthzDecision:
         return self.effect is Effect.ALLOW
 
     @staticmethod
-    def allow(*, from_cache: bool = False) -> "AuthzDecision":
+    def allow(*, from_cache: bool = False) -> AuthzDecision:
         return AuthzDecision(Effect.ALLOW, (), from_cache)
 
     @staticmethod
-    def deny(reasons: list[str], *, from_cache: bool = False) -> "AuthzDecision":
+    def deny(reasons: list[str], *, from_cache: bool = False) -> AuthzDecision:
         if not reasons:
             raise ValueError("a DENY decision must carry at least one reason")
         return AuthzDecision(Effect.DENY, tuple(reasons), from_cache)
 
-    def with_cache_flag(self) -> "AuthzDecision":
+    def with_cache_flag(self) -> AuthzDecision:
         """Return a copy marked as served from cache."""
         return AuthzDecision(self.effect, self.reasons, True)
 

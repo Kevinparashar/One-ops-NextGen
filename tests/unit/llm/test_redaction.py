@@ -45,7 +45,8 @@ def test_clean_text_passes_through_unchanged():
 def test_multiple_pii_classes_in_one_text():
     out, found = redact_text("alice@x.com / ssn 111-22-3333")
     assert found == {"email", "ssn"}
-    assert "alice@x.com" not in out and "111-22-3333" not in out
+    assert "alice@x.com" not in out
+    assert "111-22-3333" not in out
 
 
 def test_redact_messages_returns_found_classes():

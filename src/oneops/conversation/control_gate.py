@@ -47,11 +47,11 @@ Discipline (Moveworks / Parlant inspired):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
-import os
 import re
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Protocol
+from typing import Any, Literal, Protocol
 
 from oneops.observability import get_logger, get_tracer
 
@@ -96,7 +96,7 @@ class ConversationControlResult:
     """
     is_control: bool
     control_type: ControlType
-    response_text: Optional[str]
+    response_text: str | None
     source: str   # "punctuation_only" | "emoji_only" | "whitespace_only"
                   # | "llm_classifier" | "cache" | "fallthrough"
 
@@ -237,6 +237,36 @@ Off-topic chat:
                            * "active directory not syncing"
                            * "exchange queue depth high"
 
+                         CRITICAL — HOMONYM RESOLUTION. Many ordinary
+                         English words have a separate IT meaning. When
+                         such a word appears NEXT TO an IT term, take
+                         the IT meaning and return `none`. Do NOT let
+                         the personal-life sense of the homonym flip
+                         your decision to `out_of_scope`.
+
+                           * "sleep" = bedtime OR laptop standby. With
+                             "VPN", "laptop", "standby", "wake" nearby
+                             it means standby. → `none`
+                           * "drop" = dance step OR packet loss. With
+                             "Wi-Fi", "tunnel", "connection" nearby it
+                             means packet loss. → `none`
+                           * "wake" = morning OR resume-from-standby.
+                             With "laptop", "from sleep" nearby it means
+                             resume. → `none`
+                           * "stuck" = emotion OR hung process. With
+                             "queue", "build", "deploy" nearby it means
+                             a hung resource. → `none`
+
+                         Worked example:
+                           input: "documentation about VPN reconnection
+                                   after sleep?"
+                           reasoning: "documentation about X" is asking
+                                      for written IT content. "VPN" is
+                                      an IT service. "sleep" is laptop
+                                      standby in this context (paired
+                                      with "VPN reconnection").
+                           answer:  `none` (the router/KB handles it).
+
                          Rule: if the question names ANY of the
                          following — an IT system, OS, application,
                          service, protocol, device, error, login,
@@ -328,7 +358,7 @@ class ControlClassifier(Protocol):
         self, *, message: str, tenant_id: str, user_id: str = "",
         request_id: str = "",
         focus_entity_id: str = "", focus_service_id: str = "",
-    ) -> Optional[str]: ...
+    ) -> str | None: ...
 
 
 class _AbstainingClassifier:
@@ -341,7 +371,7 @@ class _AbstainingClassifier:
         self, *, message: str, tenant_id: str, user_id: str = "",
         request_id: str = "",
         focus_entity_id: str = "", focus_service_id: str = "",
-    ) -> Optional[str]:
+    ) -> str | None:
         return None
 
 
@@ -379,6 +409,7 @@ class DragonflyControlCache:
                 return self._redis
             try:
                 import redis.asyncio as aioredis
+
                 from oneops.config import get_settings
                 url = getattr(get_settings(), "dragonfly_url",
                               "redis://localhost:6379/0")
@@ -389,7 +420,7 @@ class DragonflyControlCache:
                 self._redis = False
             return self._redis
 
-    async def get(self, *, tenant_id: str, message: str) -> Optional[str]:
+    async def get(self, *, tenant_id: str, message: str) -> str | None:
         client = await self._client()
         if not client:
             return None
@@ -404,18 +435,16 @@ class DragonflyControlCache:
         return None if v == "__NONE__" else v
 
     async def put(self, *, tenant_id: str, message: str,
-                  label: Optional[str]) -> None:
+                  label: str | None) -> None:
         client = await self._client()
         if not client:
             return
-        try:
+        with contextlib.suppress(Exception):
             await client.setex(
                 _cache_key(tenant_id=tenant_id, message=message),
                 _CACHE_TTL_SECONDS,
                 (label or "__NONE__"),
             )
-        except Exception:
-            pass
 
 
 class LlmControlClassifier:
@@ -426,7 +455,7 @@ class LlmControlClassifier:
     retries, and LiteLLM proxy routing all apply automatically."""
 
     def __init__(self, gateway: Any, *, model: str = "gpt-4o-mini",
-                 cache: Optional[DragonflyControlCache] = None) -> None:
+                 cache: DragonflyControlCache | None = None) -> None:
         self._gateway = gateway
         self._model = model
         self._cache = cache or DragonflyControlCache()
@@ -435,7 +464,7 @@ class LlmControlClassifier:
         self, *, message: str, tenant_id: str, user_id: str = "",
         request_id: str = "",
         focus_entity_id: str = "", focus_service_id: str = "",
-    ) -> Optional[str]:
+    ) -> str | None:
         from oneops.errors import LLMGatewayError
         from oneops.llm import LlmMessage, LlmRequest
         from oneops.policy import Profile, compose

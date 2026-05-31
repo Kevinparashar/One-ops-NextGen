@@ -25,7 +25,7 @@ import os
 import re
 from typing import Any, Protocol, runtime_checkable
 
-from oneops.observability import get_logger, histogram, increment
+from oneops.observability import get_logger, increment
 
 _log = get_logger("oneops.use_cases.kb_store")
 
@@ -166,7 +166,7 @@ class InMemoryKbStore:
             emb = article.get("embedding")
             if not emb or len(emb) != len(query_vec):
                 continue
-            dot = sum(a * b for a, b in zip(query_vec, emb))
+            dot = sum(a * b for a, b in zip(query_vec, emb, strict=False))
             en = math.sqrt(sum(x * x for x in emb)) or 1.0
             cosine = dot / (qn * en)
             scored.append((cosine, article))
@@ -281,6 +281,7 @@ class PostgresKbStore:
         if self._pool is not None:
             return self._pool
         import asyncio
+
         from oneops.errors import OneOpsError
         if self._pool_lock is None:
             self._pool_lock = asyncio.Lock()
@@ -333,8 +334,9 @@ class PostgresKbStore:
     ) -> list[dict[str, Any]]:
         if not query or not query.strip() or not tenant_id or not audiences:
             return []
-        from oneops.errors import OneOpsError
         from opentelemetry.trace import get_tracer as _gt
+
+        from oneops.errors import OneOpsError
         tr = _gt("oneops.kb_store.postgres")
 
         pool = await self._ensure_pool()
@@ -394,29 +396,74 @@ class PostgresKbStore:
     ) -> list[dict[str, Any]]:
         if not query_vec or not tenant_id or not audiences:
             return []
-        from oneops.errors import OneOpsError
         from opentelemetry.trace import get_tracer as _gt
+
+        from oneops.errors import OneOpsError
         tr = _gt("oneops.kb_store.postgres")
 
         pool = await self._ensure_pool()
+        # Two SQL shapes, switched by env flag UC03_EMBEDDING_SOURCE.
+        #
+        #   legacy — read inline embedding column on itsm.kb_knowledge.
+        #     Pre-2026-05-30 path. One vector per article. Articles without
+        #     an embedding are unreachable here (still reachable via FTS).
+        #
+        #   new    — read ai.embeddings_kb_knowledge (chunked: 1 anchor +
+        #     N body chunks per article). For each article we pick its
+        #     best-scoring chunk via ROW_NUMBER() — UC-3's downstream
+        #     pipeline returns one row per article anyway, so this gives
+        #     better recall (a query about "Step 3" can match body chunk #3
+        #     even if the anchor doesn't mention it).
+        import os
+        use_new = os.getenv(
+            "UC03_EMBEDDING_SOURCE", "new").strip().lower() == "new"
+
         # `1 - (embedding <=> $vec)` = cosine similarity (HNSW index uses the
         # cosine *distance* operator `<=>`; smaller distance = more similar).
-        # Articles without an embedding are unreachable by this path — they
-        # remain reachable via FTS `search()` until back-filled.
-        sql = """
+        if use_new:
+            sql = """
+            WITH ranked AS (
+                SELECT
+                    e.entity_id AS kb_id,
+                    e.chunk_type,
+                    1 - (e.embedding <=> $2::vector) AS similarity,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY e.entity_id
+                        ORDER BY e.embedding <=> $2::vector
+                    ) AS rn
+                FROM ai.embeddings_kb_knowledge e
+                WHERE e.tenant_id = $1
+            )
             SELECT
-                kb_id, title, summary, content, category, tags, audience,
-                state, helpful_votes, views, related_incidents,
-                related_ci_ids, created_at, updated_at,
-                1 - (embedding <=> $2::vector) AS similarity
-            FROM itsm.kb_knowledge
-            WHERE tenant_id = $1
-              AND state = 'published'
-              AND audience = ANY($3)
-              AND embedding IS NOT NULL
-            ORDER BY embedding <=> $2::vector
+                k.kb_id, k.title, k.summary, k.content, k.category, k.tags,
+                k.audience, k.state, k.helpful_votes, k.views,
+                k.related_incidents, k.related_ci_ids,
+                k.created_at, k.updated_at,
+                r.similarity
+            FROM ranked r
+            JOIN itsm.kb_knowledge k
+              ON k.kb_id = r.kb_id AND k.tenant_id = $1
+            WHERE r.rn = 1
+              AND k.state = 'published'
+              AND k.audience = ANY($3)
+            ORDER BY r.similarity DESC
             LIMIT $4
-        """
+            """
+        else:
+            sql = """
+                SELECT
+                    kb_id, title, summary, content, category, tags, audience,
+                    state, helpful_votes, views, related_incidents,
+                    related_ci_ids, created_at, updated_at,
+                    1 - (embedding <=> $2::vector) AS similarity
+                FROM itsm.kb_knowledge
+                WHERE tenant_id = $1
+                  AND state = 'published'
+                  AND audience = ANY($3)
+                  AND embedding IS NOT NULL
+                ORDER BY embedding <=> $2::vector
+                LIMIT $4
+            """
         # asyncpg sends list[float] as a Postgres array; the explicit
         # ::vector cast (above) lets pgvector coerce it into its native
         # type so the HNSW index gets used.
@@ -477,8 +524,9 @@ class PostgresKbStore:
         `tenant_id` is mandatory and is the first SQL predicate."""
         if not tenant_id or not kb_ids:
             return {}
-        from oneops.errors import OneOpsError
         from opentelemetry.trace import get_tracer as _gt
+
+        from oneops.errors import OneOpsError
         tr = _gt("oneops.kb_store.postgres")
 
         pool = await self._ensure_pool()
@@ -549,8 +597,9 @@ class PostgresKbStore:
         you can't access it"."""
         if not kb_id or not tenant_id:
             return None
-        from oneops.errors import OneOpsError
         from opentelemetry.trace import get_tracer as _gt
+
+        from oneops.errors import OneOpsError
         tr = _gt("oneops.kb_store.postgres")
 
         pool = await self._ensure_pool()
@@ -589,8 +638,9 @@ class PostgresKbStore:
     ) -> dict[str, Any] | None:
         if not kb_id or not tenant_id or not audiences:
             return None
-        from oneops.errors import OneOpsError
         from opentelemetry.trace import get_tracer as _gt
+
+        from oneops.errors import OneOpsError
         tr = _gt("oneops.kb_store.postgres")
 
         pool = await self._ensure_pool()
@@ -636,8 +686,9 @@ class PostgresKbStore:
     ) -> list[dict[str, Any]]:
         if not entity_id or not tenant_id or not audiences:
             return []
-        from oneops.errors import OneOpsError
         from opentelemetry.trace import get_tracer as _gt
+
+        from oneops.errors import OneOpsError
         tr = _gt("oneops.kb_store.postgres")
 
         pool = await self._ensure_pool()

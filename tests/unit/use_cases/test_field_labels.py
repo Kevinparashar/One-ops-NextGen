@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from oneops.use_cases._shared.field_labels import humanise_record
 
-
 # ── operationally-important fields come first ─────────────────────────
 
 
@@ -303,3 +302,31 @@ def test_empty_list_is_dropped():
     out = humanise_record({"incident_id": "INC0001001", "title": "x",
                            "work_notes": []})
     assert "Work Notes" not in out
+
+
+# ── Production-grade: internal search/embedding columns NEVER leak ────────
+
+def test_search_tsv_is_hidden():
+    """itsm.* tables carry a `search_tsv` tsvector column. The summary card
+    UI would render the raw lexeme dump verbatim, which is unreadable and
+    leaks substrate detail."""
+    out = humanise_record({
+        "incident_id": "INC0001001", "title": "x", "status": "open",
+        "search_tsv": "'foo':1 'bar':2 'baz':3",
+    })
+    assert not any("search" in k.lower() and "tsv" in k.lower() for k in out)
+
+
+def test_content_hashes_are_hidden():
+    """The embedding worker stores per-chunk content hashes for cache-gating;
+    they're binary blobs and must never reach the response."""
+    out = humanise_record({
+        "incident_id": "INC0001001", "title": "x", "status": "open",
+        "content_hash": b"\x01\x02\x03",
+        "content_hash_symptom": b"\xff\xee\xdd",
+        "content_hash_diagnosis": b"\x00\x11\x22",
+        "content_hash_kb": b"\x33\x44\x55",
+    })
+    for k in out:
+        assert "hash" not in k.lower(), \
+            f"binary hash column leaked into key_details as {k!r}"

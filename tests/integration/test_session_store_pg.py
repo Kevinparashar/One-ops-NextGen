@@ -43,11 +43,10 @@ def _event(turn: int, content: str):
         occurred_at_unix_ms=int(time.time() * 1000))
 
 
-@pytest.fixture()
+@pytest.fixture
 async def store():
     """A SessionEventStore over the real Postgres log + Dragonfly window,
     pointed at the operator-supplied test DSNs."""
-    import asyncpg
     import redis.asyncio as aioredis
 
     from oneops.session.backend import ConversationEvent  # noqa: F401

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import UTC
 from typing import Any
 
 import asyncpg
@@ -268,11 +269,12 @@ async def create_sr(
     if gateway is None:
         raise HTTPException(503, detail="LLM gateway not initialised")
 
+    from oneops.use_cases.uc08_fulfillment.judge import judge_extraction
     from oneops.use_cases.uc08_fulfillment.sr_id import next_sr_id
     from oneops.use_cases.uc08_fulfillment.text_extract import (
-        TextExtractError, extract_title_and_description,
+        TextExtractError,
+        extract_title_and_description,
     )
-    from oneops.use_cases.uc08_fulfillment.judge import judge_extraction
 
     # ── 1. LLM extract title + description ─────────────────────────────
     try:
@@ -354,7 +356,7 @@ async def create_sr(
             "author":      requested_by_db,
             "author_role": "agent",
             "is_public":   True,
-            "timestamp":   _dt.datetime.now(_dt.timezone.utc)
+            "timestamp":   _dt.datetime.now(_dt.UTC)
                               .replace(microsecond=0).isoformat(),
             "text":        payload.user_text.strip(),
         }]
@@ -438,11 +440,13 @@ async def match_catalog(
     if gateway is None:
         raise HTTPException(503, detail="LLM gateway not initialised")
 
-    from oneops.use_cases.uc08_fulfillment.catalog_search import (
-        CatalogSearchError, find_closest_catalog_items,
-    )
     from oneops.use_cases.uc08_fulfillment.catalog_reranker import (
-        rerank, should_rerank,
+        rerank,
+        should_rerank,
+    )
+    from oneops.use_cases.uc08_fulfillment.catalog_search import (
+        CatalogSearchError,
+        find_closest_catalog_items,
     )
 
     conn = await _connect()
@@ -549,13 +553,14 @@ async def match_catalog(
             pass  # auto_pick_resp covers this path
 
         if chosen_catalog_id is not None:
-            from oneops.use_cases.uc08_fulfillment.priority import (
-                derive_and_compute,
-            )
+            from datetime import datetime, timedelta
+
             from oneops.use_cases.uc08_fulfillment.historical_suggest import (
                 suggest_for_catalog_item,
             )
-            from datetime import datetime, timezone, timedelta
+            from oneops.use_cases.uc08_fulfillment.priority import (
+                derive_and_compute,
+            )
 
             # Catalog metadata: estimated_total_minutes + owner_group + category
             cat_row = await conn.fetchrow(
@@ -571,7 +576,7 @@ async def match_catalog(
                     cat_row and cat_row["estimated_total_minutes"]) else 240
 
             # SLA = now() + estimated minutes
-            sla_due = datetime.now(timezone.utc) + timedelta(minutes=cat_minutes)
+            sla_due = datetime.now(UTC) + timedelta(minutes=cat_minutes)
 
             # Priority matrix derivation (in-memory)
             prio = derive_and_compute(
@@ -663,13 +668,15 @@ async def fulfill(
     _require_role(role, _PERMITTED_FULFILL_ROLES, "fulfill")
 
     from oneops.use_cases.uc08_fulfillment.contracts import (
-        FulfillmentRequest, TriggerType,
+        FulfillmentRequest,
+        TriggerType,
     )
     from oneops.use_cases.uc08_fulfillment.core import (
         fulfill_request as core_fulfill,
     )
     from oneops.use_cases.uc08_fulfillment.errors import (
-        CatalogItemNotFoundError, DuplicateRequestError,
+        CatalogItemNotFoundError,
+        DuplicateRequestError,
         RequestNotFoundError,
     )
 
@@ -736,6 +743,7 @@ async def fulfill(
 
     if dispatch_via == "asyncio":
         import asyncio as _asyncio
+
         from oneops.use_cases.uc08_fulfillment.adapters.inprocess import (
             InProcessIntegrationAdapter,
         )

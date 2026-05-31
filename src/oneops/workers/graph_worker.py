@@ -76,7 +76,7 @@ class GraphWorker:
         already opened a `nats.process` span and propagated trace
         context from incoming headers."""
         t0 = time.monotonic()
-        reply_subject = getattr(msg, "reply", None)
+        getattr(msg, "reply", None)
         try:
             envelope = json.loads(msg.data.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -118,7 +118,7 @@ class GraphWorker:
                     "trace_id": trace_id,
                     "latency_ms": int((time.monotonic() - t0) * 1000),
                 }
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 _log.warning("graph_worker.timeout",
                              request_id=envelope.get("request_id", ""))
                 reply = {

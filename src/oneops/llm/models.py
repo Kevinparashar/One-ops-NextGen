@@ -7,11 +7,11 @@ turns it into an `LlmResponse` after cost accounting.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
+from enum import StrEnum
 
 
-class ResponseFormat(str, Enum):
+class ResponseFormat(StrEnum):
     TEXT = "text"
     JSON = "json"            # provider must return strict JSON (structured output)
 

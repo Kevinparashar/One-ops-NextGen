@@ -91,6 +91,14 @@ class ExecutorState(TypedDict, total=False):
     final_status: str             # "executed" | "partial" | "clarification" | ...
     final_response: str
 
+    # ── TimeFilter (set conditionally by `route` after the plan is built) ──
+    # Serialised `TimeFilter` (dict via .model_dump(mode="json")) when the
+    # plan contains at least one agent whose registry record sets
+    # `consumes_time_filter: true`. Empty dict otherwise. Threaded through
+    # the request envelope so every tool that opts in (UC-2 today, UC-3/UC-5
+    # later) reads the same scope from `context["time_filter"]`.
+    time_filter: dict[str, Any]
+
     # ── Entry mode (set by the ingress, read only at graph start) ────────
     # "" / unset → chat ingress: load_session → route → wave …
     # "fast_path" → /fast/{uc_id} ingress: pre-built plan already in state;

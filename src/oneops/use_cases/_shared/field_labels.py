@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from typing import Any, Iterable
+from typing import Any
 
 # Generic labels — apply to every service when the field name matches.
 # Order in the dict is the display order when no service-specific entry
@@ -150,9 +150,36 @@ _BY_SERVICE: dict[str, tuple[tuple[str, str, str], ...]] = {
 #   * Internal vectors / timestamps the operator doesn't want to see.
 #   * Long-form prose (title, description) — already in the Summary
 #     paragraph the LLM generated; repeating them clutters Key Details.
+# Version stamp for the render rules in this module. EVERY callsite that
+# caches a `humanise_record(...)` output (UC-1 summary cache_aside, future
+# UC-3/UC-5 key-details snapshots) MUST include this in its cache key so a
+# change to `_HIDDEN`, `_LABELS`, or formatting rules auto-invalidates the
+# old entries. Bump on every behavioural change to the renderer. Treat it
+# like a database migration number.
+#
+# Changelog:
+#   v1 — initial release
+#   v2 — 2026-05-30 — hide search_tsv + content_hash_* (production leak fix)
+HUMANISE_RECORD_VERSION = "v2"
+
+
 _HIDDEN: frozenset[str] = frozenset({
-    "tenant_id", "content_tsv", "embedding", "embedding_model",
-    "embedding_version", "embedded_at", "_updated_at",
+    # Tenant isolation marker — exposed via the response envelope, not
+    # the field grid.
+    "tenant_id",
+    # Search-substrate columns: FTS vectors + per-chunk hashes that the
+    # embedding-refresh worker uses for cache-gating. Operator UI never
+    # benefits from seeing raw tsvectors or binary hashes — leaking them
+    # makes the summary card look like a database dump.
+    "content_tsv", "search_tsv",
+    "content_hash", "content_hash_symptom", "content_hash_diagnosis",
+    "content_hash_kb",
+    # Embedding columns: large float arrays + per-row provenance.
+    "embedding", "embedding_model", "embedding_version", "embedded_at",
+    # Internal bookkeeping fields.
+    "_updated_at",
+    # Title + description ride in the narrative paragraph instead of the
+    # key-details grid (long-form content has its own slot).
     "title", "description",
 })
 
@@ -218,9 +245,7 @@ def _format_datetime(value: Any) -> str:
 
 def _is_datelike_field(field: str) -> bool:
     return (
-        field.endswith("_at") or field.endswith("_due") or
-        field.endswith("_start") or field.endswith("_end") or
-        field == "purchase_date" or field == "warranty_expiry"
+        field.endswith(("_at", "_due", "_start", "_end")) or field == "purchase_date" or field == "warranty_expiry"
     )
 
 
@@ -315,9 +340,7 @@ def _format_value(field: str, value: Any) -> Any:
 def _is_empty(value: Any) -> bool:
     if value is None:
         return True
-    if isinstance(value, (str, list, tuple, dict, set)) and len(value) == 0:
-        return True
-    return False
+    return bool(isinstance(value, (str, list, tuple, dict, set)) and len(value) == 0)
 
 
 def _label_for(field: str, service_id: str) -> str:
@@ -395,13 +418,10 @@ def humanise_record(record: dict[str, Any]) -> dict[str, Any]:
         slot = _slot_for(field, service_id)
         # Sub-order: within a slot, generic-fields preserve their _GENERIC
         # order; service-specific fields use their declared order.
-        sub_order = "{:03d}_{:03d}".format(
-            service_field_order.get(field, 999),
-            generic_field_order.get(field, 999),
-        )
+        sub_order = f"{service_field_order.get(field, 999):03d}_{generic_field_order.get(field, 999):03d}"
         candidates.append((slot, sub_order, label, formatted))
     candidates.sort(key=lambda x: (x[0], x[1]))
     return {label: value for _slot, _sub, label, value in candidates}
 
 
-__all__ = ["humanise_record"]
+__all__ = ["humanise_record", "HUMANISE_RECORD_VERSION"]

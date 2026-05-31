@@ -19,7 +19,6 @@ from oneops.authz.decision_cache import InMemoryDecisionCache
 from oneops.authz.models import Principal
 from oneops.authz.rbac import RbacResolver
 from oneops.authz.service import AuthzService
-from oneops.registry.models import DataClassification
 from oneops.router.disambiguation import Disambiguation, ThresholdDisambiguator
 from oneops.router.glossary import Glossary
 from oneops.router.plan import RouteOutcome

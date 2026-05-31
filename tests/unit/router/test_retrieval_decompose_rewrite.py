@@ -46,13 +46,17 @@ async def test_retriever_honours_top_k(tmp_path):
     assert len(out) == 3
 
 
-async def test_retriever_skips_agents_with_no_overlap(tmp_path):
+async def test_retriever_ranks_overlapping_agent_first(tmp_path):
+    # Retriever-as-floor (dispatch-by-default): all candidates surface;
+    # the lexically-overlapping one ranks first. Closed-class filtering
+    # happens downstream in the disambiguator.
     reg = make_registry(tmp_path, [
         make_agent("uc_match", description="summarize incident records"),
         make_agent("uc_miss", description="provision cloud infrastructure servers"),
     ])
     out = await LexicalRetriever(reg).retrieve("summarize incident", tenant_id="t", top_k=5)
-    assert {c.agent_id for c in out} == {"uc_match"}
+    assert out, "retriever must surface at least one candidate"
+    assert out[0].agent_id == "uc_match"
 
 
 # ── PassthroughDecomposer ────────────────────────────────────────────────

@@ -18,7 +18,6 @@ from oneops.registry.models import (
     ExclusionRef,
     ExecutionTier,
     RoutingShape,
-    ToolParameter,
     ToolRecord,
     ToolRef,
 )
@@ -49,7 +48,7 @@ def _tool(tool_id):
         execution_type=ExecutionTier.READ)
 
 
-@pytest.fixture()
+@pytest.fixture
 def service(tmp_path):
     return RegistryService(FileBackend(tmp_path))
 
@@ -166,7 +165,8 @@ def test_integrity_error_lists_all_violations(service):
     with pytest.raises(RegistryIntegrityError) as exc:
         service.check_integrity()
     msg = str(exc.value)
-    assert "ghost_a" in msg and "ghost_b" in msg     # both, not just the first
+    assert "ghost_a" in msg
+    assert "ghost_b" in msg
 
 
 # ── resolve_agent_tools ──────────────────────────────────────────────────

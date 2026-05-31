@@ -22,7 +22,6 @@ from oneops.uc_common.display_spec import (
 )
 from oneops.uc_common.summary_schema import ENTITY_TYPES, KeyDetailKind
 
-
 # ── RowSpec / DisplaySpec model rules ──────────────────────────────────
 
 

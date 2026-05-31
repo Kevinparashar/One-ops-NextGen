@@ -6,7 +6,7 @@ proves the rule, not just the field.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -24,7 +24,6 @@ from oneops.uc_common.summary_schema import (
     KeyDetailKind,
     PartyRef,
 )
-
 
 # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -180,7 +179,7 @@ def test_citation_minimal():
     c = Citation(
         source=CitationSource.ITSM,
         record_id="INC0048213",
-        fetched_at=datetime(2026, 4, 2, 12, 0, tzinfo=timezone.utc),
+        fetched_at=datetime(2026, 4, 2, 12, 0, tzinfo=UTC),
     )
     assert c.source is CitationSource.ITSM
     assert c.url is None
@@ -244,7 +243,7 @@ def test_full_envelope_smoke():
             Citation(
                 source=CitationSource.ITSM,
                 record_id="INC0048213",
-                fetched_at=datetime(2026, 4, 2, 12, 0, tzinfo=timezone.utc),
+                fetched_at=datetime(2026, 4, 2, 12, 0, tzinfo=UTC),
             ),
         ),
         actions_available=(ActionRef(action_id="incident.resolve", label="Resolve"),),
@@ -256,5 +255,6 @@ def test_full_envelope_smoke():
         confidence_source="llm",
     )
     assert es.cache_age_s == 240
-    assert es.assignee and es.assignee.role == "L2"
+    assert es.assignee
+    assert es.assignee.role == "L2"
     assert len(es.actions_available) == 1

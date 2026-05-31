@@ -34,7 +34,7 @@ class RbacResolver:
         self._roles: dict[str, frozenset[str]] = dict(role_permissions)
 
     @classmethod
-    def from_registry_file(cls, path: str | None = None) -> "RbacResolver":
+    def from_registry_file(cls, path: str | None = None) -> RbacResolver:
         """Build from the role-permission registry JSON."""
         if path is None:
             repo_root = Path(__file__).resolve().parents[3]

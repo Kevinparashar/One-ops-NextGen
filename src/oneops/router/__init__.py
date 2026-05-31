@@ -55,8 +55,8 @@ from oneops.router.rewrite import (
     ConversationTurn,
     LlmRewriter,
     PassthroughRewriter,
-    RewriteResult,
     Rewriter,
+    RewriteResult,
 )
 from oneops.router.router import DEFAULT_TOP_K, Router
 from oneops.router.signals import RequestSignals, Ternary, with_intents

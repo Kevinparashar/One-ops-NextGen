@@ -30,8 +30,7 @@ _tracer = get_tracer("oneops.router.retrieval")
 _TOKEN = re.compile(r"[a-z0-9]+")
 # Tokens too generic to carry routing signal — excluded from lexical scoring.
 _STOPWORDS = frozenset(
-    "the a an of to for on in is it this that and or with my me i you "
-    "what who when where how can could please show give get".split()
+    ["the", "a", "an", "of", "to", "for", "on", "in", "is", "it", "this", "that", "and", "or", "with", "my", "me", "i", "you", "what", "who", "when", "where", "how", "can", "could", "please", "show", "give", "get"]
 )
 
 

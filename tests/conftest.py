@@ -6,7 +6,6 @@ Singletons (LLMGateway, Redis client) are torn down per-session to avoid leakage
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
@@ -41,5 +40,5 @@ def has_service(host: str, port: int, timeout: float = 0.5) -> bool:
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
-    except (OSError, socket.timeout):
+    except (TimeoutError, OSError):
         return False

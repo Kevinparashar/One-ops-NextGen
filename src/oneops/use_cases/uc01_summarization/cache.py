@@ -106,9 +106,10 @@ class DragonflySummaryCacheStore:
         self._ttl = ttl_seconds
 
     @classmethod
-    def from_settings(cls, *, ttl_seconds: int | None = None) -> "DragonflySummaryCacheStore":
+    def from_settings(cls, *, ttl_seconds: int | None = None) -> DragonflySummaryCacheStore:
         """Build over a client constructed from `DRAGONFLY_URL`."""
         import redis.asyncio as aioredis
+
         from oneops.config import get_settings
         settings = get_settings()
         client = aioredis.from_url(
@@ -145,7 +146,8 @@ class DragonflySummaryCacheStore:
             raise ValueError("DragonflySummaryCacheStore.put: tenant_id mandatory")
         if not fingerprint:
             raise ValueError("DragonflySummaryCacheStore.put: fingerprint mandatory")
-        import json, time
+        import json
+        import time
         value = {
             "summary": dict(summary),
             "cached_at": time.time(),

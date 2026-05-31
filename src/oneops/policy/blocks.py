@@ -11,9 +11,9 @@ serve a corrupted prompt to an LLM.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
 
 from oneops.errors import ConfigError
 from oneops.observability import get_logger

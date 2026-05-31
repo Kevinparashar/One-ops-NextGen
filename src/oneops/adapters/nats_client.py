@@ -25,7 +25,6 @@ Lifecycle:
 """
 from __future__ import annotations
 
-import asyncio
 import threading
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -33,7 +32,8 @@ from typing import Any
 import nats
 from nats.aio.client import Client as NATSConnection
 from nats.aio.msg import Msg
-from nats.errors import NoRespondersError, TimeoutError as NATSTimeoutError
+from nats.errors import NoRespondersError
+from nats.errors import TimeoutError as NATSTimeoutError
 from opentelemetry import context as otel_context
 from opentelemetry import propagate
 

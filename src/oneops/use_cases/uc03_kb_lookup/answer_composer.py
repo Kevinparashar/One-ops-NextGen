@@ -32,8 +32,8 @@ Never a fabricated paragraph.
 """
 from __future__ import annotations
 
-import json
-from typing import Any, Awaitable, Callable, Protocol
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol
 
 from oneops.observability import get_logger, get_tracer
 
@@ -269,8 +269,11 @@ FIELD USAGE
 Schema fields available: title, summary, content, category, tags, \
 audience, helpful_votes, views, related_ci_ids, related_incidents, \
 created_by, created_at, updated_at. Use title, summary, content as the \
-primary response source. Use category, tags, audience only when they \
-help clarify scope. Do NOT show helpful_votes, views, related_ci_ids, \
+primary response source. ALWAYS render a one-line `Category: <category> \
+· Tags: <tag1>, <tag2>, …` row directly under each article's title \
+when category or tags are present — they give the operator scope at a \
+glance ("ok, this is a network/wifi article" — useful even when the \
+body is short). Do NOT show helpful_votes, views, related_ci_ids, \
 related_incidents, created_by, created_at, or updated_at unless the \
 user specifically asks for metadata. Do not infer missing fields such \
 as cause, prerequisites, rollback, or verification unless they are \

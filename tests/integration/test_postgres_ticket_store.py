@@ -35,11 +35,11 @@ if not DSN:
         allow_module_level=True)
 
 
-from oneops.errors import ConfigError, OneOpsError              # noqa: E402
-from oneops.use_cases._shared.ticket_store import (              # noqa: E402
-    PostgresTicketStore, supported_services,
+from oneops.errors import ConfigError  # noqa: E402
+from oneops.use_cases._shared.ticket_store import (  # noqa: E402
+    PostgresTicketStore,
+    supported_services,
 )
-
 
 # A real id we observed at audit time. If the seed changes, swap this.
 _KNOWN_INCIDENT_ID = "INC0001001"

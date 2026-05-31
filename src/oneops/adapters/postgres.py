@@ -39,7 +39,7 @@ _log = get_logger("oneops.postgres")
 # each test loop gets its own pool. WeakKeyDictionary drops dead entries.
 import weakref as _weakref
 
-_pools: "_weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncpg.Pool]" = (
+_pools: _weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncpg.Pool] = (
     _weakref.WeakKeyDictionary()
 )
 _lock = threading.Lock()

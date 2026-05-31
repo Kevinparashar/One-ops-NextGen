@@ -57,6 +57,8 @@ def build_executor_graph(
     authz_service: Any | None = None,
     conversation_trimmer: Any | None = None,
     checkpointer: Any | None = None,
+    focus_intent_classifier: Any | None = None,
+    time_filter_extractor: Any | None = None,
 ) -> Any:
     """Compile the executor `StateGraph`.
 
@@ -79,6 +81,8 @@ def build_executor_graph(
         policy_engine=policy_engine,
         authz_service=authz_service,
         conversation_trimmer=conversation_trimmer,
+        focus_intent_classifier=focus_intent_classifier,
+        time_filter_extractor=time_filter_extractor,
     )
 
     g: StateGraph = StateGraph(ExecutorState)
@@ -226,7 +230,7 @@ async def build_postgres_checkpointer() -> Any:
 
     # psycopg expects "postgresql://" or "postgres://"; reject anything else
     # so a misconfigured DSN is a hard boot failure, not a runtime mystery.
-    if not (dsn.startswith("postgresql://") or dsn.startswith("postgres://")):
+    if not (dsn.startswith(("postgresql://", "postgres://"))):
         raise RuntimeError(
             f"LANGGRAPH_POSTGRES_URL must be a postgresql:// DSN; got "
             f"{dsn[:30]!r}…")

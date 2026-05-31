@@ -44,7 +44,7 @@ class DragonflyHotWindow:
         self._ttl = ttl_seconds
 
     @classmethod
-    def from_settings(cls) -> "DragonflyHotWindow":
+    def from_settings(cls) -> DragonflyHotWindow:
         """Build a window over a client constructed from `DRAGONFLY_URL`."""
         import redis.asyncio as aioredis
 

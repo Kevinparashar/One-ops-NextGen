@@ -41,7 +41,7 @@ class AuthzService:
         self._ttl = decision_ttl_seconds
 
     @classmethod
-    def create(cls) -> "AuthzService":
+    def create(cls) -> AuthzService:
         """Default wiring — RBAC from the role registry, in-process cache.
         Production swaps the cache for `DragonflyDecisionCache` (shared across
         workers); the `check()` contract does not change."""

@@ -98,6 +98,18 @@ class RegistryIntegrityError(RegistryError):
     code = "REGISTRY_INTEGRITY_VIOLATION"
 
 
+class RegistryDuplicateIdError(RegistryError):
+    """Same record_id appears in multiple subfolders under the same kind.
+
+    Raised by the file backend's recursive walker when two files with the
+    same `record_id.json` are discovered under e.g. `tools/uc01_summarization/`
+    and `tools/shared/`. Silent override would break the substrate's
+    "agents-are-data" guarantee; fail loud at boot instead.
+    """
+
+    code = "REGISTRY_DUPLICATE_ID"
+
+
 # ── Codec layer (P2) ─────────────────────────────────────────────────────
 class CodecError(OneOpsError):
     """Base for wire/disk codec faults (ADR-0001 protobuf envelope)."""

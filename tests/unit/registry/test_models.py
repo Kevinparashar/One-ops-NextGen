@@ -26,7 +26,6 @@ from oneops.registry.models import (
     SchemaRecord,
     ToolParameter,
     ToolRecord,
-    ToolRef,
 )
 
 

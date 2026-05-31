@@ -5,10 +5,9 @@ import pytest
 
 from oneops.errors import ToolHandlerError
 from oneops.toolrunner.idempotency import InMemoryIdempotencyStore
-from oneops.toolrunner.models import ToolResult, ToolStatus, VariableRef
+from oneops.toolrunner.models import ToolResult, VariableRef
 from oneops.toolrunner.resolver import HandlerResolver
 from oneops.toolrunner.variables import InMemoryVariableStore
-
 
 # ── HandlerResolver ──────────────────────────────────────────────────────
 

@@ -45,7 +45,7 @@ class RewriteResult:
     rationale: str = ""
 
     @staticmethod
-    def unchanged(text: str) -> "RewriteResult":
+    def unchanged(text: str) -> RewriteResult:
         return RewriteResult(text=text, changed=False, rationale="no reference to resolve")
 
 
@@ -299,9 +299,6 @@ class LlmRewriter:
     async def rewrite(
         self, text: str, *, history: list[ConversationTurn], request_ctx: dict
     ) -> RewriteResult:
-        from oneops.errors import LLMGatewayError
-        from oneops.llm import LlmMessage, LlmRequest, ResponseFormat
-        from oneops.policy import Profile, compose
 
         with _tracer.start_as_current_span(
             "router.stage0b.rewrite",
@@ -368,6 +365,22 @@ class LlmRewriter:
             doc = json.loads(response.content)
             rewritten = str(doc.get("rewritten") or text)
             changed = bool(doc.get("changed")) and rewritten != text
+            # ── Self-routable message guard (deterministic, 2026-05-31) ──
+            # The rewriter's purpose is to RESOLVE implicit references.
+            # If the original message already contains a canonical entity
+            # id (e.g. "summarize INC0001003", "similar tickets to REQ…"),
+            # there is no implicit reference to resolve — the message is
+            # self-routable. The LLM occasionally rewrites these anyway,
+            # replacing the user's verb with one from a prior turn (e.g.
+            # turning "summarize INC0001003" into "similar tickets to
+            # INC0001003"). That destroys the routing signal and dispatches
+            # the wrong UC. Hard-rule: if the original has any canonical
+            # id token AND the LLM rewrote it, revert.
+            _CANONICAL_ID_RE = __import__("re").compile(
+                r"\b([A-Z]{2,4}\d{6,})\b")
+            if changed and _CANONICAL_ID_RE.search(text):
+                rewritten = text
+                changed = False
             # ── Bare-digit completion guard (deterministic) ─────────────
             # If the LLM left a bare-digit message unchanged but a focus
             # record exists in history, apply the completion rule in

@@ -21,8 +21,9 @@ import json
 import os
 import tempfile
 import threading
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Generic, Iterable, Protocol, TypeVar
+from typing import Protocol, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -62,20 +63,64 @@ class RegistryBackend(Protocol):
 
 
 class FileBackend:
-    """JSON-file backend. One file per record: `<root>/<kind>/<id>.json`.
+    """JSON-file backend with recursive per-UC subfolder support (2026-05-31).
+
+    Layout:
+        <root>/<kind>/<id>.json                       (legacy flat layout — still supported)
+        <root>/<kind>/<grouping>/<id>.json            (per-UC layout, recommended)
+
+    Examples:
+        registries/v2/tools/uc01_summarization/get_ticket_details.json
+        registries/v2/tools/uc02_similar_tickets/find_similar_entities.json
+        registries/v2/tools/shared/notify_milestone.json
+
+    Filename = record_id (e.g., `get_ticket_details.json` ↔ id `get_ticket_details`).
+    Subfolder is operator organisation only — it does NOT participate in the id.
 
     The file holds a *version envelope*:
         {"id": ..., "versions": {"1": {...}, "2": {...}}, "active_version": 2}
 
     Writes are atomic (temp file in the same dir + `os.replace`), so a crash
     mid-write never leaves a half-written record.
+
+    Production guarantees:
+      • Recursive discovery via `rglob("*.json")` — finds tools at any depth.
+      • Duplicate-id detection — same `record_id.json` in two subfolders is a
+        config bug; the backend raises `RegistryDuplicateIdError` at boot
+        rather than silently picking one.
+      • Backward-compatible — existing flat-layout records continue to work
+        without migration.
+      • Writes prefer the existing file's location; new records land at the
+        top of their kind directory (callers can move them into subfolders
+        after creation if desired).
     """
 
     def __init__(self, root: str | Path) -> None:
         self._root = Path(root)
 
+    def _kind_dir(self, kind: str) -> Path:
+        return self._root / kind
+
     def _path(self, kind: str, record_id: str) -> Path:
-        return self._root / kind / f"{record_id}.json"
+        """Resolve the canonical location of `record_id.json` under `kind`.
+
+        Recursive search across subfolders; if multiple matches, that's a
+        duplicate-id config bug and we raise immediately (rather than silently
+        binding to the first one found). When no file exists, returns the
+        top-level path so writes for brand-new records land predictably.
+        """
+        kind_dir = self._kind_dir(kind)
+        if kind_dir.is_dir():
+            matches = list(kind_dir.rglob(f"{record_id}.json"))
+            matches = [p for p in matches if p.is_file()]
+            if len(matches) > 1:
+                from oneops.errors import RegistryDuplicateIdError
+                rel = sorted(str(p.relative_to(self._root)) for p in matches)
+                raise RegistryDuplicateIdError(
+                    f"duplicate {kind}/{record_id}.json in: {rel}")
+            if matches:
+                return matches[0]
+        return kind_dir / f"{record_id}.json"
 
     def read(self, kind: str, record_id: str) -> dict | None:
         path = self._path(kind, record_id)
@@ -112,16 +157,37 @@ class FileBackend:
         return True
 
     def list_ids(self, kind: str) -> list[str]:
-        kind_dir = self._root / kind
+        """Recursive walk + duplicate-id guard. Production-grade (2026-05-31).
+
+        Walks every subfolder under `<root>/<kind>/` so per-UC organisation
+        (e.g. `tools/uc01_summarization/`, `tools/shared/`) is discovered.
+        If the same `record_id.json` exists in multiple subfolders the walker
+        raises — silent override would break the substrate's contract.
+        """
+        kind_dir = self._kind_dir(kind)
         if not kind_dir.is_dir():
             return []
-        return sorted(p.stem for p in kind_dir.glob("*.json"))
+        ids: list[str] = []
+        seen: dict[str, Path] = {}
+        for p in kind_dir.rglob("*.json"):
+            if not p.is_file():
+                continue
+            stem = p.stem
+            if stem in seen:
+                from oneops.errors import RegistryDuplicateIdError
+                paths = sorted(str(x.relative_to(self._root))
+                               for x in (seen[stem], p))
+                raise RegistryDuplicateIdError(
+                    f"duplicate {kind} record_id '{stem}' in: {paths}")
+            seen[stem] = p
+            ids.append(stem)
+        return sorted(ids)
 
 
 # ── Versioned store ──────────────────────────────────────────────────────
 
 
-class VersionedStore(Generic[RecordT]):
+class VersionedStore[RecordT: BaseModel]:
     """CRUD + version lifecycle for one record type.
 
     Version model:
@@ -171,16 +237,16 @@ class VersionedStore(Generic[RecordT]):
     def create(self, record: RecordT) -> RecordT:
         """Persist a brand-new record as version 1 (DRAFT). Conflicts if the
         id already exists."""
-        record_id = getattr(record, "id")
+        record_id = record.id
         with self._lock:
             if self._load_envelope(record_id) is not None:
                 raise RecordConflictError(
                     f"{self._kind}/{record_id} already exists — use update()"
                 )
-            if getattr(record, "version") != 1:
+            if record.version != 1:
                 raise RecordValidationError(
                     f"{self._kind}/{record_id}: a new record must be version 1, "
-                    f"got {getattr(record, 'version')}"
+                    f"got {record.version}"
                 )
             envelope = {
                 "id": record_id,
@@ -194,17 +260,17 @@ class VersionedStore(Generic[RecordT]):
         """Append the next version. `record.version` must be exactly the
         current max version + 1 — out-of-order writes are a conflict, not a
         silent overwrite."""
-        record_id = getattr(record, "id")
+        record_id = record.id
         with self._lock:
             envelope = self._load_envelope(record_id)
             if envelope is None:
                 raise RecordNotFoundError(f"{self._kind}/{record_id} does not exist")
             existing = {int(v) for v in envelope["versions"]}
             expected = max(existing) + 1
-            if getattr(record, "version") != expected:
+            if record.version != expected:
                 raise RecordConflictError(
                     f"{self._kind}/{record_id}: next version must be {expected}, "
-                    f"got {getattr(record, 'version')}"
+                    f"got {record.version}"
                 )
             envelope["versions"][str(expected)] = record.model_dump(mode="json")
             self._backend.write(self._kind, record_id, envelope)
@@ -230,7 +296,31 @@ class VersionedStore(Generic[RecordT]):
             target["status"] = RecordStatus.ACTIVE.value
             envelope["active_version"] = version
             self._backend.write(self._kind, record_id, envelope)
+            _audit_lifecycle_transition(self._kind, record_id, version,
+                                         to_status=RecordStatus.ACTIVE)
             return self._parse(target, record_id, version)
+
+    def deprecate(self, record_id: str, version: int) -> None:
+        """Mark a version DEPRECATED — still callable, but `get()` emits a
+        deprecation warning on every access (operators see it in Tempo /
+        log and can prepare callers for retirement).
+
+        Deprecating the active version KEEPS it active (the record still
+        services traffic). Use `retire()` to remove from the live pool.
+
+        Lifecycle: ACTIVE → DEPRECATED → (later) RETIRED.
+        """
+        with self._lock:
+            envelope = self._require_envelope(record_id)
+            vkey = str(version)
+            if vkey not in envelope["versions"]:
+                raise RecordNotFoundError(
+                    f"{self._kind}/{record_id} has no version {version}"
+                )
+            envelope["versions"][vkey]["status"] = RecordStatus.DEPRECATED.value
+            self._backend.write(self._kind, record_id, envelope)
+            _audit_lifecycle_transition(self._kind, record_id, version,
+                                         to_status=RecordStatus.DEPRECATED)
 
     def retire(self, record_id: str, version: int) -> None:
         """Mark a version RETIRED. Retiring the active version clears the
@@ -246,11 +336,20 @@ class VersionedStore(Generic[RecordT]):
             if envelope.get("active_version") == version:
                 envelope["active_version"] = None
             self._backend.write(self._kind, record_id, envelope)
+            _audit_lifecycle_transition(self._kind, record_id, version,
+                                         to_status=RecordStatus.RETIRED)
 
     # -- read -------------------------------------------------------------
 
     def get(self, record_id: str, version: int | None = None) -> RecordT:
-        """Fetch the ACTIVE version, or a specific `version` when given."""
+        """Fetch the ACTIVE version, or a specific `version` when given.
+
+        Production-grade runtime observability (2026-05-31): when the
+        record returned is DEPRECATED, a structured log + OTel span
+        event is emitted so every caller is auditable. Operators can
+        alert on `registry.lifecycle.deprecation_used` to size sunset
+        windows.
+        """
         envelope = self._require_envelope(record_id)
         if version is None:
             active = envelope.get("active_version")
@@ -265,7 +364,10 @@ class VersionedStore(Generic[RecordT]):
             raise RecordNotFoundError(
                 f"{self._kind}/{record_id} has no version {version}"
             )
-        return self._parse(envelope["versions"][vkey], record_id, version)
+        payload = envelope["versions"][vkey]
+        if payload.get("status") == RecordStatus.DEPRECATED.value:
+            _emit_deprecation_used(self._kind, record_id, version)
+        return self._parse(payload, record_id, version)
 
     def get_optional(self, record_id: str, version: int | None = None) -> RecordT | None:
         """Like `get`, but returns None instead of raising when absent."""
@@ -282,14 +384,85 @@ class VersionedStore(Generic[RecordT]):
         return self._backend.list_ids(self._kind)
 
     def list_active(self) -> list[RecordT]:
-        """Every record that currently has an ACTIVE version. This is the set
-        the router and executor operate over."""
+        """Every record currently in `ACTIVE` lifecycle state.
+
+        Production-grade gating (2026-05-31): explicitly checks the
+        record's `status` field rather than trusting the `active_version`
+        pointer alone. This excludes DEPRECATED + DRAFT records — the
+        router never selects them. To include deprecated records for
+        operator views, use `list_by_status()` below.
+        """
         out: list[RecordT] = []
         for record_id in self.list_ids():
             record = self.get_optional(record_id)
-            if record is not None:
+            if record is not None and getattr(record, "status", None) == RecordStatus.ACTIVE:
                 out.append(record)
         return out
+
+    def list_by_status(self, status: RecordStatus) -> list[RecordT]:
+        """Operator helper — list records that have a version in the
+        requested lifecycle state.
+
+        For ACTIVE / DEPRECATED, the record's pointed (or latest)
+        version's status is checked. For DRAFT, records with no
+        active_version pointer (never activated) are returned. For
+        RETIRED, records where all versions are RETIRED are returned.
+
+        Used for dashboards, audit, and the boot summary
+        ("active=4 deprecated=0 retired=0 draft=0").
+        """
+        out: list[RecordT] = []
+        for record_id in self.list_ids():
+            envelope = self._load_envelope(record_id)
+            if envelope is None:
+                continue
+            record_status = _envelope_lifecycle_status(envelope)
+            if record_status == status:
+                # Best-effort: try to materialise the record at whichever
+                # version we can; DRAFT records have no active_version so
+                # use the highest version number.
+                rec = self._materialise_at_status(envelope, record_id, status)
+                if rec is not None:
+                    out.append(rec)
+        return out
+
+    def lifecycle_summary(self) -> dict[str, int]:
+        """Counts by lifecycle state across all records of this kind.
+        Used at boot to log an operator-readable lifecycle inventory.
+
+        Each record is counted in exactly ONE bucket — the one matching
+        its current lifecycle state (see `_envelope_lifecycle_status` for
+        the precise rule). Sum of buckets == total records of this kind.
+        """
+        counts: dict[str, int] = {s.value: 0 for s in RecordStatus}
+        for record_id in self.list_ids():
+            envelope = self._load_envelope(record_id)
+            if envelope is None:
+                continue
+            record_status = _envelope_lifecycle_status(envelope)
+            if record_status is not None:
+                counts[record_status.value] = counts.get(record_status.value, 0) + 1
+        return counts
+
+    def _materialise_at_status(
+        self, envelope: dict, record_id: str, target_status: RecordStatus,
+    ) -> RecordT | None:
+        """Return the highest-version record whose status matches `target_status`."""
+        versions = envelope.get("versions") or {}
+        best: tuple[int, dict] | None = None
+        for vkey, payload in versions.items():
+            try:
+                v = int(vkey)
+            except ValueError:
+                continue
+            if payload.get("status") == target_status.value and (best is None or v > best[0]):
+                best = (v, payload)
+        if best is None:
+            return None
+        try:
+            return self._parse(best[1], record_id, best[0])
+        except Exception:                                            # noqa: BLE001
+            return None
 
     def delete(self, record_id: str) -> None:
         """Hard-delete a record and all its versions. Distinct from `retire`,
@@ -312,6 +485,131 @@ def iter_records(stores: Iterable[VersionedStore]) -> Iterable[BaseModel]:
     integrity checks and load tests."""
     for store in stores:
         yield from store.list_active()
+
+
+# ── Lifecycle status resolution (envelope-level) ────────────────────────────
+# A record (envelope) is in exactly ONE lifecycle state at any moment, derived
+# from its versions and the `active_version` pointer:
+#
+#   ACTIVE      — active_version is set AND that version's status is ACTIVE
+#   DEPRECATED  — active_version is set AND that version's status is DEPRECATED
+#                 (callable but warning-emitting; used for sunset windows)
+#   RETIRED     — active_version is None AND every version is RETIRED
+#                 (no servable version; record kept for audit)
+#   DRAFT       — active_version is None AND at least one version is DRAFT
+#                 (created, never activated yet)
+
+
+def _envelope_lifecycle_status(envelope: dict) -> RecordStatus | None:
+    """Resolve the record-level lifecycle state from an envelope.
+
+    Returns None when the envelope is malformed (no versions at all).
+    """
+    versions = envelope.get("versions") or {}
+    if not versions:
+        return None
+
+    active_v = envelope.get("active_version")
+    if active_v is not None:
+        payload = versions.get(str(active_v)) or {}
+        status_str = payload.get("status")
+        if status_str == RecordStatus.ACTIVE.value:
+            return RecordStatus.ACTIVE
+        if status_str == RecordStatus.DEPRECATED.value:
+            return RecordStatus.DEPRECATED
+        # Pointer exists but version is RETIRED — fall through to "RETIRED".
+
+    # No active pointer (or pointer to RETIRED). Decide between RETIRED
+    # (all versions retired) and DRAFT (any version is draft).
+    statuses = {p.get("status") for p in versions.values()}
+    if RecordStatus.DRAFT.value in statuses:
+        return RecordStatus.DRAFT
+    if statuses == {RecordStatus.RETIRED.value}:
+        return RecordStatus.RETIRED
+    # Unknown shape — best-effort: return None to skip in summary
+    return None
+
+
+# ── Lifecycle audit emission ─────────────────────────────────────────────────
+# Every activate / deprecate / retire transition emits a structured log line
+# AND an OTel span event when a tracer is available. This is the audit trail
+# for "who deprecated UC-3 v2 at what time" without needing a separate audit
+# table — the OTel collector captures it as durably as any other span event.
+# The emit is fail-open: if logging or OTel fails, the registry mutation still
+# succeeds (the source of truth is the file backend, not the audit emit).
+
+def _emit_deprecation_used(kind: str, record_id: str, version: int) -> None:
+    """Runtime-side audit — emitted on every `get()` of a DEPRECATED record.
+
+    This is distinct from `_audit_lifecycle_transition`, which fires once at
+    state-change time. Deprecation-used events let operators measure traffic
+    against deprecated agents and size sunset windows accurately.
+
+    Never raises — fail-open guarantee.
+    """
+    try:
+        import structlog
+        _log = structlog.get_logger("oneops.registry.lifecycle")
+        _log.warning(
+            "registry.lifecycle.deprecation_used",
+            kind=kind,
+            record_id=record_id,
+            version=version,
+        )
+    except Exception:                                                 # noqa: BLE001
+        pass
+    try:
+        from opentelemetry import trace
+        sp = trace.get_current_span()
+        if sp is not None and sp.is_recording():
+            sp.add_event(
+                "registry.lifecycle.deprecation_used",
+                attributes={
+                    "registry.kind": kind,
+                    "registry.record_id": record_id,
+                    "registry.version": version,
+                },
+            )
+    except Exception:                                                 # noqa: BLE001
+        pass
+
+
+def _audit_lifecycle_transition(
+    kind: str, record_id: str, version: int, *, to_status: RecordStatus,
+) -> None:
+    """Emit a structured log + OTel event for a lifecycle state change.
+
+    Safe to call without an active OTel span — falls back to log-only.
+    Never raises: a failure here cannot stop the registry mutation that
+    just succeeded.
+    """
+    try:
+        import structlog
+        _log = structlog.get_logger("oneops.registry.lifecycle")
+        _log.info(
+            "registry.lifecycle.transition",
+            kind=kind,
+            record_id=record_id,
+            version=version,
+            to_status=to_status.value,
+        )
+    except Exception:                                                 # noqa: BLE001
+        pass
+    try:
+        from opentelemetry import trace
+        sp = trace.get_current_span()
+        if sp is not None and sp.is_recording():
+            sp.add_event(
+                "registry.lifecycle.transition",
+                attributes={
+                    "registry.kind": kind,
+                    "registry.record_id": record_id,
+                    "registry.version": version,
+                    "registry.to_status": to_status.value,
+                },
+            )
+    except Exception:                                                 # noqa: BLE001
+        pass
 
 
 __all__ = ["RegistryBackend", "FileBackend", "VersionedStore", "iter_records"]

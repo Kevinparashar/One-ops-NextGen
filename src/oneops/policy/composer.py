@@ -18,7 +18,7 @@ lives outside policy.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from enum import Enum
+from enum import StrEnum
 from string import Template
 from types import MappingProxyType
 from typing import Any
@@ -43,7 +43,7 @@ USER_CONTEXT_KEYS: tuple[str, ...] = (
 )
 
 
-class Profile(str, Enum):
+class Profile(StrEnum):
     """Named profiles. String-valued so they round-trip cleanly through logs/traces."""
 
     INTERNAL_AGENT = "INTERNAL_AGENT_POLICY"

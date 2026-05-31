@@ -17,9 +17,8 @@ import pytest
 
 from oneops.errors import LLMGatewayError
 from oneops.executor.boundary import (
-    DeterministicBoundaryResponder,
-    LlmBoundaryResponder,
     OUT_OF_SCOPE_REPLY,
+    LlmBoundaryResponder,
 )
 from oneops.llm.models import LlmResponse
 
@@ -183,3 +182,82 @@ async def test_classifier_uses_compose_with_policy_profile():
     # Boundary-specific extras land on the same prompt.
     assert "ITSM" in system_msg
     assert "out_of_scope" in system_msg                 # classifier categories
+
+
+# ── Three-axis decomposition (2026-05-30) ──────────────────────────────
+# The LLM may now also return an `axes` block; when present and valid,
+# the orchestrator combines the three booleans deterministically and
+# overrides the LLM's single-shot `category`. When axes are absent the
+# original `category` field is used — the existing tests above still
+# pass under this contract.
+
+from oneops.executor.boundary import _combine_axes
+
+
+def test_combine_axes_chat_only_yields_out_of_scope():
+    assert _combine_axes({
+        "asks_for_written_content": False,
+        "mentions_it_topic": False,
+        "is_pure_chitchat": True,
+    }) == "out_of_scope"
+
+
+def test_combine_axes_docs_plus_it_yields_kb_search():
+    assert _combine_axes({
+        "asks_for_written_content": True,
+        "mentions_it_topic": True,
+        "is_pure_chitchat": False,
+    }) == "in_scope_kb_search"
+
+
+def test_combine_axes_it_only_yields_unclear():
+    assert _combine_axes({
+        "asks_for_written_content": False,
+        "mentions_it_topic": True,
+        "is_pure_chitchat": False,
+    }) == "in_scope_unclear"
+
+
+def test_combine_axes_docs_only_yields_unclear():
+    assert _combine_axes({
+        "asks_for_written_content": True,
+        "mentions_it_topic": False,
+        "is_pure_chitchat": False,
+    }) == "in_scope_unclear"
+
+
+def test_combine_axes_missing_returns_none_preserves_backcompat():
+    assert _combine_axes({}) is None
+    assert _combine_axes({"asks_for_written_content": True}) is None
+    assert _combine_axes(None) is None  # type: ignore[arg-type]
+
+
+def test_combine_axes_non_bool_returns_none():
+    assert _combine_axes({
+        "asks_for_written_content": "yes",  # not bool
+        "mentions_it_topic": True,
+        "is_pure_chitchat": False,
+    }) is None
+
+
+@pytest.mark.asyncio
+async def test_axes_override_llm_misclassification():
+    """The real failure mode: LLM said `out_of_scope` but axes show it
+    was clearly a KB-lookup. Decomposition wins."""
+    gw = _StubGateway({
+        "category": "out_of_scope",          # LLM's mistake
+        "reply": OUT_OF_SCOPE_REPLY,
+        "axes": {
+            "asks_for_written_content": True,
+            "mentions_it_topic": True,
+            "is_pure_chitchat": False,
+        },
+    })
+    bdry = LlmBoundaryResponder(gw)
+    out = await bdry.respond(
+        outcome="no_confident_match", reason="",
+        request={"message": "documentation about VPN reconnection after sleep?"})
+    # Should NOT be the out_of_scope literal.
+    assert "out of my scope" not in out.lower(), (
+        "Three-axis decomposition must override LLM's wrong out_of_scope."
+    )

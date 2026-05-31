@@ -59,6 +59,21 @@
     } catch (_e) { return null; }
   }
 
+  // GET /api/session/{id}/history — true iff Postgres has any durable
+  // events for this id (used to recover a chat whose Dragonfly lifecycle
+  // metadata has expired but whose transcript is still safe in Postgres).
+  async function _cachedSessionHasDurableHistory(id) {
+    if (!id) return false;
+    try {
+      const res = await fetch(
+        `/api/session/${encodeURIComponent(id)}/history`,
+        { headers: envelopeHeaders() });
+      if (!res.ok) return false;
+      const payload = await res.json();
+      return Array.isArray(payload.events) && payload.events.length > 0;
+    } catch (_e) { return false; }
+  }
+
   // GET /api/sessions/{id} — true iff server still has this session active.
   async function isServerSessionAlive(id) {
     if (!id) return false;
@@ -78,6 +93,14 @@
     });
     if (cached && aliveCheck) {
       sessionId = cached;
+    } else if (cached && await _cachedSessionHasDurableHistory(cached)) {
+      // Lifecycle metadata expired (Dragonfly TTL) but events are still
+      // in Postgres — keep the cached id so restoreConversation() replays
+      // the transcript. The next chat turn will re-create lifecycle meta
+      // server-side via the normal touch path.
+      sessionId = cached;
+      console.info("[oneops] bootstrap.resurrected_from_durable_events",
+                   { sessionId });
     } else {
       const fresh = await mintServerSession();
       sessionId = fresh || (cached || ("sess_" + Math.random().toString(36).slice(2, 14)));
@@ -575,7 +598,26 @@
       return wrapper;
     }
 
-    // ── success path — render Summary + Key Details ───────────────────
+    // ── success path ── display_text first (canonical chat-ready string) ─
+    // Any UC tool whose response shape is opinionated (UC-2 ranked similar
+    // tickets, UC-3 KB answer composed verbatim, future UCs) emits
+    // `out.display_text`. The frontend renders it as markdown and stops —
+    // the tool already composed the user-facing text and we surface it
+    // verbatim. Matches the executor's `friendly_step_response` contract
+    // (see oneops.executor.nodes — display_text takes precedence over the
+    // UC-1-specific Summary/Key Details blocks).
+    if (typeof out.display_text === "string" && out.display_text.trim()) {
+      const p = document.createElement("div");
+      p.className = "summary-text bubble md";
+      p.style.background = "transparent";
+      p.style.border = "0";
+      p.style.padding = "0";
+      p.innerHTML = renderMarkdown(out.display_text);
+      wrapper.appendChild(p);
+      return wrapper;
+    }
+
+    // ── success path — render Summary + Key Details (UC-1 shape) ──────
     const summaryBlock = out.summary || null;
     const record = out.record || (summaryBlock && summaryBlock.record) || null;
     const keyDetails =

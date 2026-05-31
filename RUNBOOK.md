@@ -89,7 +89,31 @@ The policy engine is data-driven (ADR-0003).
   same `thread_id` (= `session_id`). In production the checkpointer is the
   dedicated Postgres database (ADR-0004) — never the shared app DB.
 
-## 9. Known post-build follow-ons (not yet done)
+## 9. Local CI gate — run before push
+
+Until GitHub Actions is wired, every change is gated locally by `scripts/ci.sh`.
+This is non-negotiable per rule §2.9.
+
+| Command | Stages | When to run |
+|---|---|---|
+| `make ci-fast` | ruff → mypy → unit | Before each commit (pre-commit hook auto-runs this) |
+| `make ci` | ruff → mypy → unit → integration → smoke → devils | Before each push and before tagging |
+
+- The pre-commit hook (`.git/hooks/pre-commit`) calls `scripts/ci.sh --fast`
+  automatically. Bypass only in emergencies with `git commit --no-verify`;
+  the next pusher will be blocked by `make ci` anyway.
+- Stage 5 (smoke) and Stage 6 (devils) print "deferred" until
+  `scripts/smoke_routing.py` and `scripts/devils_play.py` are added —
+  documented in `docs/day1-execution-plan.md` Phase 6.
+- Ruff and mypy are running with a documented ratchet baseline
+  (`pyproject.toml`); each ignored rule lists why and is tagged for
+  ratchet TBD. Adding a new violation in any *non-ignored* category will
+  fail the gate — that's the contract.
+- Evidence of green + forced-fail runs is kept at
+  `ops/pmg-evidence/day2-pm-ci-gate.log` and
+  `ops/pmg-evidence/day2-pm-ci-blocks-bad-merge.log`.
+
+## 10. Known post-build follow-ons (not yet done)
 
 - **UC tool-handler porting** — UC-1 / UC-3 tool *logic* still lives in the
   old `use_cases/` (`@tool`-decorated). Port each to the new

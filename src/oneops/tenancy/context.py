@@ -16,7 +16,7 @@ Why frozen Pydantic and not a dataclass:
 from __future__ import annotations
 
 import re
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, StrictBool, field_validator
 
@@ -32,7 +32,7 @@ DEFAULT_LOCALE = "en"
 DEFAULT_REGION = "default"
 
 
-class Tier(str, Enum):
+class Tier(StrEnum):
     """Closed set — tier shapes billing, rate limit, model tier, and
     feature_flag overrides. Adding one is a deliberate platform decision,
     not a runtime invention."""

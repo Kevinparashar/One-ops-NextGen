@@ -24,8 +24,9 @@ Designed for 1000 UCs from day one ([[feedback_poc5mw_design_for_1000_ucs_from_d
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from oneops.errors import OneOpsError
 from oneops.observability import get_logger, get_tracer

@@ -36,7 +36,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 import structlog
 from opentelemetry import trace
@@ -56,7 +56,7 @@ JUDGE_MAX_INPUT_CHARS = int(os.environ.get("UC08_JUDGE_MAX_INPUT_CHARS", "4000")
 JUDGE_PROMPT_VERSION = "v1"
 
 
-class JudgeVerdict(str, Enum):
+class JudgeVerdict(StrEnum):
     FAITHFUL = "FAITHFUL"
     UNFAITHFUL = "UNFAITHFUL"
     UNCERTAIN = "UNCERTAIN"
@@ -236,7 +236,7 @@ async def _call_judge(
                 timeout=JUDGE_TIMEOUT_S,
             )
             raw = resp.content or ""
-        except asyncio.TimeoutError:
+        except TimeoutError:
             _log.warning(
                 "uc08.judge.timeout",
                 judge=judge_name,

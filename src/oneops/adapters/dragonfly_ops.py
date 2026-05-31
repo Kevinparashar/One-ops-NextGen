@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
 
 from oneops.adapters.dragonfly import get_redis_client
 from oneops.observability import get_logger, histogram, increment

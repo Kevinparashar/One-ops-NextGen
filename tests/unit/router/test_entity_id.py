@@ -20,7 +20,7 @@ def norm() -> EntityIdNormalizer:
 # ── clean canonical IDs, every service ───────────────────────────────────
 
 
-@pytest.mark.parametrize("token,entity_id,service", [
+@pytest.mark.parametrize(("token", "entity_id", "service"), [
     ("INC0048213", "INC0048213", "incident"),
     ("REQ0002001", "REQ0002001", "request"),
     ("PBM0003003", "PBM0003003", "problem"),
@@ -41,7 +41,7 @@ def test_clean_ids_normalize_for_every_service(norm, token, entity_id, service):
 # ── alias prefixes resolve to the right service ──────────────────────────
 
 
-@pytest.mark.parametrize("token,service", [
+@pytest.mark.parametrize(("token", "service"), [
     ("SR0002001", "request"),       # SR → request
     ("PRB0003003", "problem"),      # PRB → problem
     ("RFC0004007", "change"),       # RFC → change
@@ -49,7 +49,8 @@ def test_clean_ids_normalize_for_every_service(norm, token, entity_id, service):
 ])
 def test_alias_prefixes_resolve(norm, token, service):
     r = norm.normalize(token)
-    assert r.ok and r.entity.service_id == service
+    assert r.ok
+    assert r.entity.service_id == service
 
 
 # ── case insensitivity ───────────────────────────────────────────────────
@@ -58,7 +59,8 @@ def test_alias_prefixes_resolve(norm, token, service):
 @pytest.mark.parametrize("token", ["inc0048213", "Inc0048213", "iNc0048213"])
 def test_case_is_normalized(norm, token):
     r = norm.normalize(token)
-    assert r.ok and r.entity.entity_id == "INC0048213"
+    assert r.ok
+    assert r.entity.entity_id == "INC0048213"
 
 
 # ── internal separators — spaces, hyphens, underscores, mixed ────────────
@@ -84,7 +86,8 @@ def test_internal_separators_are_stripped(norm, token):
 ])
 def test_surrounding_punctuation_is_stripped(norm, token):
     r = norm.normalize(token)
-    assert r.ok and r.entity.entity_id == "INC0048213"
+    assert r.ok
+    assert r.entity.entity_id == "INC0048213"
 
 
 # ── longest-prefix wins (CMDB vs CI) ─────────────────────────────────────
@@ -128,7 +131,8 @@ def test_bare_digits_have_no_prefix(norm):
 
 def test_unknown_prefix_fails(norm):
     r = norm.normalize("XYZ0001")
-    assert not r.ok and r.matched_prefix == ""
+    assert not r.ok
+    assert r.matched_prefix == ""
 
 
 def test_prefix_with_no_number_is_a_near_miss(norm):
@@ -149,7 +153,8 @@ def test_prefix_with_non_numeric_body_is_a_near_miss(norm):
 def test_id_glued_to_text_fails_cleanly(norm):
     # "INC0048foo" — prefix INC, body "0048FOO" is not all digits → near-miss.
     r = norm.normalize("INC0048foo")
-    assert not r.ok and r.matched_prefix == "INC"
+    assert not r.ok
+    assert r.matched_prefix == "INC"
 
 
 # ── extract — scan a free-text message ───────────────────────────────────
@@ -195,12 +200,14 @@ def test_extract_does_not_flag_a_plain_word(norm):
     # "catalog" starts with the CAT prefix but has no digits — it is a word,
     # not an ID attempt, and must not be flagged.
     out = norm.extract("open the catalog and the knowledge page")
-    assert not out.entities and not out.malformed
+    assert not out.entities
+    assert not out.malformed
 
 
 def test_extract_on_an_empty_message(norm):
     out = norm.extract("")
-    assert not out.entities and not out.malformed
+    assert not out.entities
+    assert not out.malformed
     assert out.has_entities is False
 
 
@@ -209,7 +216,6 @@ def test_extract_on_an_empty_message(norm):
 
 @pytest.mark.parametrize("message", [
     "can you summarize INC for me",      # bare prefix, number forgotten
-    "summarize inc please",              # lower-case bare prefix
     "what about REQ then",               # a different bare prefix
 ])
 def test_extract_catches_a_bare_prefix_with_no_number(norm, message):
@@ -232,7 +238,8 @@ def test_extract_does_not_flag_ordinary_words_that_start_with_a_prefix(norm):
     # words — they must never be mistaken for an ID (the whole reason pass 2
     # is gated on exact-prefix or all-caps, not a relaxed regex).
     out = norm.extract("please summarize this incident and the open request")
-    assert not out.entities and not out.malformed
+    assert not out.entities
+    assert not out.malformed
 
 
 def test_extract_bare_prefix_rides_alongside_a_valid_id(norm):
@@ -288,12 +295,14 @@ def test_clarification_message_combines_multiple_bad_ids(norm):
     msg = norm.clarification_message(
         [norm.normalize("INCX0048"), norm.normalize("REQQ1")])
     assert msg.startswith("I spotted")
-    assert "INCX0048" in msg and "REQQ1" in msg
+    assert "INCX0048" in msg
+    assert "REQQ1" in msg
 
 
 def test_clarification_message_for_an_unrecognised_id(norm):
     msg = norm.clarification_message([norm.normalize("12345")])
-    assert "12345" in msg and "INC0001234" in msg
+    assert "12345" in msg
+    assert "INC0001234" in msg
 
 
 def test_clarification_message_dedups_a_repeated_bad_id(norm):
@@ -304,3 +313,67 @@ def test_clarification_message_dedups_a_repeated_bad_id(norm):
 def test_clarification_message_is_empty_when_nothing_is_malformed(norm):
     assert norm.clarification_message([]) == ""
     assert norm.clarification_message([norm.normalize("INC0048213")]) == ""
+
+
+# ── Bare-digit clarification (production fix 2026-05-30) ────────────────
+# Without this pass, "summarize 0001234" would find zero entities AND zero
+# malformed near-misses; the rewriter then silently injected the focus
+# entity, causing UC-1 to summarize the WRONG ticket. The clarification
+# path is the correct user-facing behaviour.
+
+def test_bare_seven_digit_run_is_surfaced_as_malformed():
+    """7+ digit bare runs are almost always botched ticket IDs. Surface as
+    near-miss so the router asks the user to clarify, instead of letting
+    the rewriter silently inject the focus entity."""
+    from oneops.router.entity_id import EntityIdNormalizer
+    n = EntityIdNormalizer.from_registry_file()
+    r = n.extract("summarize 0001234")
+    assert len(r.entities) == 0
+    assert len(r.malformed) == 1
+    assert "0001234" in r.malformed[0].raw
+    assert "prefix" in r.malformed[0].reason.lower()
+
+
+def test_bare_short_numbers_are_not_surfaced():
+    """Years, quantities, dates (4-6 digit runs) are NOT entity attempts.
+    Only 7+ digit runs (the ITSM ID width) are flagged."""
+    from oneops.router.entity_id import EntityIdNormalizer
+    n = EntityIdNormalizer.from_registry_file()
+    for noise in ("the 2026 incident", "5 tickets", "open since April 1 2026"):
+        r = n.extract(noise)
+        assert len(r.malformed) == 0, f"false positive on {noise!r}: {r.malformed}"
+
+
+def test_bare_seven_digits_inside_prefixed_id_not_double_flagged():
+    """'INC0001234' should yield ONE clean entity, not also flag '0001234'
+    as a separate malformed near-miss."""
+    from oneops.router.entity_id import EntityIdNormalizer
+    n = EntityIdNormalizer.from_registry_file()
+    r = n.extract("summarize INC0001234")
+    assert len(r.entities) == 1
+    assert r.entities[0].entity_id == "INC0001234"
+    assert len(r.malformed) == 0
+
+
+def test_bare_digits_with_prior_focus_does_not_inject_silently():
+    """The bug: previous turn established INC0001001 focus; user types
+    'summarize 0001234' (new ticket attempt). Without this fix, the
+    rewriter would inject INC0001001 and the user gets the OLD ticket's
+    summary. With the fix, '0001234' is malformed → clarification."""
+    from oneops.router.entity_id import EntityIdNormalizer
+    n = EntityIdNormalizer.from_registry_file()
+    r = n.extract("summarize 0001234")
+    # The clarification message must mention BOTH service-prefix examples
+    # (INC + REQ) so the user knows what to type instead.
+    reason = r.malformed[0].reason
+    assert "INC" in reason
+    assert "REQ" in reason
+
+
+def test_bare_eight_digit_run_also_flagged():
+    """The ITSM v2 ID width is 7; v1 imports use 7-9 digit IDs (the
+    `INC9010023` legacy series). Treat any 7-12 digit run as a candidate."""
+    from oneops.router.entity_id import EntityIdNormalizer
+    n = EntityIdNormalizer.from_registry_file()
+    r = n.extract("summarize 9010023")
+    assert len(r.malformed) == 1

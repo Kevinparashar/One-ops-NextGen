@@ -21,7 +21,7 @@ import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from oneops.errors import ConfigError
@@ -62,7 +62,7 @@ _LEADS_DIGITS = re.compile(r"[ \t\-_]*\d")
 _SEPARATORS = re.compile(r"[^0-9A-Za-z]")
 
 
-class IdAcceptance(str, Enum):
+class IdAcceptance(StrEnum):
     """Three-state outcome the contract requires.
 
     * ACCEPTED — the token is a valid canonical id; the entity is set and
@@ -122,7 +122,7 @@ class NormalizationResult:
     candidates: tuple[NormalizedEntity, ...] = field(default_factory=tuple)
 
     @staticmethod
-    def good(entity: NormalizedEntity) -> "NormalizationResult":
+    def good(entity: NormalizedEntity) -> NormalizationResult:
         return NormalizationResult(
             ok=True, raw=entity.raw,
             acceptance=IdAcceptance.ACCEPTED, entity=entity)
@@ -130,7 +130,7 @@ class NormalizationResult:
     @staticmethod
     def bad(
         raw: str, reason: str, matched_prefix: str = "",
-    ) -> "NormalizationResult":
+    ) -> NormalizationResult:
         return NormalizationResult(
             ok=False, raw=raw,
             acceptance=IdAcceptance.REJECTED,
@@ -142,7 +142,7 @@ class NormalizationResult:
         matched_prefix: str = "",
         suggested: NormalizedEntity | None = None,
         candidates: Iterable[NormalizedEntity] = (),
-    ) -> "NormalizationResult":
+    ) -> NormalizationResult:
         return NormalizationResult(
             ok=False, raw=raw,
             acceptance=IdAcceptance.CLARIFY,
@@ -176,7 +176,7 @@ class EntityIdNormalizer:
             raise ConfigError("EntityIdNormalizer built with no prefixes")
 
     @classmethod
-    def from_registry_file(cls, path: str | None = None) -> "EntityIdNormalizer":
+    def from_registry_file(cls, path: str | None = None) -> EntityIdNormalizer:
         """Build from `service-schema.json` — every service's `id_prefix` and
         each of its `alias_prefixes` map to that service."""
         if path is None:
@@ -284,6 +284,69 @@ class EntityIdNormalizer:
             result = self.normalize(word)
             if not result.ok and result.matched_prefix:
                 _record_bad(result)
+
+        # ── pass 2.5 — mixed-case prefix garbles ("INCabc", "REQ_test") ──
+        # A caps prefix followed by a lowercase or alphanumeric tail is
+        # almost always a botched ID attempt — the user typed the prefix
+        # in caps (deliberate signal) then fumbled the number. Pure-upper
+        # ("INCABC") is caught by pass 2; pure-lower ("incident") is an
+        # English word and ignored; this branch handles the in-between
+        # mixed case (2026-05-30 user-reported bug where "summarize
+        # INCabc" silently summarized a random ticket because the
+        # extractor returned zero entities AND zero malformed).
+        _MIXED = re.compile(r"\b([A-Z]{2,5}[A-Za-z0-9]{1,10})\b")
+        for match in _MIXED.finditer(text):
+            token = match.group(1)
+            # Already handled by pass 1 (digit-bearing) or pass 2 (all caps).
+            if any(ch.isdigit() for ch in token):
+                continue                       # pass-1 territory
+            if token.isupper():
+                continue                       # pass-2 territory
+            # Must start with a known prefix (otherwise it's just an
+            # unrelated capitalised acronym + suffix).
+            upper = token.upper()
+            matched_prefix = next(
+                (p for p in self._prefixes if upper.startswith(p)), "")
+            if not matched_prefix:
+                continue
+            # Run through normalize to get a structured rejection reason.
+            result = self.normalize(token)
+            if not result.ok and result.matched_prefix:
+                _record_bad(result)
+
+        # ── pass 3 — bare digit runs that look like a botched ID ──────────
+        # 7+ digit runs with no surrounding prefix are almost always a
+        # botched ticket reference ("summarize 0001234" — user forgot the
+        # INC/REQ prefix). Without this pass, the message has zero entity
+        # references AND zero malformed near-misses, so the router falls
+        # through to focus-injection — silently summarising the WRONG ticket
+        # (2026-05-30 incident). Threshold = 7 because all ITSM IDs in this
+        # system are 7-digit; 4-6 digit numbers in messages are typically
+        # years/quantities/dates.
+        for match in _BARE_DIGITS.finditer(text):
+            body = match.group(1)
+            if len(body) < 7:
+                continue
+            # Skip if this digit run sits inside an already-matched entity
+            # (e.g. "INC0001234" — pass 1 grabbed the whole token; the
+            # "0001234" suffix should not also appear as a near-miss).
+            already_covered = any(
+                e.entity_id.endswith(body) for e in entities
+            )
+            if already_covered:
+                continue
+            already_bad = any(
+                (b.raw or "").endswith(body) for b in malformed
+            )
+            if already_bad:
+                continue
+            _record_bad(NormalizationResult.bad(
+                body,
+                f'"{body}" looks like a record number but is missing its '
+                f'type prefix. Please share the full ID — '
+                f'e.g. "INC{body}" for an incident or "REQ{body}" for a '
+                f'request.',
+            ))
 
         return ExtractionResult(tuple(entities), tuple(malformed))
 

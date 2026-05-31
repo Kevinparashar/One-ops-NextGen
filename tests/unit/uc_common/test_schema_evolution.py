@@ -21,25 +21,21 @@ templates a UC author copies when they evolve a real schema.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import BaseModel, Field, ValidationError
 
 from oneops.tenancy import TenantContext
-from oneops.toolrunner.context import CacheHint, CacheSource, ToolContext
+from oneops.toolrunner.context import CacheHint
 from oneops.uc_common.summary_schema import (
     SUMMARY_SCHEMA_CURRENT,
     SUMMARY_SCHEMA_MIN_SUPPORTED,
     Citation,
     CitationSource,
     EntitySummary,
-    EntityType,
     KeyDetail,
-    KeyDetailKind,
 )
-
 
 # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -143,7 +139,7 @@ def test_rename_field_with_default_during_deprecation():
     class _CtxV2(BaseModel):
         model_config = {"frozen": True, "extra": "ignore"}
         locale: str = "en"               # new canonical
-        language: Optional[str] = None   # deprecated alias slot
+        language: str | None = None   # deprecated alias slot
 
     new = _CtxV2.model_validate({"locale": "fr"})
     deprecated = _CtxV2.model_validate({"language": "fr"})  # ignored by spec,
@@ -177,7 +173,7 @@ def test_delete_field_via_optional_deprecation_template():
         id: str
         # `legacy_status` was removed in v3; v2 still carries the slot
         # so v1 payloads round-trip without surprise.
-        legacy_status: Optional[str] = None
+        legacy_status: str | None = None
 
     r = _RecordV2.model_validate({"id": "x", "legacy_status": "draft"})
     assert r.legacy_status == "draft"
@@ -220,7 +216,7 @@ def test_key_detail_tolerates_unknown_fields():
 def test_citation_tolerates_unknown_fields():
     c = Citation.model_validate({
         "source": "itsm", "record_id": "INC1",
-        "fetched_at": datetime(2026, 1, 1, tzinfo=timezone.utc).isoformat(),
+        "fetched_at": datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
         "audit_hint": "future field",
     })
     assert c.source is CitationSource.ITSM

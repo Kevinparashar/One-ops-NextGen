@@ -28,7 +28,7 @@ Idempotency:
 """
 from __future__ import annotations
 
-from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,7 +40,7 @@ from oneops.use_cases.uc08_fulfillment.contracts import AdapterErrorClass
 T = TypeVar("T", bound=BaseModel)
 
 
-class AdapterResponse(BaseModel, Generic[T]):
+class AdapterResponse[T: BaseModel](BaseModel):
     """Production-grade response envelope returned by every adapter call.
 
     `success=True` → `result` is populated, `error_*` are None.

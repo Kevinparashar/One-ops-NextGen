@@ -17,7 +17,7 @@ policy denial → the boundary responder).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 from oneops.observability import get_logger
 from oneops.registry.service import RegistryService
@@ -54,7 +54,7 @@ class RoutePlan:
         return all(not s.depends_on for s in self.steps)
 
 
-class RouteOutcome(str, Enum):
+class RouteOutcome(StrEnum):
     ROUTED = "routed"                       # a plan was produced
     NO_CONFIDENT_MATCH = "no_confident_match"   # → boundary responder
     POLICY_DENIED = "policy_denied"         # → boundary responder voices the refusal
@@ -78,16 +78,16 @@ class RouteResult:
 
     @staticmethod
     def routed(plan: RoutePlan, diagnostics: list[str],
-               unrouted: list[str] | None = None) -> "RouteResult":
+               unrouted: list[str] | None = None) -> RouteResult:
         return RouteResult(RouteOutcome.ROUTED, plan, "", tuple(diagnostics),
                            tuple(unrouted or ()))
 
     @staticmethod
-    def no_match(reason: str, diagnostics: list[str]) -> "RouteResult":
+    def no_match(reason: str, diagnostics: list[str]) -> RouteResult:
         return RouteResult(RouteOutcome.NO_CONFIDENT_MATCH, None, reason, tuple(diagnostics))
 
     @staticmethod
-    def policy_denied(reason: str, diagnostics: list[str]) -> "RouteResult":
+    def policy_denied(reason: str, diagnostics: list[str]) -> RouteResult:
         return RouteResult(RouteOutcome.POLICY_DENIED, None, reason, tuple(diagnostics))
 
 

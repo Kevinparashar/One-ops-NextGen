@@ -9,6 +9,7 @@ per-request context binding.
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import threading
@@ -36,6 +37,12 @@ from oneops.observability.cache_event import (
     record_cache_set,
 )
 from oneops.observability.metrics import histogram, increment
+from oneops.observability.propagation import (
+    current_traceparent,
+    extract_trace_context,
+    inject_trace_headers,
+    start_consumer_span,
+)
 from oneops.observability.safe_attrs import (
     capture_text_enabled,
     safe_hash_text,
@@ -43,12 +50,6 @@ from oneops.observability.safe_attrs import (
     safe_list_attr,
     safe_text_len,
     set_safe_text_attrs,
-)
-from oneops.observability.propagation import (
-    current_traceparent,
-    extract_trace_context,
-    inject_trace_headers,
-    start_consumer_span,
 )
 from oneops.observability.span_helpers import (
     current_trace_ids,
@@ -64,8 +65,8 @@ _initialized = False
 
 def _otlp_endpoint_reachable(endpoint: str, timeout_s: float = 0.5) -> bool:
     """Fast TCP probe — True iff host:port accepts a connection within timeout."""
-    from urllib.parse import urlparse
     import socket
+    from urllib.parse import urlparse
     try:
         parsed = urlparse(endpoint)
         host = parsed.hostname or "localhost"
@@ -86,8 +87,8 @@ def _otlp_path_accepts(endpoint: str, path: str, timeout_s: float = 0.5) -> bool
     accepts both). Without this we'd attach a metric exporter that 404s every
     60 seconds, polluting logs without producing any observability value.
     """
-    import urllib.request
     import urllib.error
+    import urllib.request
     url = f"{endpoint.rstrip('/')}/{path.lstrip('/')}"
     req = urllib.request.Request(url, method="POST", data=b"")
     try:
@@ -168,10 +169,8 @@ def setup_observability() -> None:
             _interval = 60_000
             _raw_iv = os.getenv("OTEL_METRIC_EXPORT_INTERVAL_MS")
             if _raw_iv:
-                try:
+                with contextlib.suppress(ValueError):
                     _interval = max(1_000, int(_raw_iv))
-                except ValueError:
-                    pass
             reader = PeriodicExportingMetricReader(
                 metric_exporter, export_interval_millis=_interval
             )

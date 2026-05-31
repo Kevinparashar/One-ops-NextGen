@@ -229,15 +229,25 @@ def _fingerprint(*, tenant_id: str, service_id: str, entity_id: str,
     record content via its own hash so a row mutation invalidates the
     cache automatically — there is no "stale of unknown age" surface.
 
+    Includes `HUMANISE_RECORD_VERSION` so any change to the render-side
+    filter (`_HIDDEN`) or label map auto-invalidates every cached row —
+    this is the production fix for the stale-cache-after-code-change
+    class of bugs (2026-05-30 leak of `search_tsv` + `content_hash_*`).
+
     `role` is intentionally NOT in the key: by the time this function runs,
     the record has already been redacted by the field policy for the
     caller's role, so two different roles see two different records and
     therefore two different fingerprints by construction.
     """
+    from oneops.use_cases._shared.field_labels import HUMANISE_RECORD_VERSION
+
     record_canonical = json.dumps(
         record, sort_keys=True, default=str, ensure_ascii=False)
     record_hash = hashlib.sha256(record_canonical.encode("utf-8")).hexdigest()
-    composite = f"{tenant_id}|{service_id}|{entity_id}|{record_hash}"
+    composite = (
+        f"{tenant_id}|{service_id}|{entity_id}|"
+        f"{record_hash}|render={HUMANISE_RECORD_VERSION}"
+    )
     return hashlib.sha256(composite.encode("utf-8")).hexdigest()[:32]
 
 

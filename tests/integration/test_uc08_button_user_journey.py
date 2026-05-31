@@ -35,7 +35,6 @@ import urllib.request
 import asyncpg
 import pytest
 
-
 pytestmark = pytest.mark.skipif(
     not os.getenv("POSTGRES_URL"),
     reason="POSTGRES_URL not set",
@@ -54,6 +53,7 @@ def _free_port() -> int:
 def live_api_port():
     """Boot the actual production app in-process on a free port."""
     import uvicorn
+
     from oneops.api.app import build_app
 
     os.environ["EMBEDDING_WORKER_ENABLED"] = "false"
@@ -70,7 +70,7 @@ def live_api_port():
     t = threading.Thread(target=_run, daemon=True)
     t.start()
     time.sleep(3)
-    yield port
+    return port
 
 
 def _post(port, path, body, headers=None) -> tuple[int, dict]:
@@ -574,7 +574,8 @@ def test_judge_extraction_faithful_on_clean_request(live_api_port):
         assert "judge_verdict" in sr
         assert sr["judge_verdict"] in ("FAITHFUL", "UNFAITHFUL", "UNCERTAIN")
         assert 0.0 <= sr["judge_confidence"] <= 1.0
-        assert isinstance(sr["judge_reasoning"], str) and sr["judge_reasoning"]
+        assert isinstance(sr["judge_reasoning"], str)
+        assert sr["judge_reasoning"]
         # On a clean request the judge should not flag UNFAITHFUL.
         assert sr["judge_verdict"] != "UNFAITHFUL", (
             f"clean request flagged UNFAITHFUL: "

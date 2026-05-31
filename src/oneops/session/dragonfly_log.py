@@ -58,10 +58,11 @@ class DragonflyEventLog:
         self._max = max_events_per_session
 
     @classmethod
-    def from_settings(cls) -> "DragonflyEventLog":
+    def from_settings(cls) -> DragonflyEventLog:
         """Build over a client constructed from `DRAGONFLY_URL`. Must use
         `decode_responses=False` because the protobuf payload is raw bytes."""
         import redis.asyncio as aioredis
+
         from oneops.config import get_settings
         url = getattr(get_settings(), "dragonfly_url",
                       "redis://localhost:6379/0")

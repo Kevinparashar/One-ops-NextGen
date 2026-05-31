@@ -22,8 +22,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from oneops.observability import get_logger
 
@@ -155,7 +156,7 @@ _WHOLE_RECORD_BAIL = re.compile(
 
 def _try_deterministic_extract(
     user_message: str, available_labels: list[str],
-) -> "FieldReadIntent | None":
+) -> FieldReadIntent | None:
     """Schema-aware deterministic extraction. Returns None to defer to
     the LLM fallback. Returns FieldReadIntent on a confident match.
 

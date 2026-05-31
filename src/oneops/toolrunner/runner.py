@@ -100,7 +100,7 @@ class ToolRunner:
             try:
                 raw = await asyncio.wait_for(
                     handler(arguments, context), timeout=timeout_s)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 latency = int((time.monotonic() - t0) * 1000)
                 span.set_attribute("tool.status", "timeout")
                 _log.warning("toolrunner.timeout",

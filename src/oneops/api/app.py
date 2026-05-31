@@ -22,12 +22,12 @@ import asyncio
 import os
 import time
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Path, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -35,8 +35,6 @@ from oneops.errors import NATSUnavailableError, OneOpsError
 from oneops.executor.graph import build_executor_graph, run_turn
 from oneops.executor.memory import NoopTrimmer, TokenBudgetTrimmer
 from oneops.executor.step_runner import HandlerStepExecutor
-from oneops.session import InMemoryEventLog, InMemoryHotWindow, SessionEventStore
-from oneops.toolrunner.resolver import HandlerResolver
 from oneops.observability import get_logger, get_tracer
 from oneops.observability.metrics import increment as _metric_inc
 from oneops.registry.loader import load_registry
@@ -46,7 +44,9 @@ from oneops.router.fast_path import (
     FastPathRequest,
 )
 from oneops.router.router import Router
+from oneops.session import InMemoryEventLog, InMemoryHotWindow, SessionEventStore
 from oneops.session.profile_store import get_user_profile_store  # noqa: F401 - eager-load
+from oneops.toolrunner.resolver import HandlerResolver
 
 _log = get_logger("oneops.api")
 _tracer = get_tracer("oneops.api")
@@ -141,7 +141,7 @@ def _nats_connection_is_live() -> bool:
     been constructed yet (cold boot or NATS disabled), returns False.
     """
     try:
-        from oneops.adapters.nats_client import _client      # noqa: SLF001 — boundary
+        from oneops.adapters.nats_client import _client  # noqa: SLF001 — boundary
         return bool(_client and _client.is_connected)
     except Exception:                                       # noqa: BLE001 — boundary
         return False
@@ -383,7 +383,8 @@ async def _lifespan(app: FastAPI):
     # ThresholdDisambiguator is the safe fallback.
     from oneops.authz.service import AuthzService
     from oneops.router.disambiguation import (
-        LlmDisambiguator, ThresholdDisambiguator,
+        LlmDisambiguator,
+        ThresholdDisambiguator,
     )
     from oneops.router.glossary import Glossary
     from oneops.router.retrieval import LexicalRetriever
@@ -408,8 +409,8 @@ async def _lifespan(app: FastAPI):
         from oneops.router.decompose import LlmDecomposer
         decomposer = LlmDecomposer(gateway, model=chosen_model)
     else:
-        from oneops.router.rewrite import PassthroughRewriter
         from oneops.router.decompose import PassthroughDecomposer
+        from oneops.router.rewrite import PassthroughRewriter
         disambiguator = ThresholdDisambiguator()
         rewriter = PassthroughRewriter()
         decomposer = PassthroughDecomposer()
@@ -476,7 +477,8 @@ async def _lifespan(app: FastAPI):
         # it?"). Returns [] for full-summary or unrelated messages, so
         # the handler falls through to summarise.
         from oneops.use_cases.uc01_summarization.field_read import (
-            LlmFieldReadExtractor, set_field_read_llm,
+            LlmFieldReadExtractor,
+            set_field_read_llm,
         )
         _fr = LlmFieldReadExtractor(gateway, model=chosen_model)
         async def _field_read_call(msg, labels, tenant, model, *, user_id=""):
@@ -489,7 +491,8 @@ async def _lifespan(app: FastAPI):
         # field descriptions. Fail-OPEN: any embedding error and the
         # turn falls through to the LLM extractor above.
         from oneops.use_cases.uc01_summarization.field_embedder import (
-            build_field_embedder, set_field_embedder,
+            build_field_embedder,
+            set_field_embedder,
         )
         set_field_embedder(build_field_embedder(gateway))
         # Conversational boundary — classifies non-routed turns and emits
@@ -505,7 +508,8 @@ async def _lifespan(app: FastAPI):
         # spans, retries, LiteLLM proxy routing). The 1536-d default
         # matches the dimensionality stored on `itsm.kb_knowledge`.
         from oneops.use_cases.uc03_kb_lookup.kb_embed import (
-            build_cached_embed_fn, set_kb_embed_fn,
+            build_cached_embed_fn,
+            set_kb_embed_fn,
         )
         embed_model = os.getenv(
             "LLM_EMBED_MODEL", "text-embedding-3-large").strip()
@@ -518,7 +522,8 @@ async def _lifespan(app: FastAPI):
         # against `UC03_MIN_ANSWER_RELEVANCE_SCORE` and falls back to
         # CASE B when the answer drifts from the query subject.
         from oneops.use_cases.uc03_kb_lookup.kb_embed import (
-            build_relevance_scorer, set_kb_relevance_scorer,
+            build_relevance_scorer,
+            set_kb_relevance_scorer,
         )
         set_kb_relevance_scorer(build_relevance_scorer(
             gateway, model=embed_model, dimensions=embed_dims))
@@ -528,7 +533,8 @@ async def _lifespan(app: FastAPI):
         # match" path for CASE B. Same gateway egress (OTel + cost +
         # retries + LiteLLM proxy).
         from oneops.use_cases.uc03_kb_lookup.answer_composer import (
-            LlmAnswerComposer, set_kb_answer_composer,
+            LlmAnswerComposer,
+            set_kb_answer_composer,
         )
         set_kb_answer_composer(LlmAnswerComposer(gateway, model=chosen_model))
         # Stage-1 conversation-control gate (pre-router). Same gateway
@@ -536,7 +542,8 @@ async def _lifespan(app: FastAPI):
         # gate caches verdicts in Dragonfly so repeat greetings/thanks
         # cost zero tokens.
         from oneops.conversation.control_gate import (
-            LlmControlClassifier, set_control_classifier,
+            LlmControlClassifier,
+            set_control_classifier,
         )
         set_control_classifier(
             LlmControlClassifier(gateway, model=chosen_model))
@@ -725,6 +732,8 @@ async def _lifespan(app: FastAPI):
         if gateway is not None:
             from oneops.api.uc05_routes import (
                 get_ticket_store as _uc05_get_store,
+            )
+            from oneops.api.uc05_routes import (
                 set_tools_runner as _uc05_set_runner,
             )
             from oneops.use_cases.uc05_triage.runner import build_runner
@@ -746,14 +755,18 @@ async def _lifespan(app: FastAPI):
             if invoker_mode == "nats":
                 try:
                     from oneops.adapters.nats_client import get_nats_client
+                    from oneops.api.uc05_routes import (
+                        set_decide_dispatcher as _uc05_set_decide_dispatcher,
+                    )
+                    from oneops.api.uc05_routes import (
+                        set_tools_runner as _uc05_set_runner_inner,
+                    )
                     from oneops.use_cases.uc05_triage.agent import TriageAgent
                     from oneops.use_cases.uc05_triage.nats_dispatcher import (
                         dispatch_decide as _uc05_dispatch_decide,
-                        dispatch_propose as _uc05_dispatch_propose,
                     )
-                    from oneops.api.uc05_routes import (
-                        set_decide_dispatcher as _uc05_set_decide_dispatcher,
-                        set_tools_runner as _uc05_set_runner_inner,
+                    from oneops.use_cases.uc05_triage.nats_dispatcher import (
+                        dispatch_propose as _uc05_dispatch_propose,
                     )
                     nats_client = await get_nats_client()
                     agent = TriageAgent(
@@ -795,16 +808,18 @@ async def _lifespan(app: FastAPI):
     # executor-kick over NATS instead of running it in-process. Symmetric
     # with UC-5. Graceful fallback to asyncio task if NATS is down.
     try:
+        import os as _os
+
+        import asyncpg as _asyncpg
+
         from oneops.adapters.nats_client import get_nats_client
+        from oneops.use_cases.uc08_fulfillment.adapters.inprocess import (
+            InProcessIntegrationAdapter,
+        )
         from oneops.use_cases.uc08_fulfillment.agent import (
             UC8FulfillmentAgent,
         )
         from oneops.use_cases.uc08_fulfillment.executor import execute_plan
-        from oneops.use_cases.uc08_fulfillment.adapters.inprocess import (
-            InProcessIntegrationAdapter,
-        )
-        import asyncpg as _asyncpg
-        import os as _os
 
         nats_client_uc08 = await get_nats_client()
 
@@ -834,6 +849,8 @@ async def _lifespan(app: FastAPI):
     try:
         from oneops.api.uc02_routes import (
             set_result_cache as _uc02_set_result_cache,
+        )
+        from oneops.api.uc02_routes import (
             set_similar_runner as _uc02_set_runner,
         )
         from oneops.use_cases.uc02_similar_tickets.core import (
@@ -869,10 +886,6 @@ async def _lifespan(app: FastAPI):
         # Wire the Dragonfly result cache if the chat-turn cache backend
         # is the Dragonfly one — reuse the same client. Falls back to
         # in-memory dict otherwise.
-        from oneops.api.chat_turn_cache import (
-            DragonflyChatTurnCache,
-            InMemoryChatTurnCache,
-        )
         ctc = getattr(app.state, "chat_turn_cache", None)
         # Cache will be wired AFTER chat_turn_cache builds below; set None now
         # and revisit. The order below is intentional — UC-2 cache binds after.
@@ -922,8 +935,9 @@ async def _lifespan(app: FastAPI):
     app.state.embedding_worker = None
     if os.getenv("EMBEDDING_WORKER_ENABLED", "true").strip().lower() != "false":
         try:
-            from oneops.embeddings.worker import EmbeddingRefreshWorker
             import asyncpg as _asyncpg
+
+            from oneops.embeddings.worker import EmbeddingRefreshWorker
 
             async def _emb_conn():
                 return await _asyncpg.connect(os.environ["POSTGRES_URL"])
@@ -1116,7 +1130,7 @@ def build_app() -> FastAPI:
         with open(index_path, encoding="utf-8") as f:
             html = f.read()
 
-        def _stamp(match: "_re.Match[str]") -> str:
+        def _stamp(match: _re.Match[str]) -> str:
             attr, url = match.group(1), match.group(2)
             # Skip absolute URLs and already-stamped ones.
             if url.startswith(("http://", "https://", "//")) or "?" in url:
@@ -1158,10 +1172,10 @@ def build_app() -> FastAPI:
     # ── subsystem config / status (frontend status strip) ─────────────
     @app.get("/api/config")
     async def _config() -> dict[str, Any]:
+        from oneops.use_cases._shared.ticket_store import get_ticket_store
         from oneops.use_cases.uc01_summarization.cache import (
             get_summary_cache_store,
         )
-        from oneops.use_cases._shared.ticket_store import get_ticket_store
         cache_backend = type(get_summary_cache_store()).__name__
         ticket_backend = type(get_ticket_store()).__name__
         otel_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
@@ -1361,11 +1375,13 @@ def build_app() -> FastAPI:
     # ── chat door (natural language) ─────────────────────────────────
     @app.post("/api/chat", response_model=TurnResponse)
     async def _chat(req: ChatRequest, request: Request) -> TurnResponse:
-        from oneops.session.lifecycle import get_lifecycle
         from oneops.api.chat_turn_cache import (
             cache_key as _chat_cache_key,
+        )
+        from oneops.api.chat_turn_cache import (
             should_cache as _chat_should_cache,
         )
+        from oneops.session.lifecycle import get_lifecycle
         tenant_id, user_id, role = _principal_from_headers(request)
         request_id = _new_request_id()
         lifecycle = get_lifecycle()
@@ -1431,13 +1447,11 @@ def build_app() -> FastAPI:
                 _log.info("oneops.api.chat_turn_cache_hit",
                           tenant_id=tenant_id, session_id=session_id,
                           request_id=request_id)
-                try:
+                with suppress(Exception):
                     await lifecycle.touch(
                         tenant_id=tenant_id, session_id=session_id,
                         user_id=user_id,
                         title=(req.message or "")[:120], bump_turn_count=True)
-                except Exception:
-                    pass
                 return TurnResponse(**cached)
 
         envelope: dict[str, Any] = {
@@ -1453,12 +1467,10 @@ def build_app() -> FastAPI:
         # Slide the idle TTL and bump turn_count + title on every
         # successful turn. Failures are non-fatal — the chat reply is
         # already produced.
-        try:
+        with suppress(Exception):
             await lifecycle.touch(
                 tenant_id=tenant_id, session_id=session_id, user_id=user_id,
                 title=(req.message or "")[:120], bump_turn_count=True)
-        except Exception:
-            pass
 
         # ── Write to turn cache on a successful, useful response ──────────
         # Refusals, clarifications, and tiny replies are deliberately not
@@ -1762,7 +1774,7 @@ async def _run(
             )
             trace_id = format(span.get_span_context().trace_id, "032x") \
                 if span.get_span_context().trace_id else None
-    except asyncio.TimeoutError as exc:
+    except TimeoutError:
         # Soft degradation — a typed turn response, not HTTP 504.
         # Production should not surface raw transport timeouts as 5xx;
         # the user sees a clean retryable message and the trace carries

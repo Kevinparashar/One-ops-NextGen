@@ -1,0 +1,63 @@
+════════════════════════════════════════════════════════════════
+OneOps CI gate — FORCED-FAIL evidence (gate blocks bad code)
+captured: 2026-05-31T15:40:54Z
+════════════════════════════════════════════════════════════════
+
+── deliberate violation planted at: tests/unit/_ci_gate_probe.py ──
+"""Deliberately broken module — proves the CI gate blocks bad code.
+Removed immediately after the forced-fail evidence is captured."""
+import os, sys              # E401: multiple-imports-on-one-line
+unused_import = os          # F841 noise
+def bad(  ):                # PT-style noise + extra spaces
+    x=1                     # E225 / SIM stylistic
+    if (True):              # SIM
+        return x
+
+── running make ci-fast (expect exit ≠ 0) ──
+bash scripts/ci.sh --fast
+CI gate — 2026-05-31T15:40:54Z — mode: fast
+
+--- STAGE: ruff (lint) ---
+E401 [*] Multiple imports on one line
+ --> tests/unit/_ci_gate_probe.py:3:1
+  |
+1 | """Deliberately broken module — proves the CI gate blocks bad code.
+2 | Removed immediately after the forced-fail evidence is captured."""
+3 | import os, sys              # E401: multiple-imports-on-one-line
+  | ^^^^^^^^^^^^^^
+4 | unused_import = os          # F841 noise
+5 | def bad(  ):                # PT-style noise + extra spaces
+  |
+help: Split imports
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> tests/unit/_ci_gate_probe.py:3:1
+  |
+1 | """Deliberately broken module — proves the CI gate blocks bad code.
+2 | Removed immediately after the forced-fail evidence is captured."""
+3 | import os, sys              # E401: multiple-imports-on-one-line
+  | ^^^^^^^^^^^^^^
+4 | unused_import = os          # F841 noise
+5 | def bad(  ):                # PT-style noise + extra spaces
+  |
+help: Organize imports
+
+F401 [*] `sys` imported but unused
+ --> tests/unit/_ci_gate_probe.py:3:12
+  |
+1 | """Deliberately broken module — proves the CI gate blocks bad code.
+2 | Removed immediately after the forced-fail evidence is captured."""
+3 | import os, sys              # E401: multiple-imports-on-one-line
+  |            ^^^
+4 | unused_import = os          # F841 noise
+5 | def bad(  ):                # PT-style noise + extra spaces
+  |
+help: Remove unused import: `sys`
+
+Found 3 errors.
+[*] 3 fixable with the `--fix` option.
+✗ ruff (lint) — FAILED
+make: *** [Makefile:60: ci-fast] Error 1
+
+── make ci-fast exit code: 2 ──
+── pre-commit hook would refuse the commit. ──

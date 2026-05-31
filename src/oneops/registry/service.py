@@ -41,9 +41,42 @@ class RegistryService:
         )
 
     @classmethod
-    def from_path(cls, root: str) -> "RegistryService":
+    def from_path(cls, root: str) -> RegistryService:
         """Build a file-backed service rooted at `root` (e.g. registries/v2)."""
         return cls(FileBackend(root))
+
+    # ── lifecycle inventory ─────────────────────────────────────────────────
+
+    def lifecycle_summary(self) -> dict[str, dict[str, int]]:
+        """Inventory by kind and lifecycle status. Operator + boot-log surface.
+
+        Returns:
+            {
+                "agents":  {"active": 4, "deprecated": 0, "retired": 0, "draft": 0},
+                "tools":   {"active": N, ...},
+                "schemas": {"active": N, ...},
+            }
+        """
+        return {
+            "agents":  self.agents.lifecycle_summary(),
+            "tools":   self.tools.lifecycle_summary(),
+            "schemas": self.schemas.lifecycle_summary(),
+        }
+
+    def emit_boot_lifecycle_log(self) -> None:
+        """Log a single-line lifecycle inventory at boot.
+
+        Output shape (parseable by ops):
+            registry.lifecycle.boot kind=agents active=4 deprecated=0 retired=0 draft=0
+            registry.lifecycle.boot kind=tools active=N ...
+        """
+        try:
+            import structlog
+            _log = structlog.get_logger("oneops.registry.lifecycle")
+            for kind, counts in self.lifecycle_summary().items():
+                _log.info("registry.lifecycle.boot", kind=kind, **counts)
+        except Exception:                                            # noqa: BLE001
+            pass
 
     # ── cross-record integrity ───────────────────────────────────────────
 

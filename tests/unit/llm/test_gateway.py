@@ -108,7 +108,8 @@ async def test_embed_goes_through_the_gateway():
     gw = LlmGateway(EchoTransport(embed_dims=8), cost_tracker=tracker)
     vecs = await gw.embed(["hello", "world"], model="text-embedding-3-large",
                           tenant_id="tenant-a")
-    assert len(vecs) == 2 and len(vecs[0]) == 8
+    assert len(vecs) == 2
+    assert len(vecs[0]) == 8
     # The same text embeds to the same vector (deterministic transport).
     again = await gw.embed(["hello"], model="text-embedding-3-large",
                            tenant_id="tenant-a")

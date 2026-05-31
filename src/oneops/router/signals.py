@@ -19,11 +19,11 @@ stage 4 the classified intent is unknown, so an `intent_in` leaf evaluates
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
+from enum import StrEnum
 
 
-class Ternary(str, Enum):
+class Ternary(StrEnum):
     PASS = "pass"
     FAIL = "fail"
     INDETERMINATE = "indeterminate"

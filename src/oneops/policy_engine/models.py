@@ -13,11 +13,11 @@ The three effects:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
+from enum import StrEnum
 
 
-class PolicyEffect(str, Enum):
+class PolicyEffect(StrEnum):
     ALLOW = "allow"
     DENY = "deny"
     CANNED = "canned"
@@ -35,7 +35,7 @@ class PolicyMatch:
     surfaces: tuple[str, ...] = ()
     intents: tuple[str, ...] = ()
 
-    def matches(self, query: "PolicyQuery") -> bool:
+    def matches(self, query: PolicyQuery) -> bool:
         def ok(accepted: tuple[str, ...], value: str | None) -> bool:
             return not accepted or (value is not None and value in accepted)
         return (

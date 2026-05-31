@@ -7,7 +7,6 @@ controls the plan precisely — the real router has its own 55-test suite.
 """
 from __future__ import annotations
 
-import pytest
 from langgraph.types import Command
 
 from oneops.executor.graph import build_executor_graph, run_turn
@@ -28,7 +27,6 @@ from oneops.registry.service import RegistryService
 from oneops.registry.store import FileBackend
 from oneops.router.plan import PlanStep, RoutePlan, RouteResult
 from oneops.session import InMemoryEventLog, InMemoryHotWindow, SessionEventStore
-
 
 # ── builders ─────────────────────────────────────────────────────────────
 
@@ -88,7 +86,8 @@ async def test_single_step_executes(tmp_path):
     out = await run_turn(graph, _envelope())
     assert out["final_status"] == "executed"
     results = out["step_results"]
-    assert len(results) == 1 and results[0]["status"] == "success"
+    assert len(results) == 1
+    assert results[0]["status"] == "success"
     assert results[0]["agent_id"] == "uc_a"
 
 

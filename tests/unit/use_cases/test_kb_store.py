@@ -82,7 +82,8 @@ async def test_search_honours_limit(store):
 
 async def test_get_returns_a_published_article(store):
     art = await store.get(kb_id="KB0001", tenant_id="T1", audiences=_ALL)
-    assert art is not None and art["title"] == "Fix VPN disconnects"
+    assert art is not None
+    assert art["title"] == "Fix VPN disconnects"
 
 
 async def test_get_misses_a_draft(store):
@@ -118,10 +119,13 @@ async def test_linked_to_unknown_entity_is_empty(store):
                                  audiences=_ALL) == []
 
 
-# ── live backend placeholder ──────────────────────────────────────────────
+# ── live backend smoke ────────────────────────────────────────────────────
 
 
-async def test_postgres_backend_fails_loud_not_silent():
-    with pytest.raises(NotImplementedError, match="not implemented yet"):
-        await PostgresKbStore().get(kb_id="KB0001", tenant_id="T1",
-                                    audiences=_ALL)
+def test_postgres_backend_exposes_kb_store_protocol():
+    # Replaces the older NotImplementedError guard. PostgresKbStore is now a
+    # real implementation; this test just asserts the protocol surface is in
+    # place. Behavioural tests against a live DB live in integration suites.
+    store = PostgresKbStore()
+    for name in ("get", "exists", "search", "linked_to"):
+        assert callable(getattr(store, name, None)), f"missing {name}"

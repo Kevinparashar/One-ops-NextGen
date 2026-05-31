@@ -38,7 +38,7 @@ class Glossary:
         self._raw = dict(synonym_to_canonical)
 
     @classmethod
-    def from_file(cls, path: str | None = None) -> "Glossary":
+    def from_file(cls, path: str | None = None) -> Glossary:
         """Load the platform base glossary from its JSON data file."""
         if path is None:
             repo_root = Path(__file__).resolve().parents[3]
@@ -61,7 +61,7 @@ class Glossary:
         _log.info("router.glossary_loaded", synonym_count=len(mapping), source=str(p))
         return cls(mapping)
 
-    def overlaid_with(self, tenant_entries: dict[str, str]) -> "Glossary":
+    def overlaid_with(self, tenant_entries: dict[str, str]) -> Glossary:
         """Return a new glossary with a tenant's synonyms layered on top of the
         platform base. Tenant entries win on a key collision."""
         merged = dict(self._raw)

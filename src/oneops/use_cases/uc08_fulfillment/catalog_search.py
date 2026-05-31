@@ -48,7 +48,6 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass
-from typing import Any
 
 import asyncpg
 import structlog
@@ -140,7 +139,7 @@ async def _embed_query(
                 ),
                 timeout=EMBED_TIMEOUT_S,
             )
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise CatalogSearchError(
                 f"embedding gateway timeout after {EMBED_TIMEOUT_S}s",
             ) from exc

@@ -8,12 +8,12 @@ attention-budget discipline.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 
-class ToolStatus(str, Enum):
+class ToolStatus(StrEnum):
     SUCCESS = "success"
     FAILED = "failed"
     TIMEOUT = "timeout"
@@ -52,16 +52,16 @@ class ToolResult:
 
     @staticmethod
     def success(tool_id: str, output: Any, *, latency_ms: int = 0,
-                from_cache: bool = False) -> "ToolResult":
+                from_cache: bool = False) -> ToolResult:
         return ToolResult(tool_id, ToolStatus.SUCCESS, output, None,
                           latency_ms, from_cache)
 
     @staticmethod
-    def failed(tool_id: str, error: str, *, latency_ms: int = 0) -> "ToolResult":
+    def failed(tool_id: str, error: str, *, latency_ms: int = 0) -> ToolResult:
         return ToolResult(tool_id, ToolStatus.FAILED, None, error, latency_ms)
 
     @staticmethod
-    def timed_out(tool_id: str, timeout_ms: int, *, latency_ms: int = 0) -> "ToolResult":
+    def timed_out(tool_id: str, timeout_ms: int, *, latency_ms: int = 0) -> ToolResult:
         return ToolResult(tool_id, ToolStatus.TIMEOUT, None,
                           f"tool exceeded its {timeout_ms}ms timeout", latency_ms)
 

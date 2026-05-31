@@ -18,9 +18,8 @@ that violates a rule cannot be constructed.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Optional
+from datetime import UTC, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -31,13 +30,13 @@ _ID_PATTERN = r"^[a-z][a-z0-9_]{2,63}$"
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ── Enums ────────────────────────────────────────────────────────────────
 
 
-class DeterminismLevel(str, Enum):
+class DeterminismLevel(StrEnum):
     """AgentScript determinism dial. HIGH = every step gated by code/hooks,
     canned responses at compliance touchpoints, minimal LLM autonomy.
     LOW = the agent reasons more freely. The executor respects this."""
@@ -47,7 +46,7 @@ class DeterminismLevel(str, Enum):
     LOW = "low"
 
 
-class RoutingShape(str, Enum):
+class RoutingShape(StrEnum):
     """The six routing shapes the router must be able to produce
     (see docs/BEHAVIOR_CORPUS.md §2)."""
 
@@ -59,34 +58,48 @@ class RoutingShape(str, Enum):
     GATED = "rbac_abac_gated"
 
 
-class RecordStatus(str, Enum):
-    """Lifecycle of a registry record version. Old versions stay runnable
-    until explicitly RETIRED — rollback is re-activating a prior version."""
+class RecordStatus(StrEnum):
+    """Lifecycle of a registry record version (DOC-03 + production-maturity §A.1).
+
+    Transitions:
+      DRAFT      → ACTIVE         (activate; promotes new version live)
+      ACTIVE     → DEPRECATED     (deprecate; still callable, emits warning)
+      DEPRECATED → RETIRED        (retire; removed from live pool)
+      DRAFT      → RETIRED        (skip; never activated)
+      ACTIVE     → RETIRED        (rollback fast-path; demote)
+
+    Router behaviour:
+      ACTIVE     — selectable
+      DEPRECATED — selectable BUT `get()` emits a deprecation warning span
+      DRAFT      — invisible to router (never selected)
+      RETIRED    — invisible to router (404 on direct lookup)
+    """
 
     DRAFT = "draft"
     ACTIVE = "active"
+    DEPRECATED = "deprecated"
     RETIRED = "retired"
 
 
-class ExecutionTier(str, Enum):
+class ExecutionTier(StrEnum):
     READ = "read"
     ACTION = "action"
 
 
-class DataClassification(str, Enum):
+class DataClassification(StrEnum):
     PUBLIC = "public"
     INTERNAL = "internal"
     CONFIDENTIAL = "confidential"
     PII = "pii"
 
 
-class ConditionOperator(str, Enum):
+class ConditionOperator(StrEnum):
     ALL_OF = "all_of"
     ANY_OF = "any_of"
     LEAF = "leaf"
 
 
-class ConditionSignal(str, Enum):
+class ConditionSignal(StrEnum):
     """Deterministically-evaluable signals available to the router (stage 3).
     No free-form text matching — each signal is a set-membership or boolean
     check the router computes from request context."""
@@ -113,13 +126,13 @@ class ActivationCondition(BaseModel):
     model_config = {"frozen": True}
 
     operator: ConditionOperator = ConditionOperator.LEAF
-    signal: Optional[ConditionSignal] = None
+    signal: ConditionSignal | None = None
     values: tuple[str, ...] = ()
     negate: bool = False
-    clauses: tuple["ActivationCondition", ...] = ()
+    clauses: tuple[ActivationCondition, ...] = ()
 
     @model_validator(mode="after")
-    def _check_shape(self) -> "ActivationCondition":
+    def _check_shape(self) -> ActivationCondition:
         if self.operator is ConditionOperator.LEAF:
             if self.signal is None:
                 raise ValueError("leaf condition requires a `signal`")
@@ -193,7 +206,7 @@ class JourneySlot(BaseModel):
     slot_id: str = Field(pattern=_ID_PATTERN)
     prompt: str = Field(min_length=1, max_length=300)
     required: bool = True
-    validator_ref: Optional[str] = None       # deterministic validator id
+    validator_ref: str | None = None       # deterministic validator id
     fans_out_to: tuple[str, ...] = ()          # agent ids this slot triggers (onboarding fan-out)
 
 
@@ -248,7 +261,7 @@ class FastPathInputField(BaseModel):
     type: str = Field(min_length=1, max_length=32)       # str|int|bool|enum…
     required: bool = True
     description: str = Field(min_length=1, max_length=240)
-    auto_derive_from: Optional[str] = Field(default=None, max_length=64)
+    auto_derive_from: str | None = Field(default=None, max_length=64)
 
 
 class FastPathSpec(BaseModel):
@@ -274,7 +287,7 @@ class FastPathSpec(BaseModel):
     # describes the response shape — for SDK/codegen consumers. The dispatcher
     # does NOT validate output against it (the handler already produces the
     # canonical contract); this is documentation-as-data.
-    response_schema_ref: Optional[str] = None
+    response_schema_ref: str | None = None
 
 
 class AgentRecord(_VersionedRecord):
@@ -300,14 +313,20 @@ class AgentRecord(_VersionedRecord):
     depends_on: tuple[str, ...] = ()           # agent ids — DAG edges
     excludes: tuple[ExclusionRef, ...] = ()
     compound_of: tuple[str, ...] = ()          # if set, this is a compound action
-    journey: Optional[JourneySpec] = None
+    journey: JourneySpec | None = None
+    # Opt-in flag: when true, the orchestrator runs the TimeFilterExtractor
+    # for any turn whose survivor set contains this agent, and passes the
+    # extracted TimeFilter through the tool context. Default False — no LLM
+    # cost for UCs that don't consume time scopes (UC-1 ID lookup, etc.).
+    # Spec: docs/issues/.../TimeFilter-design.md (or §UC-2.6 spec).
+    consumes_time_filter: bool = False
     # Optional fast-path entry — UCs that opt in are served through the
     # generalised `/fast/{uc_id}` dispatcher (Moveworks deep-link). Absent
     # ⇒ the UC is chat-only.
-    fast_path: Optional[FastPathSpec] = None
+    fast_path: FastPathSpec | None = None
 
     @model_validator(mode="after")
-    def _cross_field_rules(self) -> "AgentRecord":
+    def _cross_field_rules(self) -> AgentRecord:
         if self.id in self.depends_on:
             raise ValueError(f"agent {self.id} cannot depend on itself")
         if any(x.agent_id == self.id for x in self.excludes):
@@ -373,7 +392,7 @@ class ToolRecord(_VersionedRecord):
     requires_scopes: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def _action_rules(self) -> "ToolRecord":
+    def _action_rules(self) -> ToolRecord:
         # An action tool that is not idempotent is a double-execution hazard
         # under NATS at-least-once re-delivery (ARCHITECTURE.md §8).
         if self.execution_type is ExecutionTier.ACTION and not self.idempotent:
@@ -392,11 +411,11 @@ class SchemaRecord(_VersionedRecord):
     description: str = Field(min_length=1, max_length=MAX_DESCRIPTION_CHARS)
     format: str = Field(pattern=r"^(protobuf|json)$")
     location: str = Field(min_length=1, max_length=300)      # .proto path or json-schema path
-    deprecates_version: Optional[int] = Field(default=None, ge=1)
+    deprecates_version: int | None = Field(default=None, ge=1)
     deprecation_window_days: int = Field(default=90, ge=0, le=730)
 
     @model_validator(mode="after")
-    def _deprecation_rules(self) -> "SchemaRecord":
+    def _deprecation_rules(self) -> SchemaRecord:
         if self.deprecates_version is not None and self.deprecates_version >= self.version:
             raise ValueError("deprecates_version must be older than this version")
         return self

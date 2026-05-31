@@ -22,8 +22,8 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import asyncpg
 from opentelemetry import trace
@@ -34,11 +34,9 @@ from oneops.use_cases.uc08_fulfillment.contracts import (
     FulfillmentPlan,
     FulfillmentStatus,
     RitmState,
-    TaskState,
 )
 from oneops.use_cases.uc08_fulfillment.errors import (
     CatalogItemNotFoundError,
-    DuplicateRequestError,
     FulfillmentPersistenceError,
     RequestItemNotFoundError,
     RequestNotFoundError,

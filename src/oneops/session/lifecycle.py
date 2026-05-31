@@ -25,7 +25,7 @@ to in-flight create when lifecycle returns None.
 """
 from __future__ import annotations
 
-import json
+import contextlib
 import os
 import re
 import time
@@ -131,18 +131,19 @@ class DragonflyLifecycle:
         self._index_ttl = list_index_ttl_seconds
 
     @classmethod
-    def from_settings(cls) -> "DragonflyLifecycle | _NullLifecycle":
+    def from_settings(cls) -> DragonflyLifecycle | _NullLifecycle:
         """Build over a client from `DRAGONFLY_URL`; falls back to a
         no-op lifecycle if Dragonfly can't be constructed."""
         try:
             import redis.asyncio as aioredis
+
             from oneops.config import get_settings
             settings = get_settings()
             client = aioredis.from_url(
                 getattr(settings, "dragonfly_url", "redis://localhost:6379/0"),
                 decode_responses=False,
             )
-            idle_min = int(os.getenv("SESSION_IDLE_TTL_MINUTES", "30"))
+            idle_min = int(os.getenv("SESSION_IDLE_TTL_MINUTES", "1440"))
             return cls(client, idle_ttl_seconds=idle_min * 60)
         except Exception as exc:
             _log.warning("session.lifecycle.init_failed",
@@ -172,7 +173,8 @@ class DragonflyLifecycle:
         if not h:
             return None
         # bytes-keyed dict from Dragonfly
-        g = lambda k: self._decode(h.get(k.encode()) if isinstance(list(h.keys())[0], bytes) else h.get(k))
+        def g(k):
+            return self._decode(h.get(k.encode()) if isinstance(list(h.keys())[0], bytes) else h.get(k))
         try:
             return SessionMeta(
                 session_id=session_id,
@@ -358,11 +360,9 @@ class DragonflyLifecycle:
                 out.append(meta)
             else:
                 # Expired or deleted — drop from the index to keep it tidy.
-                try:
+                with contextlib.suppress(Exception):
                     await self._redis.zrem(
                         _user_index_key(tenant_id, user_id), sid)
-                except Exception:
-                    pass
         return out
 
     async def delete(self, *, tenant_id: str, session_id: str) -> bool:

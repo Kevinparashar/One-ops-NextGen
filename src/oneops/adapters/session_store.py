@@ -288,7 +288,7 @@ class SessionStore:
 import asyncio as _asyncio
 import weakref as _weakref
 
-_stores: "_weakref.WeakKeyDictionary[_asyncio.AbstractEventLoop, SessionStore]" = (
+_stores: _weakref.WeakKeyDictionary[_asyncio.AbstractEventLoop, SessionStore] = (
     _weakref.WeakKeyDictionary()
 )
 

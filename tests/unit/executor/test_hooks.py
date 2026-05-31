@@ -123,7 +123,10 @@ def _agent_record(*, agent_id="uc_action", tier="action",
     """Build an AgentRecord using `model_construct` so we don't have to satisfy
     every field — we only assert against the abac_tags facts the hook reads."""
     from oneops.registry.models import (
-        AbacTags, AgentRecord, DataClassification, ExecutionTier,
+        AbacTags,
+        AgentRecord,
+        DataClassification,
+        ExecutionTier,
     )
     return AgentRecord.model_construct(
         id=agent_id,

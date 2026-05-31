@@ -10,12 +10,12 @@ Devil's-advocate coverage:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
 
-from oneops.authz.models import AuthzDecision, Effect, Principal
+from oneops.authz.models import AuthzDecision, Principal
 from oneops.registry.models import (
     ActivationCondition,
     ConditionOperator,
@@ -64,7 +64,7 @@ def test_cache_hint_hit_with_age_and_source_ok():
     h = CacheHint(
         hit=True, age_s=240,
         source=CacheSource.READ_CACHE,
-        fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        fetched_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     assert h.age_s == 240
     assert h.source is CacheSource.READ_CACHE
@@ -238,7 +238,8 @@ def test_from_request_with_cache_hint_payload():
         "cache_hint": {"hit": True, "age_s": 60, "source": "read_cache"},
     }
     ctx = ToolContext.from_request(req)
-    assert ctx.cache_hint and ctx.cache_hint.hit is True
+    assert ctx.cache_hint
+    assert ctx.cache_hint.hit is True
     assert ctx.cache_hint.age_s == 60
     assert ctx.cache_hint.source is CacheSource.READ_CACHE
 

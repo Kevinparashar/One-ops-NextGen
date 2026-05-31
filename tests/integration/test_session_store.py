@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 import pytest
 
-from oneops.adapters.dragonfly import get_redis_client, shutdown_redis_client
+from oneops.adapters.dragonfly import shutdown_redis_client
 from oneops.adapters.session_store import (
     SessionStore,
     get_session_store,

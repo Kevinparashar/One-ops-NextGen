@@ -22,12 +22,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
 from oneops.uc_common.summary_schema import ENTITY_TYPES, KeyDetailKind
-
 
 DEFAULT_DISPLAY_SPECS_ROOT = Path(__file__).resolve().parents[3] / "registries" / "v2" / "display_specs"
 
@@ -121,7 +119,7 @@ def _load_all(root: Path) -> dict[str, DisplaySpec]:
 def load_display_spec(
     entity_type: str,
     *,
-    root: Optional[Path] = None,
+    root: Path | None = None,
 ) -> DisplaySpec:
     """Return the UC-1 display spec for one entity_type. Cached per root.
 

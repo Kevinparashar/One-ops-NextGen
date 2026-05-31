@@ -14,8 +14,8 @@ Spec source: ai-service-use-cases.md §UC-8 (DOC-09 in the 22-doc bundle).
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
-from typing import Any, Literal
+from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 # and round-trip cleanly through OTel span attributes.
 
 
-class TriggerType(str, Enum):
+class TriggerType(StrEnum):
     """Where a fulfillment request came from. Tracked on the audit row so
     operators can distinguish portal-submit from chat-submit from system
     auto-retry. Values mirror the CHECK constraint on
@@ -37,7 +37,7 @@ class TriggerType(str, Enum):
     ROLLBACK = "rollback"
 
 
-class RitmState(str, Enum):
+class RitmState(StrEnum):
     """RITM lifecycle. Mirrors itsm.request_item.state CHECK constraint
     exactly. Forward-only EXCEPT cancelled which can come from any state."""
 
@@ -49,7 +49,7 @@ class RitmState(str, Enum):
     REJECTED = "rejected"
 
 
-class ApprovalGateState(str, Enum):
+class ApprovalGateState(StrEnum):
     """Lifecycle of the RITM-level approval (not the per-gate approval row,
     which is `ApprovalState` below). itsm.request_item.approval_state."""
 
@@ -59,7 +59,7 @@ class ApprovalGateState(str, Enum):
     REJECTED = "rejected"
 
 
-class TaskType(str, Enum):
+class TaskType(StrEnum):
     """Whether UC-8 calls a tool (automated) or routes a work-item to a
     team (manual). itsm.task.task_type CHECK constraint."""
 
@@ -67,7 +67,7 @@ class TaskType(str, Enum):
     MANUAL = "manual"
 
 
-class TaskState(str, Enum):
+class TaskState(StrEnum):
     """Atomic task lifecycle.
 
     Transitions:
@@ -91,7 +91,7 @@ class TaskState(str, Enum):
     BLOCKED = "blocked"
 
 
-class ApprovalType(str, Enum):
+class ApprovalType(StrEnum):
     """Classification of an approval gate so the UI + routing layer can
     pick the right approver and the right message template. Mirrors
     itsm.approval.approval_type CHECK constraint."""
@@ -103,7 +103,7 @@ class ApprovalType(str, Enum):
     CATALOG_OWNER = "catalog_owner"
 
 
-class ApprovalState(str, Enum):
+class ApprovalState(StrEnum):
     """Approval gate lifecycle. Mirrors itsm.approval.state CHECK
     constraint exactly. `pending` blocks the LangGraph workflow via
     `interrupt()`; any terminal state resumes it."""
@@ -115,14 +115,14 @@ class ApprovalState(str, Enum):
     WITHDRAWN = "withdrawn"
 
 
-class ApprovalDecision(str, Enum):
+class ApprovalDecision(StrEnum):
     """The recorded yes/no on a resolved approval."""
 
     APPROVED = "approved"
     REJECTED = "rejected"
 
 
-class NotifyChannel(str, Enum):
+class NotifyChannel(StrEnum):
     """Pluggable notification channels. itsm.approval.notify_channel."""
 
     EMAIL = "email"
@@ -130,7 +130,7 @@ class NotifyChannel(str, Enum):
     IN_APP = "in_app"
 
 
-class FulfillmentOutcome(str, Enum):
+class FulfillmentOutcome(StrEnum):
     """Terminal outcome of a UC-8 invocation. Recorded on
     itsm.fulfillment_run.outcome."""
 
@@ -141,7 +141,7 @@ class FulfillmentOutcome(str, Enum):
     IN_PROGRESS = "in_progress"    # paused (e.g., awaiting approval); not terminal
 
 
-class AdapterErrorClass(str, Enum):
+class AdapterErrorClass(StrEnum):
     """Production-grade failure-mode taxonomy. UC-8 reacts differently to
     each per DOC-09 §UC-8 exception rules:
 
@@ -230,7 +230,7 @@ class CatalogTemplate(BaseModel):
     tasks: tuple[CatalogTemplateTask, ...] = Field(min_length=1, max_length=200)
 
     @model_validator(mode="after")
-    def _validate_dag(self) -> "CatalogTemplate":
+    def _validate_dag(self) -> CatalogTemplate:
         # Cycle + missing-ref detection at parse time. A malformed template
         # is a config bug — fail loud at boundary, never silent.
         ids = {t.task_id for t in self.tasks}
@@ -334,7 +334,7 @@ class FulfillmentPlan(BaseModel):
     estimated_total_minutes: int = Field(ge=1, le=525600)
 
     @model_validator(mode="after")
-    def _validate_dag(self) -> "FulfillmentPlan":
+    def _validate_dag(self) -> FulfillmentPlan:
         ids = {t.template_task_id for t in self.tasks}
         for t in self.tasks:
             for dep in t.depends_on:
@@ -437,7 +437,7 @@ class Outcome(BaseModel):
     button callers ignore it and render from the structured fields."""
 
     @model_validator(mode="after")
-    def _counters_sum(self) -> "Outcome":
+    def _counters_sum(self) -> Outcome:
         # Production-grade invariant: counters must sum to tasks_total.
         # Catches off-by-one errors in handler aggregation.
         s = (

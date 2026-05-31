@@ -42,9 +42,10 @@ import os
 import random
 import time
 from collections import deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from oneops.errors import NATSUnavailableError
 from oneops.observability import get_logger, get_tracer, increment
@@ -65,7 +66,7 @@ class RetryPolicy:
     max_delay_s: float = 2.0
 
     @classmethod
-    def from_env(cls) -> "RetryPolicy":
+    def from_env(cls) -> RetryPolicy:
         return cls(
             max_attempts=int(os.getenv("NATS_RETRY_MAX_ATTEMPTS", "3")),
             initial_delay_s=int(os.getenv("NATS_RETRY_INITIAL_DELAY_MS", "200")) / 1000.0,
@@ -130,7 +131,7 @@ class CircuitBreakerConfig:
     cooldown_seconds: float = 15.0
 
     @classmethod
-    def from_env(cls) -> "CircuitBreakerConfig":
+    def from_env(cls) -> CircuitBreakerConfig:
         return cls(
             failure_ratio=float(os.getenv("NATS_BREAKER_FAILURE_RATIO", "0.5")),
             min_requests=int(os.getenv("NATS_BREAKER_MIN_REQUESTS", "5")),

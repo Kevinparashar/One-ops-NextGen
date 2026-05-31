@@ -24,8 +24,8 @@ from dataclasses import dataclass
 
 from google.protobuf.message import DecodeError, Message
 
-from oneops.errors import MalformedMessageError, UnsupportedSchemaVersionError
 from oneops.codec.generated.oneops.v1 import envelope_pb2 as pb
+from oneops.errors import MalformedMessageError, UnsupportedSchemaVersionError
 
 # ── Schema-version window ────────────────────────────────────────────────
 

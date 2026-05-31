@@ -256,7 +256,7 @@ async def extract_title_and_description(
                 )),
                 timeout=EXTRACT_TIMEOUT_S,
             )
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise TextExtractError(
                 f"text-extract LLM call exceeded {EXTRACT_TIMEOUT_S}s",
             ) from exc

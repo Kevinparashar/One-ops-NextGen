@@ -39,8 +39,10 @@ def test_a_field_below_the_threshold_is_exposable():
                     withhold_at_or_above="confidential",
                     classifications={"a": "public", "b": "internal",
                                      "c": "confidential", "d": "restricted"})
-    assert p.is_exposable("a") and p.is_exposable("b")
-    assert not p.is_exposable("c") and not p.is_exposable("d")
+    assert p.is_exposable("a")
+    assert p.is_exposable("b")
+    assert not p.is_exposable("c")
+    assert not p.is_exposable("d")
 
 
 def test_unknown_classification_is_rejected():

@@ -18,10 +18,9 @@ funnel logic is identical regardless of which is wired.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Protocol
-
 import re as _re
+from dataclasses import dataclass
+from typing import Any, Protocol
 
 from oneops.observability import get_tracer
 from oneops.router.retrieval import Candidate
@@ -71,13 +70,13 @@ class Disambiguation:
         return {}
 
     @staticmethod
-    def no_match(rationale: str) -> "Disambiguation":
+    def no_match(rationale: str) -> Disambiguation:
         return Disambiguation(rationale=rationale)
 
     @staticmethod
     def select(agent_ids: list[str], *, confidence: float, rationale: str = "",
                intents: list[str] | None = None,
-               parameters: dict[str, dict[str, str]] | None = None) -> "Disambiguation":
+               parameters: dict[str, dict[str, str]] | None = None) -> Disambiguation:
         params = parameters or {}
         return Disambiguation(
             selected_agent_ids=tuple(agent_ids),
@@ -254,15 +253,54 @@ Axis D — off-domain (→ []):
   • "tell me a joke"
   • "what's the weather"
 
-## Decision procedure
+## Decision procedure — capability-driven dispatch
 
-1. Read the query. Identify each ask in it (one or two).
-2. For each ask, classify it as axis A or axis B by the principle above,
-   not by matching keywords. Generalise from the examples.
-3. Pick the candidate(s) whose description matches the axis. The agent
-   catalog is in the system prompt above this rule block.
-4. If both A and B are present, return both ids in order [A, B].
-5. If neither matches (off-domain), return no agents.
+For each ask in the query, identify two things explicitly:
+
+  • OBJECT — what the user is asking about. Either a specific instance
+    (an identified record, or the current focused record when the query
+    is a follow-up), or a class of things (a topic, technology, service,
+    symptom, operational concern).
+
+  • ANSWER-SOURCE — where the answer must come from. Either:
+        ─ STORED-ATTRIBUTE — the answer is the value of a field held on
+          the specific record itself. The agent reads the record's own
+          data.
+        ─ AUTHORED-MATERIAL — the answer is a separately authored
+          resource about the object: a write-up, procedure, guideline,
+          troubleshooting steps, documented fix, known-issue note. The
+          agent retrieves authored content distinct from any single
+          record's stored fields.
+
+The answer-source is determined by what the user NEEDS, not by phrasing.
+A direct question ("how do I fix X") and a meta question ("any material
+on X", "is there a procedure documented for X", "what do we have on X",
+"where is the write-up for X") both resolve to AUTHORED-MATERIAL — the
+user needs authored content, regardless of how they asked for it.
+
+Route by matching (OBJECT × ANSWER-SOURCE) to the candidate whose
+capability description fits that pair. The agent catalog above the
+routing block describes each candidate's capability. Select the candidate
+whose description aligns; do not invent agents not listed.
+
+When the query contains BOTH a stored-attribute ask AND an
+authored-material ask, return both agents, ordered with the stored-
+attribute reader first.
+
+## Dispatch discipline
+
+Returning no agents means the user is refused before any agent runs.
+Reserve that outcome for queries with no IT/ITSM/ITOM object at all —
+casual conversation, off-topic chat. When the query has any in-domain
+object — a record, a technology, a service, a symptom, an operational
+topic — at least one in-domain agent should be selected. Each agent
+reports its own no-result when its lookup yields nothing; that is the
+correct place to surface "no match", not the router.
+
+When the candidate set includes the authored-material agent and you are
+uncertain whether the user needs stored-attribute or authored-material,
+prefer the authored-material agent. Its no-result reply is honest and
+recoverable; a router-level refusal is not.
 
 ## Output schema (STRICT JSON only)
 
@@ -377,11 +415,6 @@ class LlmDisambiguator:
     async def disambiguate(
         self, query_text: str, candidates: list[Candidate], *, request_ctx: dict
     ) -> Disambiguation:
-        import json
-        from oneops.errors import LLMGatewayError
-        from oneops.llm import LlmMessage, LlmRequest, ResponseFormat
-        from oneops.observability import get_logger
-        from oneops.policy import Profile, compose
 
         with _tracer.start_as_current_span(
             "router.stage4.disambiguate",
@@ -401,6 +434,7 @@ class LlmDisambiguator:
         request_ctx: dict, _span,
     ) -> Disambiguation:
         import json
+
         from oneops.errors import LLMGatewayError
         from oneops.llm import LlmMessage, LlmRequest, ResponseFormat
         from oneops.observability import get_logger
@@ -456,14 +490,39 @@ class LlmDisambiguator:
                 f"\n\nACTIVE FOCUS (the user is mid-conversation about):\n"
                 f"  entity_id: {focus_id}\n"
                 f"  service:   {focus_service or 'unknown'}\n"
-                f"Routing prior: when a focus is active and the query is a "
-                f"follow-up (no new entity id, no explicit KB-shaped doc-noun "
-                f"like 'docs / documents / runbook / playbook / SOP / "
-                f"article / KB / knowledge base / procedure / "
-                f"troubleshooting guide / guidance / write-up'), prefer the "
-                f"agent that owns the focused record TYPE (axis A — record "
-                f"fields). Only route to KB (axis B) when the query "
-                f"explicitly asks for documentation or knowledge material.\n"
+                f"Routing principle with active focus — apply rigorously:\n"
+                f"\n"
+                f"  The focus is a PRIOR for ambiguous follow-ups, NOT a "
+                f"sticky override of explicit intent. A user can switch "
+                f"intent mid-conversation without restating context.\n"
+                f"\n"
+                f"  Test the query in this order:\n"
+                f"\n"
+                f"  1. Does the query ask for the VALUE of a field, "
+                f"     attribute, or linked-record-id that is STORED on "
+                f"     the focused entity itself? The answer must come "
+                f"     from the focused record's own data.\n"
+                f"     YES → axis A. The focused record supplies the value.\n"
+                f"\n"
+                f"  2. Does the query ask for external knowledge material — "
+                f"     content authored as a separate written-up resource "
+                f"     about a topic, technology, service, or problem area? "
+                f"     The answer must come from documents written outside "
+                f"     the focused record. The query references a topic "
+                f"     scope, not a stored attribute of the focused record, "
+                f"     even when that topic overlaps with what the focused "
+                f"     record concerns.\n"
+                f"     YES → axis B. Explicit knowledge intent overrides "
+                f"     the focus prior. Do not re-render the focused record "
+                f"     when the user is asking for documented knowledge.\n"
+                f"\n"
+                f"  3. If neither applies — the query is genuinely "
+                f"     ambiguous and has no explicit knowledge cue — fall "
+                f"     back to the focused record's type (axis A).\n"
+                f"\n"
+                f"  Apply the principle. The focused entity's topical "
+                f"  keywords appearing inside a knowledge-content query "
+                f"  do NOT convert it to axis A.\n"
             )
         user_block = (
             f"Query:\n{query_text}{focus_block}\n\n"
@@ -499,6 +558,38 @@ class LlmDisambiguator:
             selected = [a for a in (doc.get("selected_agent_ids") or [])
                         if a in valid_ids]
             if not selected:
+                # Retriever-as-floor + LLM-as-refiner (canonical production
+                # router pattern; cf. Aurelio Semantic Router, LangGraph
+                # Supervisor). The stage-3 retriever is authoritative: when
+                # it produced a non-empty survivor set, the stage-4 LLM is
+                # allowed to refine that set or re-rank it — never to empty
+                # it. An LLM hedge on telegraphic / under-specified queries
+                # is exactly the failure mode this rule mitigates: the user
+                # asked an in-domain question, the retrieval already
+                # surfaced a relevant agent, the LLM only failed to commit
+                # — let the agent run and report its own no-result, do not
+                # silently refuse at the supervisor.
+                #
+                # Fires only when survivors exist and the top has signal
+                # above floor; for genuinely off-domain queries the
+                # retriever returns no survivors → boundary handles them.
+                if candidates:
+                    top = max(candidates, key=lambda c: c.score)
+                    if top.score >= 0.10:        # narrow floor, matches MIN_FUSED_SCORE on retriever side
+                        _span.set_attribute("oneops.router.selected", top.agent_id)
+                        _span.set_attribute("oneops.router.dispatch_reason",
+                                            "retriever_floor_llm_hedge")
+                        _span.set_attribute("oneops.router.llm_hedge_rationale",
+                                            str(doc.get("rationale") or "")[:160])
+                        return Disambiguation.select(
+                            [top.agent_id], confidence=float(top.score),
+                            rationale=(
+                                "supervisor dispatch-by-default: stage-3 "
+                                "retriever surfaced this agent above the "
+                                "signal floor; stage-4 LLM hedged "
+                                "(no_match). The agent reports its own "
+                                "no-result if its lookup yields nothing."),
+                            intents=["kb_search"] if top.agent_id.endswith("_kb_lookup") else [])
                 _span.set_attribute("oneops.router.selected", "")
                 return Disambiguation.no_match(
                     str(doc.get("rationale") or "no candidate matched the intent"))

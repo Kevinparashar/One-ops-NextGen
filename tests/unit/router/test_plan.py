@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from oneops.registry.models import ExclusionRef
-from oneops.router.plan import RoutePlan, SubQueryRoute, assemble_plan
+from oneops.router.plan import SubQueryRoute, assemble_plan
 
 from ._factories import make_agent, make_registry
 

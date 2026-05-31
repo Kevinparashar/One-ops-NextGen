@@ -13,9 +13,7 @@ in milliseconds and gate every production-grade contract guarantee.
 """
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -23,7 +21,6 @@ from pydantic import ValidationError
 from oneops.use_cases.uc08_fulfillment.adapters import (
     AccountResult,
     AdapterResponse,
-    GenericTaskResult,
     IntegrationAdapter,
     MailboxResult,
 )
@@ -45,7 +42,6 @@ from oneops.use_cases.uc08_fulfillment.contracts import (
     TaskType,
     TriggerType,
 )
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. Enum-to-DB CHECK-constraint parity
@@ -401,14 +397,14 @@ def test_approval_default_state_is_pending():
         approval_type=ApprovalType.SUBSTITUTION,
         reason="Laptop T14 out of stock — substitute T14s?",
         requested_from="manager_of:USR0001",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     assert a.state == ApprovalState.PENDING
     assert a.decision is None
 
 
 def test_approval_with_decision_round_trips():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     a = Approval(
         approval_id="APP0001", tenant_id="T001",
         ritm_id="RITM0001",
@@ -435,7 +431,7 @@ def test_approval_with_decision_round_trips():
 
 
 def test_fulfillment_status_minimal():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     s = FulfillmentStatus(
         tenant_id="T001", request_id="REQ0001", ritm_id="RITM0001",
         catalog_item_id="CAT_ONBOARDING",

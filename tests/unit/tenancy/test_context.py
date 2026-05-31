@@ -17,7 +17,6 @@ from oneops.tenancy import (
     Tier,
 )
 
-
 # ── happy path + defaults ────────────────────────────────────────────────
 
 

@@ -18,9 +18,9 @@ Devil's-advocate rules enforced here (validation, not documentation):
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Optional
+from datetime import datetime
+from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -33,11 +33,10 @@ from oneops.tenancy.context import (
     Tier,
 )
 
-
 # ── Cache hint ───────────────────────────────────────────────────────────
 
 
-class CacheSource(str, Enum):
+class CacheSource(StrEnum):
     """Where a cached value came from. Closed set — read-cache layers
     populate this so the handler / audit knows the provenance class."""
 
@@ -59,12 +58,12 @@ class CacheHint(BaseModel):
     model_config = {"frozen": True, "extra": "ignore"}
 
     hit: bool
-    age_s: Optional[int] = Field(default=None, ge=0)
+    age_s: int | None = Field(default=None, ge=0)
     source: CacheSource = CacheSource.NONE
-    fetched_at: Optional[datetime] = None
+    fetched_at: datetime | None = None
 
     @model_validator(mode="after")
-    def _hit_requires_age(self) -> "CacheHint":
+    def _hit_requires_age(self) -> CacheHint:
         if self.hit and self.age_s is None:
             raise ValueError("CacheHint.hit=True requires age_s")
         if not self.hit and self.source is not CacheSource.NONE:
@@ -96,7 +95,7 @@ class ToolContext(BaseModel):
     tenant: TenantContext
     principal: Principal
     authz: AuthzDecision
-    cache_hint: Optional[CacheHint] = None
+    cache_hint: CacheHint | None = None
     request_id: str = Field(min_length=1, max_length=128)
     trace_id: str = Field(default="", max_length=64)
     # Diagnostic: which fields fell through to defaults at construction.
@@ -112,7 +111,7 @@ class ToolContext(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _cross_tenant_guard(self) -> "ToolContext":
+    def _cross_tenant_guard(self) -> ToolContext:
         # A Principal's tenant must equal the TenantContext's tenant. If
         # upstream built them from different sources, we abort here BEFORE
         # any handler sees a mixed-tenant ctx.
@@ -127,7 +126,7 @@ class ToolContext(BaseModel):
     # ── Construction helpers ──────────────────────────────────────────
 
     @classmethod
-    def from_request(cls, request: dict[str, Any]) -> "ToolContext":
+    def from_request(cls, request: dict[str, Any]) -> ToolContext:
         """Build a `ToolContext` from an inbound request dict.
 
         `tenant_id` and `request_id` are MANDATORY — a request that omits

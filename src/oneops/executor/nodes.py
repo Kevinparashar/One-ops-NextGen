@@ -53,6 +53,8 @@ def _envelope(state: dict[str, Any]) -> dict[str, Any]:
     # instead of re-deriving it from history strings (Stage 2 fix).
     env["focus_entity_id"] = state.get("focus_entity_id", "") or ""
     env["focus_service_id"] = state.get("focus_service_id", "") or ""
+    # TimeFilter (serialised dict) — empty dict means "no filter requested".
+    env["time_filter"] = state.get("time_filter", {}) or {}
     return env
 
 
@@ -90,21 +92,34 @@ def friendly_step_response(
 ) -> str:
     """Render one step's result as user-facing text. Decisions in order:
 
-      1. SUCCESS + the handler returned a `summary` block (LLM summariser
+      1. SUCCESS + the handler returned a `display_text` field (canonical
+         "chat-ready text" contract — any UC tool may emit it; the executor
+         surfaces it verbatim). This is the preferred output for UCs whose
+         response shape is opinionated (e.g. UC-2 spec-formatted similar-
+         tickets list with per-result flags + "Common: …" prose).
+      2. SUCCESS + the handler returned a `summary` block (LLM summariser
          output `{"summary": "...paragraph...", "key_details": {...}, ...}`)
          → return the paragraph.
-      2. SUCCESS + the handler returned a structured `outcome` + `message`
+      3. SUCCESS + the handler returned a structured `outcome` + `message`
          (e.g. `outcome="not_found"` from `summarize_entity`) → return that
          already-friendly message.
-      3. FAILED + the error string identifies an authz_recheck deny
+      4. FAILED + the error string identifies an authz_recheck deny
          → "Your role doesn't allow you to read {entity_id}."
-      4. FAILED + LLM gateway exhaustion → "summarisation service
+      5. FAILED + LLM gateway exhaustion → "summarisation service
          temporarily unavailable" message.
-      5. FAILED + asyncio timeout → ask the user to retry.
-      6. Otherwise → a short generic failure line, no internals leaked.
+      6. FAILED + asyncio timeout → ask the user to retry.
+      7. Otherwise → a short generic failure line, no internals leaked.
 
     The returned string is the substance the caller renders. The aggregate
     node joins multi-step turns with blank lines.
+
+    Tool-output contract for `display_text`:
+      • Must be a non-empty `str`.
+      • Caller owns formatting — Markdown is rendered by the chat UI.
+      • When present, takes precedence over `summary` and `message` so a UC
+        whose result has all three fields renders the spec-defined output.
+      • Empty / whitespace-only `display_text` is ignored (falls through to
+        the older paths) so a buggy renderer can't blank a chat reply.
     """
     status = (result.get("status") or "").lower()
     output = result.get("output") or {}
@@ -114,8 +129,12 @@ def friendly_step_response(
     # ── success path ────────────────────────────────────────────────────
     if status == "success":
         if isinstance(output, dict):
-            # The LLM summariser returns {"outcome": "summarized",
-            # "summary": {summary, key_details, model, usage}, …}.
+            # 1. Canonical chat-ready text — used by UCs whose spec dictates
+            #    an opinionated output shape (UC-2 ranked list with flags).
+            display_text = output.get("display_text")
+            if isinstance(display_text, str) and display_text.strip():
+                return display_text.strip()
+            # 2. UC-1 summariser path.
             outer_summary = output.get("summary")
             if isinstance(outer_summary, dict):
                 paragraph = str(outer_summary.get("summary") or "").strip()
@@ -123,9 +142,7 @@ def friendly_step_response(
                     return paragraph
             elif isinstance(outer_summary, str) and outer_summary.strip():
                 return outer_summary.strip()
-            # Handlers that produce a structured outcome (`found`,
-            # `not_found`, `invalid_request`, `llm_unavailable`) already
-            # carry a user-safe `message` — surface that verbatim.
+            # 3. Handlers that emit `outcome` + already-friendly `message`.
             message = output.get("message")
             if isinstance(message, str) and message.strip():
                 return message.strip()
@@ -170,6 +187,18 @@ class ExecutorNodes:
                                         # router/state propagate it (substrate
                                         # gap G2). Default = NoopTrimmer
                                         # (current behavior preserved).
+        focus_intent_classifier=None,   # FocusIntentClassifier | None — when
+                                        # provided, runs in update_focus to
+                                        # drop focus on explicit topic-search
+                                        # turns. When None, focus carries as
+                                        # before (legacy behaviour preserved).
+        time_filter_extractor=None,     # TimeFilterExtractor | None — when
+                                        # wired, the route node runs it
+                                        # conditionally (only when the plan
+                                        # contains an agent whose registry
+                                        # record sets consumes_time_filter:
+                                        # true). When None, no extraction
+                                        # occurs and tools see an empty filter.
     ) -> None:
         self._router = router
         self._registry = registry
@@ -189,6 +218,11 @@ class ExecutorNodes:
         self._trimmer: ConversationTrimmer = conversation_trimmer or NoopTrimmer()
         # System-wide entity-ID normalizer (registry-driven). Built once.
         self._entity_normalizer = EntityIdNormalizer.from_registry_file()
+        # Focus-intent classifier (optional). When wired, the update_focus
+        # node calls it on each turn with a carried focus + no current entity
+        # to decide if the focus should be dropped (explicit topic-search).
+        self._focus_intent_classifier = focus_intent_classifier
+        self._time_filter_extractor = time_filter_extractor
 
     # ── load_session ─────────────────────────────────────────────────────
 
@@ -296,6 +330,31 @@ class ExecutorNodes:
                         new_focus_service = he.service_id
                         source = "history_recovery"
                         break
+
+            # Focus-intent classifier — runs on any turn that ended up with a
+            # focus that did NOT come from the current message itself. The
+            # user did not name an entity in this turn, but a focus is being
+            # carried (from prior state or recovered from history). Classify
+            # whether the user's intent is a property-of-focus question or a
+            # topic-search; if topic-search, drop the focus so downstream
+            # disambiguation runs against a clean state.
+            if (new_focus_id
+                    and source in ("carried", "history_recovery")
+                    and self._focus_intent_classifier is not None):
+                try:
+                    label = await self._focus_intent_classifier.classify(
+                        message=message,
+                        focus_entity_id=new_focus_id,
+                        focus_service=new_focus_service,
+                        tenant_id=state.get("tenant_id", "") or "",
+                        user_id=state.get("user_id", "") or "",
+                    )
+                except Exception:                                   # noqa: BLE001
+                    label = "unknown"
+                if label == "topic":
+                    new_focus_id = ""
+                    new_focus_service = ""
+                    source = "topic_search_drop"
             span.set_attribute("focus.entity_id", new_focus_id or "")
             span.set_attribute("focus.service_id", new_focus_service or "")
             span.set_attribute("focus.source", source)
@@ -378,6 +437,43 @@ class ExecutorNodes:
             else:
                 update["plan"] = []
                 update["boundary_reason"] = result.boundary_reason
+
+            # ── Conditional TimeFilter extraction ─────────────────────────
+            # Run the extractor ONLY when the plan contains an agent whose
+            # registry record opts in via `consumes_time_filter: true`. This
+            # keeps the LLM cost off summarisation / KB / triage turns that
+            # don't need a temporal scope.
+            update["time_filter"] = {}
+            if (self._time_filter_extractor is not None
+                    and update["plan"]):
+                wants_filter = False
+                for step in update["plan"]:
+                    aid = step.get("agent_id")
+                    if not aid:
+                        continue
+                    try:
+                        rec = self._registry.agents.get_optional(aid)
+                    except Exception:                                  # noqa: BLE001
+                        rec = None
+                    if rec is not None and getattr(
+                            rec, "consumes_time_filter", False):
+                        wants_filter = True
+                        break
+                if wants_filter:
+                    try:
+                        tf = await self._time_filter_extractor.extract(
+                            message=state.get("message", "") or "",
+                            tenant_id=principal.tenant_id,
+                            user_id=principal.user_id,
+                        )
+                        if tf is not None:
+                            update["time_filter"] = tf.model_dump(mode="json")
+                            span.set_attribute(
+                                "executor.time_filter.present", True)
+                    except Exception as exc:                          # noqa: BLE001
+                        # Never break routing on extractor failure.
+                        _log.warning("executor.time_filter.extract_failed",
+                                     error=str(exc)[:160])
             return update
 
     # ── wave (no-op; dispatch_wave does the routing) ─────────────────────

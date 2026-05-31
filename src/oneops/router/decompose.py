@@ -19,7 +19,7 @@ needs sub-query A's result first); the router turns them into plan-DAG edges.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Protocol
 
 from oneops.observability import get_logger, get_tracer

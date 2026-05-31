@@ -35,7 +35,6 @@ from oneops.use_cases.uc08_fulfillment.contracts import (
     FulfillmentRequest,
     Outcome,
     TaskPlanItem,
-    TaskType,
 )
 from oneops.use_cases.uc08_fulfillment.db import ConnectionProvider
 from oneops.use_cases.uc08_fulfillment.errors import (

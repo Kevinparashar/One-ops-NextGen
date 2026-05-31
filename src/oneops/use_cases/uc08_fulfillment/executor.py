@@ -45,7 +45,6 @@ import structlog
 from opentelemetry import trace
 
 from oneops.observability.metrics import increment as _metric_inc
-
 from oneops.use_cases.uc08_fulfillment import db as _db
 from oneops.use_cases.uc08_fulfillment.adapters.protocol import (
     AdapterErrorClass,
@@ -223,7 +222,7 @@ async def _invoke_adapter(
             ),
             timeout=timeout,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return AdapterResponse(
             success=False,
             idempotency_key=idempotency_key,
@@ -496,7 +495,7 @@ async def _execute_plan_locked(
             async with sem:
                 return await coro
 
-        for wave in range(_MAX_WAVES):
+        for _wave in range(_MAX_WAVES):
             conn = await cp()
             try:
                 tasks = await _db.list_tasks_for_ritm(
@@ -556,7 +555,7 @@ async def _execute_plan_locked(
                 for t in ready_tasks
             ), return_exceptions=True)
 
-            for t, res in zip(ready_tasks, results):
+            for t, res in zip(ready_tasks, results, strict=False):
                 if isinstance(res, Exception):
                     _log.error("uc08.executor.wave.task_raised",
                                ritm_id=ritm_id, task_id=t["task_id"],

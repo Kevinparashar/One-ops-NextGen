@@ -153,10 +153,81 @@ def test_unknown_failure_yields_neutral_generic_line():
     assert "complete that request" in out.lower()
 
 
+# ── success: display_text is the canonical chat-ready text contract ─────
+#
+# Any UC tool may emit `display_text` when its spec dictates an opinionated
+# output shape (UC-2 ranked similar-tickets list with flags + prose). It
+# takes precedence over both `summary` and `message` — the tool already
+# composed the user-facing text and the executor surfaces it verbatim.
+
+
+def test_success_with_display_text_is_surfaced_verbatim():
+    text = (
+        "Found 2 similar tickets:\n\n"
+        "1. **INC0001002** (86% match) — In Progress\n"
+        '   "VPN drops after 10 minutes"\n'
+        "   Common: same configuration item, same category"
+    )
+    out = friendly_step_response(
+        _step(),
+        _result(status="success", output={
+            "display_text": text,
+            "results": [{"ticket_id": "INC0001002"}],
+            "source_ticket_id": "INC0001001",
+        }))
+    assert out == text
+
+
+def test_display_text_takes_precedence_over_summary_and_message():
+    """When all three fields exist, the spec-rendered text wins."""
+    out = friendly_step_response(
+        _step(),
+        _result(status="success", output={
+            "display_text": "OPINIONATED",
+            "summary": {"summary": "fallback paragraph"},
+            "message": "fallback message",
+        }))
+    assert out == "OPINIONATED"
+
+
+def test_blank_display_text_falls_through_to_message():
+    """An empty / whitespace-only display_text must not blank the reply.
+    The composer falls through to the next path (summary, then message)."""
+    out = friendly_step_response(
+        _step(),
+        _result(status="success", output={
+            "display_text": "   ",
+            "message": "the real message",
+        }))
+    assert out == "the real message"
+
+
+def test_non_string_display_text_is_ignored():
+    """Defensive: a buggy renderer that hands back a dict/list is ignored,
+    not crashed on. The next path takes over."""
+    out = friendly_step_response(
+        _step(),
+        _result(status="success", output={
+            "display_text": {"oops": "wrong type"},
+            "message": "the real message",
+        }))
+    assert out == "the real message"
+
+
+def test_display_text_with_message_empty_still_surfaces():
+    out = friendly_step_response(
+        _step(),
+        _result(status="success", output={
+            "display_text": "spec output",
+            "message": "",  # empty fallback should not override
+        }))
+    assert out == "spec output"
+
+
 # ── entity-id extraction handles every UC's primary-key field ───────────
 
 
-@pytest.mark.parametrize("param_key,value", [
+@pytest.mark.parametrize(("param_key", "value"), [
     ("ticket_id",   "INC0001001"),
     ("article_id",  "KB0005010"),
     ("entity_id",   "INC0001001"),

@@ -66,7 +66,7 @@ class PolicyEngine:
         self._version = version
 
     @classmethod
-    def from_file(cls, path: str | None = None) -> "PolicyEngine":
+    def from_file(cls, path: str | None = None) -> PolicyEngine:
         engine = cls([])
         engine._load(path)
         return engine

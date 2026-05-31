@@ -38,7 +38,7 @@ def _agent(agent_id="uc01", version=1, owner="team-itsm", desc="Summarise."):
         determinism_level=DeterminismLevel.LOW)
 
 
-@pytest.fixture()
+@pytest.fixture
 def store(tmp_path):
     return VersionedStore("agents", AgentRecord, FileBackend(tmp_path))
 

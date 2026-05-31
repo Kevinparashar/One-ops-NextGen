@@ -55,6 +55,56 @@ class DeterministicBoundaryResponder:
 # the user always sees this exact text on a domain miss. The LLM is asked to
 # return this verbatim for `out_of_scope` category; we also overwrite the
 # reply on the server side defensively.
+_VALID_CATEGORIES = {
+    "greeting", "in_scope_unclear", "in_scope_kb_search", "out_of_scope",
+}
+
+# Safe fallback replies when the three-axis override flips the category
+# away from what the LLM wrote — the original `reply` text was meant for
+# the wrong category and would confuse the user. Plain prose, no
+# scheme-revealing language.
+_DEFAULT_REPLIES: dict[str, str] = {
+    "in_scope_kb_search": (
+        "I'll search the knowledge base and share what I find."
+    ),
+    "in_scope_unclear": (
+        "Could you tell me which ticket or topic you're asking about?"
+    ),
+    "greeting": (
+        "Hi! How can I help with your tickets today?"
+    ),
+}
+
+
+def _combine_axes(axes: dict[str, Any]) -> str | None:
+    """Deterministic combination of the three-axis decomposition.
+
+    Returns the derived `category` or None when the axes are missing /
+    malformed (caller then falls back to the LLM's stated category for
+    backward compatibility).
+
+    Combination rule:
+        is_pure_chitchat and not (a or b)            → out_of_scope
+        asks_for_written_content and mentions_it_topic → in_scope_kb_search
+        mentions_it_topic and not asks_for_written   → in_scope_unclear
+        asks_for_written and not mentions_it_topic   → in_scope_unclear
+    """
+    if not isinstance(axes, dict):
+        return None
+    a = axes.get("asks_for_written_content")
+    b = axes.get("mentions_it_topic")
+    c = axes.get("is_pure_chitchat")
+    if not all(isinstance(x, bool) for x in (a, b, c)):
+        return None
+    if c and not (a or b):
+        return "out_of_scope"
+    if a and b:
+        return "in_scope_kb_search"
+    if (a and not b) or (b and not a):
+        return "in_scope_unclear"
+    return "out_of_scope"
+
+
 OUT_OF_SCOPE_REPLY = (
     "You are asking questions that are out of my scope. "
     "Please ask your questions within the ITSM/ITOM domain."
@@ -71,10 +121,34 @@ Classify the user's message into EXACTLY ONE of these categories:
   * in_scope_unclear       — IT/ITSM/ITOM-domain request but the specific
                              intent or entity is unclear; needs a clarifying
                              question (one short question).
-  * in_scope_kb_search     — IT/ITSM/ITOM-domain "how do I…" / "what is…"
-                             question where a knowledge-base lookup is the
-                             right move. Reply should propose the KB lookup
+  * in_scope_kb_search     — An IT/ITSM/ITOM request whose answer source
+                             is authored knowledge material: a separately
+                             written resource (e.g. guide, runbook,
+                             article, write-up, documentation) explaining
+                             a topic, technology, service, symptom,
+                             procedure, known issue, fix, or guideline.
+                             The user may want the material itself, or may
+                             be asking whether it exists, where it lives,
+                             what it covers, or to be shown it — all
+                             resolve to the same intent: surface authored
+                             content. Reply should propose the KB lookup
                              concisely.
+
+                             Discriminator: classify by the answer source
+                             needed (authored content vs a stored record
+                             attribute vs out-of-domain subject matter),
+                             not by verb or sentence shape.
+
+                             Bias: when torn between in_scope_unclear and
+                             in_scope_kb_search, choose in_scope_kb_search
+                             if any IT/ITSM/ITOM subject is named or
+                             implied. A KB lookup that returns nothing is
+                             more useful than a clarifying question when
+                             an attempt could succeed.
+
+                             (legacy bias clause; the three-axis
+                             decomposition below supersedes any
+                             single-shot category judgment.)
   * out_of_scope           — anything not in the IT, ITSM, or ITOM domain
                              (weather, recipes, stocks, sports, politics,
                              personal life, jokes unrelated to IT, etc.).
@@ -82,7 +156,50 @@ Classify the user's message into EXACTLY ONE of these categories:
 Return STRICT JSON only (no markdown fences), matching this schema:
 
   {"category": "<one of the four above>",
-   "reply":    "<short user-facing text, plain prose, no quotes>"}
+   "reply":    "<short user-facing text, plain prose, no quotes>",
+   "axes": {
+     "asks_for_written_content": <bool>,
+     "mentions_it_topic":        <bool>,
+     "is_pure_chitchat":         <bool>
+   }}
+
+Three-axis decomposition rationale (DO this BEFORE choosing `category`):
+
+  axis_a — asks_for_written_content:
+      The user is asking for PROCEDURAL, EXPLANATORY, or REFERENCE
+      content — something a human would write up as a guide, article,
+      runbook, KB, documentation, or set of steps. Recognise by sentence
+      shape: "documentation about X", "docs / article / guide / runbook
+      on X", "what does the KB say about X", "how do I / how to / how
+      can I <verb> X" (asking for the procedure), "steps to <verb> X",
+      "fix for X" / "what fixes X". NOT axis_a: asking for a record
+      attribute (priority, status, assignee) or asking to perform an
+      action.
+
+  axis_b — mentions_it_topic:
+      The message references an IT/ITSM/ITOM topic. When a word has both
+      an IT meaning and a personal-life meaning ("sleep" = bedtime OR
+      laptop standby, "drop" = dance move OR packet loss), pick the IT
+      meaning whenever the surrounding sentence already names IT
+      vocabulary.
+
+  axis_c — is_pure_chitchat:
+      Greeting, joke, weather/recipe/sport/personal-life question, or
+      completely off-topic. True only when NEITHER axis_a NOR axis_b
+      fires.
+
+Combine the three booleans to `category`:
+  axis_c and not (axis_a or axis_b)            → out_of_scope
+  axis_a and axis_b                            → in_scope_kb_search
+  axis_b and not axis_a                        → in_scope_unclear
+  axis_a and not axis_b                        → in_scope_unclear
+  greeting / acknowledgement                   → greeting (override the
+                                                 axes when the message
+                                                 IS a greeting)
+
+The orchestrator re-computes `category` from `axes` server-side. If
+axes are missing or invalid, your `category` field is used as-is — so
+existing behaviour is preserved.
 
 Rules:
 
@@ -227,6 +344,20 @@ class LlmBoundaryResponder:
                 payload = json.loads(content)
                 category = str(payload.get("category") or "").strip().lower()
                 reply = str(payload.get("reply") or "").strip()
+                # Three-axis decomposition override. When the LLM provides
+                # the `axes` block, recompute category deterministically.
+                # If the derived category differs from the LLM's stated
+                # one, the LLM's accompanying `reply` was written for the
+                # WRONG category — swap it for a safe default for the
+                # derived category, so we don't tell the user "out of
+                # scope" while routing them to a KB lookup.
+                # When `axes` is absent or malformed (older prompts /
+                # partial output) we keep the LLM's stated category and
+                # reply — preserving the pre-2026-05-30 contract.
+                derived = _combine_axes(payload.get("axes") or {})
+                if derived in _VALID_CATEGORIES and derived != category:
+                    category = derived
+                    reply = _DEFAULT_REPLIES.get(derived, reply)
             except json.JSONDecodeError:
                 category = ""
                 reply = content

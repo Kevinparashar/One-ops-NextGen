@@ -28,7 +28,8 @@ from oneops.observability import get_logger
 from oneops.use_cases._shared.field_policy import get_field_policy
 from oneops.use_cases._shared.kb_store import get_kb_store
 from oneops.use_cases.uc03_kb_lookup.answer_composer import (
-    DeterministicComposer, get_kb_answer_composer,
+    DeterministicComposer,
+    get_kb_answer_composer,
 )
 from oneops.use_cases.uc03_kb_lookup.kb_embed import get_kb_embed_fn
 
@@ -80,11 +81,19 @@ def _article(outcome: str, article_id: str, message: str,
 
 
 def _preview(article: dict[str, Any]) -> dict[str, Any]:
-    """A compact, citation-ready preview of one article for a result list."""
+    """A compact, citation-ready preview of one article for a result list.
+
+    Includes the article `content` so the composer (LLM or deterministic
+    fallback) has the FULL article body to ground its answer in — without
+    this, the LLM could only see `summary` (the title-line) and produced
+    1-sentence non-answers (2026-05-30 user complaint). `content` may be
+    several paragraphs; the composer decides what to render verbatim.
+    """
     out: dict[str, Any] = {
         "kb_id": article.get("kb_id", ""),
         "title": article.get("title", ""),
         "summary": article.get("summary", ""),
+        "content": article.get("content", ""),
         "category": article.get("category", ""),
         "tags": list(article.get("tags") or []),
     }
@@ -267,7 +276,7 @@ async def search_kb(
                 h["_score_source"] = "fts_only_no_embedding"
                 continue
             en = _math.sqrt(sum(x * x for x in emb)) or 1.0
-            dot = sum(qx * ex for qx, ex in zip(query_vec, emb))
+            dot = sum(qx * ex for qx, ex in zip(query_vec, emb, strict=False))
             cosine = dot / (qn * en)
             if cosine > 1.0: cosine = 1.0
             if cosine < -1.0: cosine = -1.0
@@ -514,8 +523,8 @@ async def search_kb_by_ticket(
         # back to the user_query when the title isn't readily available.
         focus_title = ""
         try:
-            from oneops.use_cases._shared.ticket_store import get_ticket_store
             from oneops.router.entity_id import EntityIdNormalizer
+            from oneops.use_cases._shared.ticket_store import get_ticket_store
             extracted = EntityIdNormalizer.from_registry_file().extract(ticket_id)
             if extracted.entities:
                 e = extracted.entities[0]
@@ -552,7 +561,7 @@ async def search_kb_by_ticket(
                          error=str(exc)[:200])
             scores = []
         if scores and len(scores) == len(hits):
-            for h, s in zip(hits, scores):
+            for h, s in zip(hits, scores, strict=False):
                 h["relevance_cosine"] = float(s)
             per_candidate = [
                 {"kb_id": h.get("kb_id"),

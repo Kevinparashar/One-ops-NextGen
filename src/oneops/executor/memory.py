@@ -34,8 +34,9 @@ Design influences:
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from oneops.errors import OneOpsError
 from oneops.observability import get_logger

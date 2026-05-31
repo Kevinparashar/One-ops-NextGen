@@ -13,10 +13,11 @@ from oneops.codec import (
     MIN_SUPPORTED_SCHEMA_VERSION,
     decode,
     encode,
+)
+from oneops.codec import (
     messages as msg,
 )
 from oneops.errors import MalformedMessageError, UnsupportedSchemaVersionError
-
 
 # ── round-trip ───────────────────────────────────────────────────────────
 

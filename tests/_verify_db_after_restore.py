@@ -51,7 +51,7 @@ async def main() -> int:
             low.append((table, actual, expected_min))
             print(f"  ⚠ {table:30s} {actual:>7d} rows  (expected ~{expected_min}) — low")
 
-    print(f"\n=== SUMMARY ===")
+    print("\n=== SUMMARY ===")
     print(f"  OK:      {len(ok)}/{len(EXPECTED)}")
     print(f"  Low:     {len(low)}")
     print(f"  Missing: {len(missing)}")

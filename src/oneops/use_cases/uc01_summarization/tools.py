@@ -15,8 +15,9 @@ All three deterministic tools share the same shape:
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from oneops.observability import get_logger
 from oneops.use_cases._shared.field_policy import get_field_policy
@@ -30,6 +31,7 @@ _log = get_logger("oneops.use_cases.uc01.tools")
 # related X / affected X / parent X / its X / the X" where X is a
 # record-type word.
 import re as _uc01_re
+
 _LINKED_RECORD_PHRASE_RE = _uc01_re.compile(
     # Two word orders:
     #   (a) "<relation> <record-type>" — "linked problem", "related change"
@@ -329,7 +331,8 @@ async def summarize_entity(
     if user_message:
         from oneops.use_cases._shared.field_labels import humanise_record
         from oneops.use_cases.uc01_summarization.field_read import (
-            extract_requested_fields, render_field_read,
+            extract_requested_fields,
+            render_field_read,
         )
         humanised = humanise_record(visible)
         # ── Embedding-based field matcher (Stage 3, 2026-05-29) ────────
@@ -347,7 +350,8 @@ async def summarize_entity(
             # Skip embedding path for linked-record / whole-record asks;
             # those still need the LLM's via_link judgment.
             from oneops.use_cases.uc01_summarization.field_read import (
-                _LINKED_RECORD_BAIL, _WHOLE_RECORD_BAIL,
+                _LINKED_RECORD_BAIL,
+                _WHOLE_RECORD_BAIL,
             )
             if not _LINKED_RECORD_BAIL.search(user_message) \
                     and not _WHOLE_RECORD_BAIL.search(user_message):
@@ -583,7 +587,8 @@ async def _resolve_linked_field_read(
     from oneops.use_cases._shared.field_labels import humanise_record
     from oneops.use_cases._shared.field_policy import get_field_policy
     from oneops.use_cases.uc01_summarization.field_read import (
-        extract_requested_fields, render_field_read,
+        extract_requested_fields,
+        render_field_read,
     )
 
     raw_link_value = focus_humanised.get(via_link)

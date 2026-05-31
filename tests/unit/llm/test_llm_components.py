@@ -45,7 +45,8 @@ async def test_decomposer_falls_back_on_unparseable_response():
 async def test_decomposer_falls_back_when_the_gateway_fails():
     subs = await LlmDecomposer(_gateway(fail_times=99)).decompose(
         "do a thing", request_ctx=_CTX)
-    assert len(subs) == 1 and subs[0].text == "do a thing"
+    assert len(subs) == 1
+    assert subs[0].text == "do a thing"
 
 
 # ── LlmRewriter ──────────────────────────────────────────────────────────
@@ -83,13 +84,17 @@ async def test_disambiguator_selects_an_offered_agent():
 
 
 async def test_disambiguator_drops_an_invented_agent_id():
-    # The closed-class guard: an agent id the LLM was never offered is rejected.
+    # The closed-class guard: an invented id is rejected.
+    # When the retriever also has no candidate above the dispatch-by-default
+    # floor (0.10), the result is no_match. (With a strong retriever
+    # survivor, the retriever-as-floor fallback would dispatch to it —
+    # see `test_disambiguator_falls_back_to_retriever_top_when_llm_hedges`.)
     canned = ('{"selected_agent_ids":["uc99_hallucinated"],"intents":[],'
               '"confidence":0.9,"rationale":"x"}')
-    cands = [Candidate("uc01_summary", 0.8)]
+    cands = [Candidate("uc01_summary", 0.05)]   # below the 0.10 floor
     out = await LlmDisambiguator(_gateway(canned)).disambiguate(
         "do it", cands, request_ctx=_CTX)
-    assert not out.is_confident_match                # invented id → no match
+    assert not out.is_confident_match                # invented id + weak retriever → no match
 
 
 async def test_disambiguator_no_match_on_failure():

@@ -93,7 +93,8 @@ async def test_tenant_isolated_by_key_prefix(store, redis):
     assert other is None
     # T001 of course still sees its own.
     own = await store.get(fingerprint="fp1", tenant_id="T001")
-    assert own is not None and own["summary"]["summary"] == "tenant-A"
+    assert own is not None
+    assert own["summary"]["summary"] == "tenant-A"
 
 
 # ── miss returns None (the cache-aside wrapper interprets as miss) ─────

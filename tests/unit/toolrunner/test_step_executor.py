@@ -131,7 +131,8 @@ async def test_a_failing_tool_fails_the_step(tmp_path):
 
     result = await executor.run(_step("uc_a"), _request())
     assert result["status"] == "failed"
-    assert "t_boom" in result["error"] and "exploded" in result["error"]
+    assert "t_boom" in result["error"]
+    assert "exploded" in result["error"]
 
 
 # ── idempotency threaded through the executor ────────────────────────────

@@ -80,8 +80,9 @@ async def test_single_flight_computes_once_under_concurrency(fake_redis):
 @pytest.mark.asyncio
 async def test_single_flight_cache_hit_skips_compute(fake_redis):
     """A warm key returns immediately without calling compute()."""
-    from oneops.adapters.dragonfly_ops import get_or_single_flight
     import orjson
+
+    from oneops.adapters.dragonfly_ops import get_or_single_flight
 
     # Pre-warm the cache.
     fake_redis.store["sai:test:sf:warm"] = orjson.dumps({"answer": 7})
@@ -108,8 +109,9 @@ async def test_single_flight_cache_hit_skips_compute(fake_redis):
 @pytest.mark.asyncio
 async def test_single_flight_none_result_not_cached(fake_redis):
     """compute() returning None (error) must NOT be cached — next call retries."""
-    from oneops.adapters.dragonfly_ops import get_or_single_flight
     import orjson
+
+    from oneops.adapters.dragonfly_ops import get_or_single_flight
 
     compute_calls = 0
 

@@ -19,7 +19,6 @@ from typing import Any
 
 import asyncpg
 
-
 _FIELD_MAP_CACHE: dict[tuple[str, str, str], list[tuple[str, str]]] = {}
 
 

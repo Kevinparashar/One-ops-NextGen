@@ -29,7 +29,7 @@ def _reset_detector():
 # ── per-script ───────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("text,expected_locale,expected_script", [
+@pytest.mark.parametrize(("text", "expected_locale", "expected_script"), [
     ("Привет, мир!", "ru", "Cyrillic"),
     ("こんにちは世界", "ja", "Hiragana"),                # mixed hiragana+han, hiragana wins
     ("안녕하세요 세계", "ko", "Hangul"),

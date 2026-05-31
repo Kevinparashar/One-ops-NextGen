@@ -15,9 +15,10 @@ the same way, reading what they need from `HookContext.services`.
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Awaitable, Callable
+from enum import StrEnum
+from typing import Any
 
 from oneops.errors import OneOpsError
 
@@ -28,7 +29,7 @@ class HookError(OneOpsError):
     code = "HOOK_GATE_FAILED"
 
 
-class HookPhase(str, Enum):
+class HookPhase(StrEnum):
     BEFORE = "before"
     AFTER = "after"
 
@@ -128,7 +129,10 @@ async def hook_authz_recheck(ctx: HookContext) -> None:
     # Lazy imports keep the hook module decoupled from the authz package at
     # import time (cold-start friendly — see scale concern 21).
     from oneops.authz.models import (
-        DataClass, Principal, ResourceDescriptor, Tier,
+        DataClass,
+        Principal,
+        ResourceDescriptor,
+        Tier,
     )
     from oneops.authz.service import AuthzService
     from oneops.registry.models import AgentRecord

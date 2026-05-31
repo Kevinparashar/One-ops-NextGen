@@ -180,8 +180,9 @@ class LiteLLMTransport:
         if request.response_format.value == "json":
             body["response_format"] = {"type": "json_object"}
         try:
-            from oneops.errors import LLMUpstreamError, LLMTimeoutError
             import httpx
+
+            from oneops.errors import LLMTimeoutError, LLMUpstreamError
             try:
                 resp = await client.post("/chat/completions", json=body)
             except httpx.TimeoutException as exc:

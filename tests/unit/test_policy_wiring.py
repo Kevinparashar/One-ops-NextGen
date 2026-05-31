@@ -9,8 +9,6 @@ Also covers the static-composition cache (latency + provider prompt-cache).
 """
 from __future__ import annotations
 
-import pytest
-
 from oneops.executor.boundary import LlmBoundaryResponder
 from oneops.policy.composer import _STATIC_CACHE, Profile, compose
 from oneops.router.decompose import LlmDecomposer
@@ -60,7 +58,7 @@ async def test_disambiguator_llm_call_carries_policy():
         "summarize it", [Candidate(agent_id="uc01", score=0.9)], request_ctx={})
     sp = _system_prompt(gw)
     assert _POLICY_MARKER in sp
-    assert "route an ITSM query" in sp
+    assert "intents" in sp
 
 
 async def test_rewriter_llm_call_carries_policy():

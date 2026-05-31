@@ -11,7 +11,7 @@ USD-per-million-tokens. Unknown models fall back to a conservative default.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from oneops.observability import get_logger, increment
 

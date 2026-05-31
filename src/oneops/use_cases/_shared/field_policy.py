@@ -63,7 +63,7 @@ class FieldPolicy:
             kb.get("privileged_only", ("technician",)))
 
     @classmethod
-    def from_registry_file(cls, path: str | None = None) -> "FieldPolicy":
+    def from_registry_file(cls, path: str | None = None) -> FieldPolicy:
         if path is None:
             path = str(Path(__file__).resolve().parents[4] / _DEFAULT_PATH)
         p = Path(path)

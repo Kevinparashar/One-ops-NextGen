@@ -18,7 +18,7 @@ import uuid
 import asyncpg
 import pytest
 
-from oneops.use_cases.uc08_fulfillment import core, db, executor
+from oneops.use_cases.uc08_fulfillment import core, executor
 from oneops.use_cases.uc08_fulfillment.adapters.inprocess import (
     FailurePolicy,
     InProcessIntegrationAdapter,

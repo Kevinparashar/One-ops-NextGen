@@ -21,7 +21,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-
 pytestmark = pytest.mark.skipif(
     not os.getenv("POSTGRES_URL"),
     reason="POSTGRES_URL not set",

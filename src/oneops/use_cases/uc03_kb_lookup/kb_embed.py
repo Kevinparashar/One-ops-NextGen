@@ -31,7 +31,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from oneops.observability import get_logger, histogram, increment
 
@@ -81,6 +82,7 @@ class _DragonflyEmbedCache:
                 return self._redis
             try:
                 import redis.asyncio as aioredis
+
                 from oneops.config import get_settings
                 url = getattr(get_settings(),
                               "dragonfly_url",
@@ -224,7 +226,7 @@ def build_relevance_scorer(gateway: Any, *, model: str,
                 scores.append(0.0)
                 continue
             dn = math.sqrt(sum(x * x for x in d)) or 1.0
-            cosine = sum(x * y for x, y in zip(q, d)) / (qn * dn)
+            cosine = sum(x * y for x, y in zip(q, d, strict=False)) / (qn * dn)
             if cosine > 1.0: cosine = 1.0
             if cosine < -1.0: cosine = -1.0
             scores.append(float(cosine))

@@ -20,6 +20,7 @@ Standard metrics:
 """
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from opentelemetry import trace
@@ -117,10 +118,8 @@ def record_cache_delete(*, cache_name: str, key_hash: str = "") -> None:
     except Exception:
         pass
 
-    try:
+    with contextlib.suppress(Exception):
         increment("ai.cache.deletes.total", cache_name=cache_name)
-    except Exception:
-        pass
 
 
 __all__ = ["record_cache_get", "record_cache_set", "record_cache_delete"]

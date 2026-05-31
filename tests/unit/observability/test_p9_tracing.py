@@ -8,7 +8,6 @@ trace (no orphans).
 """
 from __future__ import annotations
 
-import pytest
 from opentelemetry import trace
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -34,7 +33,6 @@ from oneops.registry.service import RegistryService
 from oneops.registry.store import FileBackend
 from oneops.router.plan import PlanStep, RoutePlan, RouteResult
 from oneops.session import InMemoryEventLog, InMemoryHotWindow, SessionEventStore
-
 
 # ── helpers ──────────────────────────────────────────────────────────────
 

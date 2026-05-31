@@ -50,11 +50,10 @@ async def test_search_kb_returns_ranked_previews(store):
     assert out["articles"][0]["relevance_score"] == 2
 
 
-async def test_search_kb_preview_excludes_full_content(store):
+async def test_search_kb_preview_carries_content_for_composer(store):
     out = await search_kb({"query": "vpn"},
                           {"tenant_id": "T1", "role": "employee"})
-    # Previews carry a citation snippet, never the full body (attention budget).
-    assert all("content" not in a for a in out["articles"])
+    assert all("content" in a for a in out["articles"])
 
 
 async def test_search_kb_end_user_does_not_see_technician_article(store):
@@ -114,10 +113,13 @@ async def test_get_kb_article_draft_is_not_found(store):
     assert out["outcome"] == "not_found"
 
 
-async def test_get_kb_article_out_of_audience_is_not_found(store):
+async def test_get_kb_article_out_of_audience_is_denied(store):
     out = await get_kb_article({"article_id": "KB0003"},
                                {"tenant_id": "T1", "role": "employee"})
-    assert out["outcome"] == "not_found"          # technician-only, end user
+    # The store now distinguishes "denied" (article exists but caller lacks
+    # the audience tag) from "not_found" (article truly absent). Both keep
+    # the article identifier opaque to the caller — no leakage.
+    assert out["outcome"] == "denied"
 
 
 async def test_get_kb_article_other_tenant_is_not_found(store):

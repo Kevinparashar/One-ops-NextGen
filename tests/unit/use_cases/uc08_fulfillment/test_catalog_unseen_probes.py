@@ -37,7 +37,6 @@ from oneops.use_cases.uc08_fulfillment.catalog_search import (
     find_closest_catalog_items,
 )
 
-
 pytestmark = pytest.mark.skipif(
     not os.getenv("POSTGRES_URL"),
     reason="POSTGRES_URL not set",

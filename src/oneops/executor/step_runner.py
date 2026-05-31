@@ -26,6 +26,7 @@ from typing import Any, Protocol
 
 from oneops.errors import ToolHandlerError
 from oneops.observability import get_logger, get_tracer
+from oneops.observability.metrics import increment as _metric_inc
 
 _log = get_logger("oneops.executor.step_runner")
 _tracer = get_tracer("oneops.executor.step_runner")
@@ -304,12 +305,22 @@ class HandlerStepExecutor:
                 "oneops.timeout_s": timeout_s,
             },
         ) as span:
+            # "started" — the terminal status (success/failed) is emitted
+            # at the aggregation point in `executor.nodes.aggregate`. The
+            # dashboard's success-rate query filters for {status=~"success|
+            # failed"} so this "started" marker is observable for operator
+            # debug but never drags the ratio.
+            _metric_inc("ai.agent.runs.total", 1,
+                        agent_id=agent_id,
+                        tenant_id=str(context.get("tenant_id") or ""),
+                        tool_id=tool_id,
+                        status="started")
             t0 = time.monotonic()
             try:
                 output = await asyncio.wait_for(
                     handler(arguments, context), timeout=timeout_s,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 latency_ms = int((time.monotonic() - t0) * 1000)
                 span.set_attribute("error", True)
                 span.set_attribute("step.status", "timeout")
@@ -352,6 +363,14 @@ def _build_handler_context(request: dict[str, Any]) -> dict[str, Any]:
         "role":        request.get("role", "") or "",
         "session_id":  request.get("session_id", "") or "",
         "request_id":  request.get("request_id", "") or "",
+        # Focus channel — set by `update_focus`; consumed by UCs that
+        # support multi-turn follow-ups without re-naming the entity.
+        "focus_entity_id":  request.get("focus_entity_id", "") or "",
+        "focus_service_id": request.get("focus_service_id", "") or "",
+        # TimeFilter (serialised dict) — set conditionally by the route
+        # node when the plan contains an agent with consumes_time_filter:
+        # true. Empty dict ⇒ no temporal scope was requested.
+        "time_filter": request.get("time_filter", {}) or {},
         # Locale: detected (G4) or tenant-default; handlers + the LLM
         # gateway use it for same-language reply (BEHAVIOR_CORPUS §C13).
         "locale":      request.get("locale", "") or "",

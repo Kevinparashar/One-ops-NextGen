@@ -36,7 +36,7 @@ _log = get_logger("oneops.adapters.dragonfly")
 # One client per event loop. The loop is the cache key. We hold a weak ref
 # to the loop so that loop garbage-collection drops the entry; this prevents
 # a long-running test session from accumulating dead pools.
-_clients: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, redis.Redis]" = (
+_clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, redis.Redis] = (
     weakref.WeakKeyDictionary()
 )
 _lock = threading.Lock()

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from opentelemetry.trace import Span, Status, StatusCode
+from opentelemetry.trace import Span
 
 from oneops.observability import (
     current_trace_ids,
@@ -28,9 +28,8 @@ def test_span_filters_none_attrs() -> None:
 
 
 def test_span_exception_propagates() -> None:
-    with pytest.raises(ValueError):
-        with span("test.error"):
-            raise ValueError("boom")
+    with pytest.raises(ValueError), span("test.error"):
+        raise ValueError("boom")
 
 
 def test_span_telemetry_never_breaks_business_code() -> None:

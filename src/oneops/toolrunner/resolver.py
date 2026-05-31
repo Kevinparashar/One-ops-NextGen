@@ -14,7 +14,8 @@ silent skip. Resolved callables are cached.
 from __future__ import annotations
 
 import importlib
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from oneops.errors import ToolHandlerError
 

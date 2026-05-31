@@ -30,8 +30,8 @@ Design rules enforced by validation (production-grade, 1000-UC ready):
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -44,7 +44,7 @@ SUMMARY_SCHEMA_MIN_SUPPORTED = 1
 # ── Enums ────────────────────────────────────────────────────────────────
 
 
-class EntityType(str, Enum):
+class EntityType(StrEnum):
     """The six ITSM entity types UC-1 summarises. Closed set — adding a new
     entity type is a deliberate registry change, not a runtime invention.
     UI/aggregator may switch on this for an icon, NEVER for a content rule."""
@@ -60,7 +60,7 @@ class EntityType(str, Enum):
 ENTITY_TYPES: frozenset[str] = frozenset(e.value for e in EntityType)
 
 
-class KeyDetailKind(str, Enum):
+class KeyDetailKind(StrEnum):
     """The display-kind hint a renderer/LLM uses to format a row. Closed set
     — keeps the renderer simple, prevents handler-side invention."""
 
@@ -73,7 +73,7 @@ class KeyDetailKind(str, Enum):
     METRIC = "metric"      # numeric measurement
 
 
-class CitationSource(str, Enum):
+class CitationSource(StrEnum):
     """Where a row of evidence came from. Closed set — citation rendering
     and audit queries depend on this being predictable."""
 
@@ -84,7 +84,7 @@ class CitationSource(str, Enum):
     INTERNAL = "internal"
 
 
-class DataFreshness(str, Enum):
+class DataFreshness(StrEnum):
     LIVE = "live"
     CACHED = "cached"
 
@@ -106,7 +106,7 @@ class KeyDetail(BaseModel):
 
     label: str = Field(min_length=1, max_length=80)
     value: str = Field(min_length=1, max_length=400)
-    raw: Optional[Any] = None
+    raw: Any | None = None
     kind: KeyDetailKind = KeyDetailKind.TEXT
 
     @field_validator("value")
@@ -128,7 +128,7 @@ class Citation(BaseModel):
 
     source: CitationSource
     record_id: str = Field(min_length=1, max_length=128)
-    url: Optional[str] = Field(default=None, max_length=2048)
+    url: str | None = Field(default=None, max_length=2048)
     fetched_at: datetime
 
 
@@ -158,7 +158,7 @@ class PartyRef(BaseModel):
 
     user_id: str = Field(min_length=1, max_length=80)
     display_name: str = Field(min_length=1, max_length=160)
-    role: Optional[str] = Field(default=None, max_length=80)
+    role: str | None = Field(default=None, max_length=80)
 
 
 class ClaimRef(BaseModel):
@@ -223,7 +223,7 @@ class EntitySummary(BaseModel):
 
     # ── Cache transparency (DOC-13A grounding lineage) ───────────────────
     data_freshness: DataFreshness = DataFreshness.LIVE
-    cache_age_s: Optional[int] = Field(default=None, ge=0)
+    cache_age_s: int | None = Field(default=None, ge=0)
 
     # ── Attention budget ─────────────────────────────────────────────────
     truncated: bool = False    # True if rows were dropped (RBAC or missing)
@@ -232,8 +232,8 @@ class EntitySummary(BaseModel):
     actions_available: tuple[ActionRef, ...] = ()
 
     # ── People (optional — also appears in key_details when present) ─────
-    assignee: Optional[PartyRef] = None
-    requester: Optional[PartyRef] = None
+    assignee: PartyRef | None = None
+    requester: PartyRef | None = None
 
     # ── Confidence (graduated autonomy — DOC-02 Phase 4 / Agentforce) ────
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -281,7 +281,7 @@ class EntitySummary(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _cache_age_consistency(self) -> "EntitySummary":
+    def _cache_age_consistency(self) -> EntitySummary:
         if self.data_freshness is DataFreshness.LIVE and self.cache_age_s is not None:
             raise ValueError("data_freshness=live → cache_age_s must be None")
         if self.data_freshness is DataFreshness.CACHED and self.cache_age_s is None:

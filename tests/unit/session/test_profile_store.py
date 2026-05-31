@@ -5,8 +5,6 @@ no-silent-failure invariants.
 """
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from oneops.session.profile_store import (
@@ -63,7 +61,8 @@ async def test_same_user_id_can_have_distinct_profiles_per_tenant(store):
                     profile={"role_label": "operator"})
     a = await store.get(tenant_id="tenant-a", user_id="u1")
     b = await store.get(tenant_id="tenant-b", user_id="u1")
-    assert a is not None and b is not None
+    assert a is not None
+    assert b is not None
     assert a["role_label"] == "developer"
     assert b["role_label"] == "operator"
 

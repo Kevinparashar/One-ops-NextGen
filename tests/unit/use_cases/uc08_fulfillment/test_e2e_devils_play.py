@@ -21,7 +21,6 @@ from oneops.use_cases.uc08_fulfillment.catalog_search import (
     find_closest_catalog_items,
 )
 
-
 pytestmark = pytest.mark.skipif(
     not os.getenv("POSTGRES_URL"),
     reason="POSTGRES_URL not set",
@@ -188,7 +187,8 @@ async def test_e2e_rerank_cache_replay_is_zero_llm_calls(conn, gateway):
         candidates=r.matches, gateway=gateway, cache=cache, user_id="u",
     )
     cost_after_first = gateway.cost.total_cost("T001")
-    assert cache.misses == 1 and cache.hits == 0
+    assert cache.misses == 1
+    assert cache.hits == 0
     assert cost_after_first > cost_before_first, "first call must charge LLM cost"
     assert rr1.from_cache is False
 
@@ -254,7 +254,7 @@ async def test_e2e_hostile_concurrent_probes_stable(conn, gateway):
             await conn2.close()
 
     results = await asyncio.gather(*(_one(q) for q in hostile))
-    for q, r in zip(hostile, results):
+    for q, r in zip(hostile, results, strict=False):
         if isinstance(r, tuple) and r[0] == "ERROR":
             assert "search" in r[1].lower(), (
                 f"unexpected error for {q!r}: {r}"

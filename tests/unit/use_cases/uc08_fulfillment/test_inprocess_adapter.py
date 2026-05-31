@@ -23,17 +23,11 @@ import asyncio
 import pytest
 
 from oneops.use_cases.uc08_fulfillment.adapters import (
-    AccountResult,
-    AdapterResponse,
     FailurePolicy,
-    GenericTaskResult,
-    IntegrationAdapter,
-    MailboxResult,
     InProcessIntegrationAdapter,
-    ProcurementOrderResult,
+    IntegrationAdapter,
 )
 from oneops.use_cases.uc08_fulfillment.contracts import AdapterErrorClass
-
 
 # ── 1. Protocol conformance ─────────────────────────────────────────────────
 
@@ -79,7 +73,8 @@ async def test_idempotency_is_scoped_per_tenant():
         email_suggested="ab@corp", idempotency_key="shared-key",
     )
     # Different tenants → different cache slots → distinct deterministic ids
-    assert r_t1.result is not None and r_t2.result is not None
+    assert r_t1.result is not None
+    assert r_t2.result is not None
     assert r_t1.result.account_id != r_t2.result.account_id
 
 
@@ -122,7 +117,8 @@ async def test_different_keys_same_inputs_produce_same_result_id():
         tenant_id="T001", user_full_name="John Smith",
         email_suggested="john.smith@corp", idempotency_key="key-Y",
     )
-    assert r1.result is not None and r2.result is not None
+    assert r1.result is not None
+    assert r2.result is not None
     assert r1.result.account_id == r2.result.account_id  # determinism
     assert r1.idempotency_key != r2.idempotency_key       # but distinct keys
 
@@ -151,7 +147,8 @@ async def test_transient_then_success_reproduces_scenario_8_2():
         tenant_id="T001", user_full_name="X Y",
         email_suggested="x.y@corp", idempotency_key="retry-3",
     )
-    assert r1.success is False and r1.error_class == AdapterErrorClass.TRANSIENT
+    assert r1.success is False
+    assert r1.error_class == AdapterErrorClass.TRANSIENT
     assert r1.retry_after_seconds == 1
     assert r2.success is False
     assert r3.success is True

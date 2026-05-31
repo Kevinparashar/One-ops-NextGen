@@ -56,7 +56,8 @@ async def test_put_then_get_returns_hit_with_summary(store):
     out = await get_cached_summary({"fingerprint": "fp1"}, {"tenant_id": "t1"})
     assert out["outcome"] == "hit"
     assert out["summary"] == {"text": "the summary"}
-    assert out["age_s"] is not None and out["age_s"] >= 0
+    assert out["age_s"] is not None
+    assert out["age_s"] >= 0
 
 
 async def test_put_is_idempotent_same_fingerprint_overwrites(store):

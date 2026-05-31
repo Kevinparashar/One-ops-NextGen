@@ -58,7 +58,7 @@ def store() -> InMemoryTicketStore:
 # ── C8 — structured output, shared shape across the three deterministic tools
 
 
-@pytest.mark.parametrize("handler,kind", [
+@pytest.mark.parametrize(("handler", "kind"), [
     (get_ticket_links, "links"),
     (get_ticket_timeline, "timeline"),
     (get_ticket_attachment_metadata, "attachments"),
@@ -181,7 +181,8 @@ async def test_unknown_ticket_is_not_found_not_a_raise(store):
 
 
 async def test_summarize_returns_structured_shape_when_llm_wired(store):
-    async def fake_llm(record: dict[str, Any], tenant_id: str, model: str) -> dict[str, Any]:
+    async def fake_llm(record: dict[str, Any], tenant_id: str, model: str,
+                        *, user_id: str = "") -> dict[str, Any]:
         assert tenant_id == "tenant-a"
         return {
             "summary": f"Status {record.get('status')}",
@@ -217,7 +218,8 @@ async def test_summarize_without_llm_wired_is_explicit_outcome(store):
 async def test_summarize_redacts_before_calling_llm(store):
     captured: dict[str, Any] = {}
 
-    async def fake_llm(record: dict[str, Any], tenant_id: str, model: str) -> dict[str, Any]:
+    async def fake_llm(record: dict[str, Any], tenant_id: str, model: str,
+                        *, user_id: str = "") -> dict[str, Any]:
         captured["record"] = record
         return {"summary": "ok", "key_points": [], "model": model, "usage": {}}
 
@@ -237,7 +239,7 @@ async def test_summarize_propagates_cache_hit_to_handler_output(store):
     """When the injected SummarizeFn carries a `_cache.hit=True` signal
     (E3 cache-aside), the handler surfaces `cache_hit=True` + `cache_age_s`
     at the top level so the executor / frontend can count hits."""
-    async def cache_hit_fn(record, tenant_id, model):
+    async def cache_hit_fn(record, tenant_id, model, *, user_id=""):
         return {
             "summary": "From the cache.",
             "key_details": {"Status": "open"},
@@ -262,7 +264,7 @@ async def test_summarize_propagates_cache_hit_to_handler_output(store):
 
 
 async def test_summarize_marks_cache_miss_when_signal_says_so(store):
-    async def cache_miss_fn(record, tenant_id, model):
+    async def cache_miss_fn(record, tenant_id, model, *, user_id=""):
         return {
             "summary": "Freshly summarised.",
             "key_details": {"Status": "open"},
@@ -290,7 +292,7 @@ async def test_summarize_unknown_ticket_is_not_found(store):
     assert out["outcome"] == "not_found"
 
 
-@pytest.mark.parametrize("args,ctx", [
+@pytest.mark.parametrize(("args", "ctx"), [
     ({"service_id": "incident"}, {"tenant_id": "tenant-a"}),
     ({"ticket_id": "INC0048213"}, {"tenant_id": "tenant-a"}),
     ({"ticket_id": "INC0048213", "service_id": "incident"}, {}),
