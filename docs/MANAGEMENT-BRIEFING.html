@@ -226,6 +226,65 @@ hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
 </tr>
 </tbody>
 </table>
+<h3>What the 22-document target consists of, and what is missing</h3>
+<p>The 80 per cent coverage claim is auditable against <code>docs/production-maturity-plan.md</code> §F-LOCKED and §A.7. The covered scope corresponds to architectural and operational concerns named in DOC-03 (lifecycle), DOC-04 (security and PII), DOC-05 (validation and observability), DOC-06 (cross-tenant adversarial), DOC-07 (policy and tenant context), and DOC-12 (AI testing pyramid). The deferred 20 per cent is named explicitly:</p>
+<table>
+<thead>
+<tr>
+  <th>Deferred area</th>
+  <th>Source document(s)</th>
+  <th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Hash-chained immutable audit log + RTBF endpoint</td>
+  <td>DOC-04</td>
+  <td>P1; sized in roadmap.</td>
+</tr>
+<tr>
+  <td>Reversible PII token store</td>
+  <td>DOC-04 §6.1, §6.4</td>
+  <td>Workstream 3.2; gated on §G #8 manager decision.</td>
+</tr>
+<tr>
+  <td>Materialised RBAC matrix</td>
+  <td>DOC-04</td>
+  <td>Task #33 in roadmap.</td>
+</tr>
+<tr>
+  <td>Front-door JWT verification</td>
+  <td>DOC-04</td>
+  <td>Task #32 in roadmap.</td>
+</tr>
+<tr>
+  <td>WebSocket primary transport, Bridge Service, webhooks, ChatOps, language SDKs</td>
+  <td>DOC-08</td>
+  <td>Scope question §G #2 unresolved.</td>
+</tr>
+<tr>
+  <td>ITOM use cases UC-9 through UC-14 (event correlation, alert triage, runbook automation, change-risk graph, capacity planning, proactive discovery)</td>
+  <td>DOC-09</td>
+  <td>Scope question §G #4 unresolved.</td>
+</tr>
+<tr>
+  <td>Formal three-level intent ontology</td>
+  <td>DOC-10 §3.3</td>
+  <td>§G #6 — taxonomy shape conflicts with rule §2.1 (&quot;no phrase catalogs&quot;); manager decision required.</td>
+</tr>
+<tr>
+  <td>EKS / Istio / Lambda / Bridge / multi-region DR infrastructure port</td>
+  <td>DOC-11</td>
+  <td>8–12 weeks; scope question §G #1.</td>
+</tr>
+<tr>
+  <td>Platform-service use cases UC-15 through UC-29 and the OneOps Studio authoring layer</td>
+  <td>DOC-13A</td>
+  <td>Scope question §G #3 and §G #4.</td>
+</tr>
+</tbody>
+</table>
+<p>Each deferred item is sized and prioritised in the consolidated roadmap (§ Roadmap below). No deferred work is hidden — every item appears either in this table or in the roadmap, with a P0/P1/P2 priority and an effort estimate.</p>
 <hr />
 <h2>Architecture</h2>
 <p>The platform separates <strong>runtime</strong> (what handles a live request) from <strong>authoring-time</strong> (how a new agent is created), with the registry as the contract between them. The runtime exists today. The authoring layer — OneOps Studio — is planned. The runtime never knows Studio exists; it reads the registry at boot like any other configuration source.</p>
@@ -381,6 +440,7 @@ flowchart TD
 </table>
 <p><strong>Integration model</strong>: a consuming team wires OneOps-NextGen into a larger platform by (a) standing up the eight infrastructure services from the supplied <code>docker-compose.yml</code>; (b) starting the API process against those endpoints via the documented uvicorn invocation; (c) forwarding HTTP traffic to port 8765 with three required headers (<code>x-tenant-id</code>, <code>x-user-id</code>, <code>x-role</code>); and (d) consuming spans from the OTel collector and metrics from Prometheus.</p>
 <p><strong>Honest scope of &quot;production-grade microservice&quot;</strong>: the service is deployable and integrable today within a trusted boundary — the eight infrastructure services run as containers, the LLM egress runs as a container, observability is wired, and the CI gate enforces no-new-debt on every commit. Two items are gating before external or untrusted multi-tenant exposure: a Dockerfile for the API process itself (so the application can be packaged as a container image rather than launched as a uvicorn process), and the security pair described in the Security § below (front-door JWT and twice-enforced RBAC). Studio also requires the security pair before it can be exposed to any internal user, because activating an agent without a verified principal would let any caller add capabilities.</p>
+<p><strong>Resilience and disaster recovery — what is in place and what is not.</strong> The persistent data tier runs on Supabase-managed Postgres with provider-managed point-in-time backups (recovery window per the Supabase plan). The volatile tier — Dragonfly, NATS, the OTel collector — is stateless or replayable from Postgres and is restored by container restart. The OneOps API process is stateless between requests; session state lives in Postgres (<code>AsyncPostgresSaver</code> checkpointer per <code>ADR-0004</code>) so a process restart resumes turns from the last checkpoint. Multi-region active-active deployment, automated failover, and a defined recovery-point-objective and recovery-time-objective are <span class="planned">PLANNED</span> under DOC-11 (8–12 weeks, infrastructure-port scope). Today's posture is single-region with provider-level durability; appropriate for the demo and trusted-boundary integration, explicitly not for SLA-bound multi-region production.</p>
 <hr />
 <h2>The six axes</h2>
 <h3>1. Agent lifecycle — <span class="partial">PARTIAL</span></h3>
@@ -424,6 +484,7 @@ flowchart TD
 <li>Per-tenant catalog overlay — P1.</li>
 <li>Quality-gated promotion driven by judge metrics — P1.</li>
 </ul>
+<p><strong>Tenant onboarding — how a new business unit joins the platform.</strong> A new tenant is added by (a) creating the tenant row in the relevant ITSM tables (<code>itsm.sys_user</code>, <code>itsm.incident</code>, <code>itsm.request</code>, <code>itsm.kb_knowledge</code>, <code>itsm.catalog_item</code>) with a unique <code>tenant_id</code>, (b) seeding any catalog templates and knowledge-base articles that tenant requires using the existing seed scripts (<code>scripts/uc03_seed_password_reset_kb.py</code> and <code>scripts/uc08_seed_mfa_catalog.py</code> are reference patterns), and (c) routing the tenant's traffic to the API with <code>x-tenant-id: &lt;new_id&gt;</code> in every request. Every existing agent runs against every tenant automatically because tenant isolation is structural; there is no per-tenant agent enable/disable surface today. Per-tenant catalog overlay (<code>DOC-07 §4.6</code>), which allows an agent to be activated or deactivated per tenant, is <span class="partial">PARTIAL</span> — the substrate supports it but the operator surface is <span class="planned">PLANNED</span> at P1.</p>
 <p><strong>Registry reconciliation — important context for the Studio narrative.</strong> The dead-code audit in <code>docs/findings/DEAD-CODE-AUDIT.md</code> found that the V1 root registries (<code>registries/agent-catalog-registry.json</code>, <code>registries/agent-tool-mapping.json</code>, <code>registries/agent-registry.json</code>, <code>registries/router-alias-registry.json</code>) have zero runtime references in <code>src/oneops/</code>. The live, consumed registry is <code>registries/v2/</code>, with eight referencing modules including <code>src/oneops/registry/store.py</code>, <code>src/oneops/router/glossary.py</code>, and <code>src/oneops/api/app.py</code>. When the Studio activation step is built, its write target <strong>must</strong> be <code>registries/v2/</code> to actually close the authoring → registry → runtime loop; writing to the V1 root files would silently fail to publish.</p>
 <h3>Lifecycle diagram</h3>
 <div class="mermaid">
@@ -772,6 +833,16 @@ flowchart TD
   <td><strong>Git tag history for rollback</strong></td>
   <td><code>uc08-button-demo-ready</code>, <code>uc08-production-ready</code>, <code>day1-cut-complete-2026-05-31</code>, plus per-step tags.</td>
   <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>Tool / capability registry</strong></td>
+  <td>Tools declared in <code>registries/tool-registry.json</code>; the <code>agent-tool-mapping</code> records which versioned agent uses which tools. Signature changes ship as new tool entries; consumers reference by id.</td>
+  <td><span class="shipped">SHIPPED</span></td>
+</tr>
+<tr>
+  <td><strong>API route versioning</strong></td>
+  <td>OpenAPI schema at <code>/openapi.json</code> is the contract today (<code>info.version=&quot;0.1.0&quot;</code>). Route paths are stable per-release-tag; a URL-prefixed (<code>/v1/</code>, <code>/v2/</code>) versioning scheme is not yet introduced — breaking changes are coordinated through tag-pinned releases.</td>
+  <td><span class="partial">PARTIAL</span></td>
 </tr>
 </tbody>
 </table>

@@ -37,6 +37,24 @@ OneOps-NextGen runs five named use cases against multi-tenant ITSM data today. D
 | **5. Versioning** | SHIPPED | Prompt-version constants stamped on every LLM call and span; model version on every cost metric; release tags pinned for rollback. | Central prompt registry with diff/rollback view is not built; per-call version stamps are auditable but not centrally browsable. |
 | **6. Adding new use cases** | PARTIAL today, PLANNED via Studio | Hand-copy from the UC-8 reference package works today. Studio authoring layer (`#34`/`#35`) is the future path. | Studio authoring layer is PLANNED in its entirety. |
 
+### What the 22-document target consists of, and what is missing
+
+The 80 per cent coverage claim is auditable against `docs/production-maturity-plan.md` §F-LOCKED and §A.7. The covered scope corresponds to architectural and operational concerns named in DOC-03 (lifecycle), DOC-04 (security and PII), DOC-05 (validation and observability), DOC-06 (cross-tenant adversarial), DOC-07 (policy and tenant context), and DOC-12 (AI testing pyramid). The deferred 20 per cent is named explicitly:
+
+| Deferred area | Source document(s) | Rationale |
+|---|---|---|
+| Hash-chained immutable audit log + RTBF endpoint | DOC-04 | P1; sized in roadmap. |
+| Reversible PII token store | DOC-04 §6.1, §6.4 | Workstream 3.2; gated on §G #8 manager decision. |
+| Materialised RBAC matrix | DOC-04 | Task #33 in roadmap. |
+| Front-door JWT verification | DOC-04 | Task #32 in roadmap. |
+| WebSocket primary transport, Bridge Service, webhooks, ChatOps, language SDKs | DOC-08 | Scope question §G #2 unresolved. |
+| ITOM use cases UC-9 through UC-14 (event correlation, alert triage, runbook automation, change-risk graph, capacity planning, proactive discovery) | DOC-09 | Scope question §G #4 unresolved. |
+| Formal three-level intent ontology | DOC-10 §3.3 | §G #6 — taxonomy shape conflicts with rule §2.1 ("no phrase catalogs"); manager decision required. |
+| EKS / Istio / Lambda / Bridge / multi-region DR infrastructure port | DOC-11 | 8–12 weeks; scope question §G #1. |
+| Platform-service use cases UC-15 through UC-29 and the OneOps Studio authoring layer | DOC-13A | Scope question §G #3 and §G #4. |
+
+Each deferred item is sized and prioritised in the consolidated roadmap (§ Roadmap below). No deferred work is hidden — every item appears either in this table or in the roadmap, with a P0/P1/P2 priority and an effort estimate.
+
 ---
 
 ## Architecture
@@ -125,6 +143,8 @@ The deployment surface today:
 
 **Honest scope of "production-grade microservice"**: the service is deployable and integrable today within a trusted boundary — the eight infrastructure services run as containers, the LLM egress runs as a container, observability is wired, and the CI gate enforces no-new-debt on every commit. Two items are gating before external or untrusted multi-tenant exposure: a Dockerfile for the API process itself (so the application can be packaged as a container image rather than launched as a uvicorn process), and the security pair described in the Security § below (front-door JWT and twice-enforced RBAC). Studio also requires the security pair before it can be exposed to any internal user, because activating an agent without a verified principal would let any caller add capabilities.
 
+**Resilience and disaster recovery — what is in place and what is not.** The persistent data tier runs on Supabase-managed Postgres with provider-managed point-in-time backups (recovery window per the Supabase plan). The volatile tier — Dragonfly, NATS, the OTel collector — is stateless or replayable from Postgres and is restored by container restart. The OneOps API process is stateless between requests; session state lives in Postgres (`AsyncPostgresSaver` checkpointer per `ADR-0004`) so a process restart resumes turns from the last checkpoint. Multi-region active-active deployment, automated failover, and a defined recovery-point-objective and recovery-time-objective are PLANNED under DOC-11 (8–12 weeks, infrastructure-port scope). Today's posture is single-region with provider-level durability; appropriate for the demo and trusted-boundary integration, explicitly not for SLA-bound multi-region production.
+
 ---
 
 ## The six axes
@@ -148,6 +168,8 @@ The deployment surface today:
 - A/B traffic split via Istio — P2.
 - Per-tenant catalog overlay — P1.
 - Quality-gated promotion driven by judge metrics — P1.
+
+**Tenant onboarding — how a new business unit joins the platform.** A new tenant is added by (a) creating the tenant row in the relevant ITSM tables (`itsm.sys_user`, `itsm.incident`, `itsm.request`, `itsm.kb_knowledge`, `itsm.catalog_item`) with a unique `tenant_id`, (b) seeding any catalog templates and knowledge-base articles that tenant requires using the existing seed scripts (`scripts/uc03_seed_password_reset_kb.py` and `scripts/uc08_seed_mfa_catalog.py` are reference patterns), and (c) routing the tenant's traffic to the API with `x-tenant-id: <new_id>` in every request. Every existing agent runs against every tenant automatically because tenant isolation is structural; there is no per-tenant agent enable/disable surface today. Per-tenant catalog overlay (`DOC-07 §4.6`), which allows an agent to be activated or deactivated per tenant, is PARTIAL — the substrate supports it but the operator surface is PLANNED at P1.
 
 **Registry reconciliation — important context for the Studio narrative.** The dead-code audit in `docs/findings/DEAD-CODE-AUDIT.md` found that the V1 root registries (`registries/agent-catalog-registry.json`, `registries/agent-tool-mapping.json`, `registries/agent-registry.json`, `registries/router-alias-registry.json`) have zero runtime references in `src/oneops/`. The live, consumed registry is `registries/v2/`, with eight referencing modules including `src/oneops/registry/store.py`, `src/oneops/router/glossary.py`, and `src/oneops/api/app.py`. When the Studio activation step is built, its write target **must** be `registries/v2/` to actually close the authoring → registry → runtime loop; writing to the V1 root files would silently fail to publish.
 
@@ -335,6 +357,8 @@ flowchart TD
 | **Schema migration sequence** | `migrations/0001_*.sql` through `migrations/0007_*.sql`, applied in order, idempotent. | SHIPPED |
 | **Cache-key version constants** | `PIPELINE_CACHE_VERSION` and `HUMANISE_RECORD_VERSION` — bumping these automatically invalidates downstream caches without a flush. | SHIPPED |
 | **Git tag history for rollback** | `uc08-button-demo-ready`, `uc08-production-ready`, `day1-cut-complete-2026-05-31`, plus per-step tags. | SHIPPED |
+| **Tool / capability registry** | Tools declared in `registries/tool-registry.json`; the `agent-tool-mapping` records which versioned agent uses which tools. Signature changes ship as new tool entries; consumers reference by id. | SHIPPED |
+| **API route versioning** | OpenAPI schema at `/openapi.json` is the contract today (`info.version="0.1.0"`). Route paths are stable per-release-tag; a URL-prefixed (`/v1/`, `/v2/`) versioning scheme is not yet introduced — breaking changes are coordinated through tag-pinned releases. | PARTIAL |
 
 ### Versioning diagram
 
