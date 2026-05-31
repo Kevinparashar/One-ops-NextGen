@@ -1,0 +1,526 @@
+{
+  "title": "OneOps \u2014 Service Overview",
+  "uid": "oneops-overview",
+  "schemaVersion": 38,
+  "tags": [
+    "oneops",
+    "slo"
+  ],
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Turns / minute",
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ai_agent_runs_total[5m])) * 60"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Active agents",
+      "id": 2,
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "count(count by (agent_id) (ai_agent_runs_total))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Cumulative LLM cost ($)",
+      "id": 3,
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "sum(ai_llm_cost_usd_micros_total) / 1e6"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Turn success ratio",
+      "id": 4,
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ai_agent_runs_total{status=\"success\"}[5m])) / clamp_min(sum(rate(ai_agent_runs_total{status=~\"success|failed\"}[5m])), 0.001)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.9
+              },
+              {
+                "color": "green",
+                "value": 0.99
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Per-UC latency p50 / p95 / p99 (ms)",
+      "id": 10,
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, agent_id) (rate(ai_agent_latency_ms_bucket[5m])))",
+          "legendFormat": "{{agent_id}} p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, agent_id) (rate(ai_agent_latency_ms_bucket[5m])))",
+          "legendFormat": "{{agent_id}} p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, agent_id) (rate(ai_agent_latency_ms_bucket[5m])))",
+          "legendFormat": "{{agent_id}} p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Turn rate by agent + status",
+      "id": 20,
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "sum by (agent_id, status) (rate(ai_agent_runs_total[5m])) * 60",
+          "legendFormat": "{{agent_id}} {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM cost per minute by tenant ($/min)",
+      "id": 21,
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "sum by (tenant_id) (rate(ai_llm_cost_usd_micros_total[5m])) * 60 / 1e6",
+          "legendFormat": "{{tenant_id}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cache hit / miss",
+      "id": 30,
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ai_cache_hits_total[5m])) * 60",
+          "legendFormat": "hits/min"
+        },
+        {
+          "expr": "sum(rate(ai_cache_misses_total[5m])) * 60",
+          "legendFormat": "misses/min"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Cache hit ratio (5m)",
+      "id": 31,
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 6,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ai_cache_hits_total[5m])) / clamp_min(sum(rate(ai_cache_hits_total[5m])) + sum(rate(ai_cache_misses_total[5m])), 0.001)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Tokens (last 5m)",
+      "id": 32,
+      "gridPos": {
+        "x": 18,
+        "y": 20,
+        "w": 6,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(ai_llm_tokens_total[5m]))"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "LLM Cost & Usage \u2014 per model \u00d7 per tenant",
+      "id": 39,
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "type": "piechart",
+      "title": "Tokens by model (last 5m)",
+      "id": 40,
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "sum by (model) (increase(ai_llm_tokens_total[5m]))",
+          "legendFormat": "{{model}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "pieType": "donut",
+        "displayLabels": [
+          "name",
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cost $/min by model",
+      "id": 41,
+      "gridPos": {
+        "x": 8,
+        "y": 27,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "sum by (model) (rate(ai_llm_cost_usd_micros_total[5m])) * 60 / 1e6",
+          "legendFormat": "{{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Total LLM calls (last 5m) \u2014 by model",
+      "id": 42,
+      "gridPos": {
+        "x": 16,
+        "y": 27,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "sum by (model) (increase(ai_llm_call_duration_ms_count[5m]))",
+          "legendFormat": "{{model}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "type": "table",
+      "title": "Per-tenant \u00d7 per-model breakdown (cumulative \u2014 finance/billing view)",
+      "id": 43,
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "sum by (tenant_id, model) (ai_llm_tokens_total)",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (tenant_id, model) (ai_llm_cost_usd_micros_total) / 1e6",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        },
+        {
+          "expr": "sum by (tenant_id, model) (ai_llm_call_duration_ms_count)",
+          "format": "table",
+          "instant": true,
+          "refId": "C"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge"
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "deployment_environment": true,
+              "exported_job": true,
+              "instance": true,
+              "job": true,
+              "service_name": true,
+              "service_version": true,
+              "fell_back": true,
+              "telemetry_sdk_language": true,
+              "telemetry_sdk_name": true,
+              "telemetry_sdk_version": true
+            },
+            "renameByName": {
+              "tenant_id": "Tenant",
+              "model": "Model",
+              "Value #A": "Total Tokens",
+              "Value #B": "Cost ($)",
+              "Value #C": "Total Calls"
+            },
+            "indexByName": {
+              "Tenant": 0,
+              "Model": 1,
+              "Total Tokens": 2,
+              "Cost ($)": 3,
+              "Total Calls": 4
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cost ($)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Total Tokens"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Total Calls"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

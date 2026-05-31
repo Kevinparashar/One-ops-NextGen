@@ -1,0 +1,82 @@
+════════════════════════════════════════════════════════════════
+Phase 4 — UC-8 Fulfillment end-to-end evidence
+captured: 2026-05-31T15:44:15Z
+════════════════════════════════════════════════════════════════
+
+Flow: create-sr → match → fulfill (NATS dispatch) → status terminal
+
+── 1. POST /api/uc08/create-sr ──
+{
+    "request_id": "SR9010113",
+    "tenant_id": "T001",
+    "title": "Standard developer laptop for Lisa Park \u2014 iOS Engineer (next week)",
+    "description": "Standard developer laptop for Lisa Park joining as iOS engineer next week",
+    "status": "new",
+    "stage": "intake",
+    "requested_by": "USR00001",
+    "requested_for": "USR00001",
+    "created_at": "2026-05-31T15:44:22.645239+00:00",
+    "title_source": "llm_extract",
+    "description_source": "llm_preserved",
+    "title_reasoning": "Request for a standard laptop for a named new joiner with role and start date.",
+    "judge_verdict": "FAITHFUL",
+    "judge_confidence": 0.95,
+    "judge_reasoning": "Title accurately reflects the user's request for a laptop for Lisa Park, and the description preserves the original wording without any changes."
+}
+
+── 2. POST /api/uc08/match ──
+  verdict       : RERANK_CHOSEN
+  rerank_used   : True
+  judge_verdict : FAITHFUL  confidence=0.95
+  chosen catalog: CAT_LAPTOP_STD | Standard developer laptop
+  priority      : Low (P4)
+  sla_due_iso   : 2026-06-01T15:44:40+00:00
+
+── 3. POST /api/uc08/fulfill (NATS dispatch) ──
+{
+    "ritm_id": "RITMBB776D9F87",
+    "run_id": "RUN8afe790c88f44a",
+    "outcome": "in_progress",
+    "tasks_total": 4,
+    "display_text": "Fulfillment plan created for Standard developer laptop \u2014 4 tasks queued. Status: RITMBB776D9F87.",
+    "trace_id": null
+}
+
+── 4. /status polling until terminal ──
+    t+ 2s state=requested
+    t+ 4s state=in_progress
+    t+ 6s state=in_progress
+    t+ 8s state=in_progress
+    t+10s state=in_progress
+    t+12s state=fulfilled
+
+── 5. Tempo UC-8 span tree (last 3m) ──
+    unique uc08 spans observed: 11
+      - uc08.catalog_search.find_closest
+      - uc08.core.fulfill_request
+      - uc08.db.get_status
+      - uc08.dispatch.execute
+      - uc08.historical_suggest.run
+      - uc08.judge.extraction
+      - uc08.judge.rerank
+      - uc08.priority.derive
+      - uc08.rerank.call
+      - uc08.sr_id.mint
+      - uc08.text_extract.call
+
+── 6. Prometheus UC-8 counters ──
+    ai_uc08_create_sr_total{deployment_environment=local,exported_job=oneops,instance=nextgen-otel-collector:8889,job=nextgen-otel-collector,judge_verdict=FAITHFUL,service_name=oneops,service_version=0.2.0,status=ok,telemetry_sdk_language=python,telemetry_sdk_name=opentelemetry,telemetry_sdk_version=1.42.1,tenant_id=T001} = 5
+    ai_uc08_match_total{deployment_environment=local,enriched=false,exported_job=oneops,instance=nextgen-otel-collector:8889,job=nextgen-otel-collector,judge_verdict=none,rerank_used=false,service_name=oneops,service_version=0.2.0,telemetry_sdk_language=python,telemetry_sdk_name=opentelemetry,telemetry_sdk_version=1.42.1,tenant_id=T001,verdict=NO_MATCH} = 1
+    ai_uc08_match_total{deployment_environment=local,enriched=true,exported_job=oneops,instance=nextgen-otel-collector:8889,job=nextgen-otel-collector,judge_verdict=FAITHFUL,rerank_used=true,service_name=oneops,service_version=0.2.0,telemetry_sdk_language=python,telemetry_sdk_name=opentelemetry,telemetry_sdk_version=1.42.1,tenant_id=T001,verdict=RERANK_CHOSEN} = 8
+    ai_uc08_fulfill_total{deployment_environment=local,dispatch=nats,exported_job=oneops,instance=nextgen-otel-collector:8889,job=nextgen-otel-collector,outcome=in_progress,service_name=oneops,service_version=0.2.0,telemetry_sdk_language=python,telemetry_sdk_name=opentelemetry,telemetry_sdk_version=1.42.1,tenant_id=T001} = 2
+    ai_uc08_judge_verdict_total{deployment_environment=local,exported_job=oneops,instance=nextgen-otel-collector:8889,job=nextgen-otel-collector,judge=extraction,service_name=oneops,service_version=0.2.0,telemetry_sdk_language=python,telemetry_sdk_name=opentelemetry,telemetry_sdk_version=1.42.1,verdict=FAITHFUL} = 5
+    ai_uc08_judge_verdict_total{deployment_environment=local,exported_job=oneops,instance=nextgen-otel-collector:8889,job=nextgen-otel-collector,judge=rerank,service_name=oneops,service_version=0.2.0,telemetry_sdk_language=python,telemetry_sdk_name=opentelemetry,telemetry_sdk_version=1.42.1,verdict=FAITHFUL} = 8
+    ai_uc08_agent_events_total{deployment_environment=local,exported_job=oneops,instance=nextgen-otel-collector:8889,job=nextgen-otel-collector,outcome=completed,service_name=oneops,service_version=0.2.0,telemetry_sdk_language=python,telemetry_sdk_name=opentelemetry,telemetry_sdk_version=1.42.1,tenant_id=T001} = 1
+    ai_uc08_agent_events_total{deployment_environment=local,exported_job=oneops,instance=nextgen-otel-collector:8889,job=nextgen-otel-collector,outcome=received,service_name=oneops,service_version=0.2.0,telemetry_sdk_language=python,telemetry_sdk_name=opentelemetry,telemetry_sdk_version=1.42.1,tenant_id=T001} = 2
+
+── 7. Embedding refresh verification ──
+    ai.embeddings_request rows for SR9010113: 2
+      - chunk_type=diagnosis_trail    model=text-embedding-3-large
+      - chunk_type=symptom_anchor     model=text-embedding-3-large
+
+RITM=RITMBB776D9F87  SR=SR9010113
