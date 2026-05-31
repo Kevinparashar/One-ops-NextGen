@@ -53,6 +53,28 @@ _DUPLICATE_LOOKBACK_DAYS = 30
 # ── Hybrid decomposition ────────────────────────────────────────────────────
 
 
+import re as _re
+
+# Variable keys must be plain identifiers AND must not start with
+# underscore (rejects dunder names like `__class__`). This blocks
+# format-string attacks like `{__class__.__init__.__globals__}` and
+# defence-in-depth: any variable name that *looks* like a Python
+# attribute-access target is refused. (Issue 6 hardening.)
+_SAFE_VAR_KEY = _re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
+
+
+def _sanitise_variables(variables: dict) -> dict:
+    """Strip unsafe keys from a variables dict before substitution.
+    Production-grade — never trust user-supplied template variables.
+    Rejects: non-string keys, keys with non-identifier chars (dots,
+    dashes, spaces, etc.), and keys starting with underscore (dunder
+    names + private-attr conventions)."""
+    return {
+        k: v for k, v in variables.items()
+        if isinstance(k, str) and _SAFE_VAR_KEY.match(k)
+    }
+
+
 def _substitute_input_template(
     input_template: dict | None, variables: dict,
 ) -> dict:
@@ -70,12 +92,18 @@ def _substitute_input_template(
     if not input_template:
         return {}
 
+    safe_vars = _sanitise_variables(variables)
+
     def _walk(v):
         if isinstance(v, str):
-            # Format-string substitution only for `{var}`-shaped values.
+            # Format-string substitution only for safe-key `{var}` values.
+            # KeyError on missing → leave placeholder; ValueError on
+            # malformed format spec → leave unchanged. Anything attempting
+            # attribute access on a sanitised key fails because the key
+            # itself doesn't exist in safe_vars.
             try:
-                return v.format(**variables)
-            except (KeyError, IndexError):
+                return v.format(**safe_vars)
+            except (KeyError, IndexError, ValueError):
                 return v
         if isinstance(v, dict):
             return {k: _walk(x) for k, x in v.items()}

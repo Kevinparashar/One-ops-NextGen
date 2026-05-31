@@ -192,6 +192,7 @@ async def _invoke_adapter(
     *, adapter: IntegrationAdapter, tool_id: str,
     tenant_id: str, idempotency_key: str,
     payload: dict[str, Any],
+    sla_minutes: int | None = None,
 ) -> AdapterResponse:
     """Canonical naming: tool_id == adapter method name. No translation
     table. Unknown tool_id → AdapterInvocationError (fail-loud)."""
@@ -202,6 +203,15 @@ async def _invoke_adapter(
         raise AdapterInvocationError(
             f"adapter {type(adapter).__name__} has no method {tool_id!r}",
         )
+    # Per-task SLA wins (Issue 3); fall back to global default.
+    if sla_minutes and sla_minutes > 0:
+        # Cap real-world impact: an SLA in *minutes* is a workflow-level
+        # deadline, not a single-call deadline. We use min(sla_seconds,
+        # global cap) so a 1440-minute SLA doesn't translate to a 24h
+        # wait_for that could mask a hang.
+        timeout = min(sla_minutes * 60, _ADAPTER_CALL_TIMEOUT_S * 10)
+    else:
+        timeout = _ADAPTER_CALL_TIMEOUT_S
     try:
         return await asyncio.wait_for(
             method(
@@ -209,7 +219,7 @@ async def _invoke_adapter(
                 idempotency_key=idempotency_key,
                 **payload,
             ),
-            timeout=_ADAPTER_CALL_TIMEOUT_S,
+            timeout=timeout,
         )
     except asyncio.TimeoutError:
         return AdapterResponse(
@@ -314,6 +324,7 @@ async def _execute_one_task(
                 adapter=adapter, tool_id=tool_id,
                 tenant_id=tenant_id, idempotency_key=idem_key,
                 payload=payload,
+                sla_minutes=task.get("sla_minutes"),
             )
 
         if response.success:
@@ -374,8 +385,63 @@ async def execute_plan(
     connection_provider: ConnectionProvider | None = None,
     trace_id: str | None = None,
 ) -> Outcome:
-    """Drive a persisted RITM toward terminal state. Idempotent."""
+    """Drive a persisted RITM toward terminal state. Idempotent.
+
+    Concurrency: a per-RITM advisory lock (held by a dedicated
+    `lock_conn` for the full execute_plan call) serialises two workers
+    on the same RITM. If the lock is contended, returns a partial-status
+    snapshot rather than blocking — caller retries.
+    """
     cp = connection_provider or _db.default_connection_provider
+
+    # ── Per-RITM advisory lock (Issue 4 hardening) ─────────────────────
+    # int4 keyspace; hash collisions are harmless (two RITMs sharing a key
+    # just serialise; the SQL predicates inside helpers prevent any
+    # cross-RITM data access).
+    ritm_lock_key = hash(ritm_id) % (2 ** 31)
+    lock_conn = await cp()
+    try:
+        lock_ok = await lock_conn.fetchval(
+            "SELECT pg_try_advisory_lock($1::int)", ritm_lock_key,
+        )
+        if not lock_ok:
+            _log.info("uc08.executor.lock_contended", ritm_id=ritm_id)
+            snap_conn = await cp()
+            try:
+                tasks = await _db.list_tasks_for_ritm(
+                    tenant_id=tenant_id, ritm_id=ritm_id, conn=snap_conn,
+                )
+            finally:
+                await snap_conn.close()
+            return await _partial_status(
+                tenant_id=tenant_id, ritm_id=ritm_id,
+                tasks=tasks, connection_provider=cp,
+                trace_id=trace_id,
+            )
+
+        return await _execute_plan_locked(
+            tenant_id=tenant_id, ritm_id=ritm_id,
+            adapter=adapter, connection_provider=cp,
+            trace_id=trace_id,
+        )
+    finally:
+        try:
+            await lock_conn.fetchval(
+                "SELECT pg_advisory_unlock($1::int)", ritm_lock_key,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        await lock_conn.close()
+
+
+async def _execute_plan_locked(
+    *, tenant_id: str, ritm_id: str,
+    adapter: IntegrationAdapter,
+    connection_provider: ConnectionProvider,
+    trace_id: str | None = None,
+) -> Outcome:
+    """Wave loop. Caller must hold the per-RITM advisory lock."""
+    cp = connection_provider
 
     with _tracer.start_as_current_span(
         "uc08.executor.execute_plan",
