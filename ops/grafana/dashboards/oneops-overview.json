@@ -295,7 +295,7 @@
       "collapsed": false
     },
     {
-      "type": "piechart",
+      "type": "table",
       "title": "Tokens by model (cumulative)",
       "id": 40,
       "gridPos": {
@@ -315,27 +315,38 @@
           "instant": true
         }
       ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "pieType": "donut",
-        "displayLabels": [
-          "name",
-          "percent"
-        ],
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      },
       "fieldConfig": {
         "defaults": {
           "unit": "short"
         }
-      }
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "fields": "",
+          "enablePagination": false
+        }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "model": "Model",
+              "Value": "Tokens"
+            }
+          }
+        }
+      ]
     },
     {
       "type": "timeseries",
