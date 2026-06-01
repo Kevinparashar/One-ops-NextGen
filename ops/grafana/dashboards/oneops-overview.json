@@ -101,7 +101,7 @@
       },
       "targets": [
         {
-          "expr": "sum(ai_agent_runs_total{status=\"success\"}) / clamp_min(sum(ai_agent_runs_total{status=~\"success|failed\"}), 1)"
+          "expr": "sum(ai_agent_runs_total{status=~\"success|ok\"}) / clamp_min(sum(ai_agent_runs_total{status=~\"success|ok|failed\"}), 1)"
         }
       ],
       "fieldConfig": {
