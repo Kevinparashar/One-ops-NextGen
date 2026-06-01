@@ -390,7 +390,12 @@
           "reducer": [
             "sum"
           ],
-          "fields": ""
+          "fields": [
+            "Total turns",
+            "Successes",
+            "Failures",
+            "Refused (policy)"
+          ]
         },
         "sortBy": [
           {
