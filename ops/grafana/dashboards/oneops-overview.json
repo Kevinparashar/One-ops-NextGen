@@ -310,27 +310,62 @@
       },
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A",
           "expr": "sum by (model) (ai_llm_tokens_total)",
-          "legendFormat": "{{model}}",
-          "instant": true
+          "instant": true,
+          "format": "table",
+          "legendFormat": "{{model}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
-        }
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tokens"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "showHeader": true,
         "cellHeight": "sm",
         "footer": {
-          "show": true,
-          "reducer": [
-            "sum"
-          ],
-          "fields": "",
-          "enablePagination": false
-        }
+          "show": false
+        },
+        "sortBy": []
       },
       "transformations": [
         {
@@ -339,7 +374,10 @@
             "excludeByName": {
               "Time": true
             },
-            "indexByName": {},
+            "indexByName": {
+              "model": 0,
+              "Value": 1
+            },
             "renameByName": {
               "model": "Model",
               "Value": "Tokens"
