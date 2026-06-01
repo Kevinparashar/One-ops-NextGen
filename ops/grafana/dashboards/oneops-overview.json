@@ -181,7 +181,7 @@
             "type": "prometheus",
             "uid": "prom"
           },
-          "expr": "sum by (agent_id) (ai_agent_runs_total{status=~\"success|failed\"})",
+          "expr": "sum by (agent_id) (ai_agent_runs_total{status=~\"success|failed\"}) or label_replace(sum(ai_uc08_create_sr_total) + on() (sum(ai_uc08_create_sr_failed_total) or vector(0)), \"agent_id\", \"uc08_fulfillment\", \"\", \"\")",
           "instant": true,
           "format": "table",
           "legendFormat": "__auto"
@@ -192,7 +192,7 @@
             "type": "prometheus",
             "uid": "prom"
           },
-          "expr": "sum by (agent_id) (ai_agent_runs_total{status=\"success\"})",
+          "expr": "sum by (agent_id) (ai_agent_runs_total{status=\"success\"}) or label_replace(sum(ai_uc08_create_sr_total), \"agent_id\", \"uc08_fulfillment\", \"\", \"\")",
           "instant": true,
           "format": "table",
           "legendFormat": "__auto"
@@ -203,7 +203,7 @@
             "type": "prometheus",
             "uid": "prom"
           },
-          "expr": "sum by (agent_id) (ai_agent_runs_total{status=\"failed\"}) or sum by (agent_id) (ai_agent_runs_total{status=\"success\"}) * 0",
+          "expr": "sum by (agent_id) (ai_agent_runs_total{status=\"failed\"}) or label_replace(sum(ai_uc08_create_sr_failed_total) or vector(0), \"agent_id\", \"uc08_fulfillment\", \"\", \"\")",
           "instant": true,
           "format": "table",
           "legendFormat": "__auto"
@@ -214,7 +214,7 @@
             "type": "prometheus",
             "uid": "prom"
           },
-          "expr": "sum by (agent_id) (ai_agent_runs_total{status=\"success\"}) / clamp_min(sum by (agent_id) (ai_agent_runs_total{status=~\"success|failed\"}), 1)",
+          "expr": "sum by (agent_id) (ai_agent_runs_total{status=\"success\"}) / clamp_min(sum by (agent_id) (ai_agent_runs_total{status=~\"success|failed\"}), 1) or label_replace(  sum(ai_uc08_create_sr_total)   / clamp_min(sum(ai_uc08_create_sr_total) + (sum(ai_uc08_create_sr_failed_total) or vector(0)), 1),   \"agent_id\", \"uc08_fulfillment\", \"\", \"\")",
           "instant": true,
           "format": "table",
           "legendFormat": "__auto"
