@@ -127,8 +127,8 @@
       }
     },
     {
-      "type": "timeseries",
-      "title": "Per-UC latency p50 / p95 / p99 (ms, live)",
+      "type": "table",
+      "title": "Per-UC latency (live, ms)",
       "id": 10,
       "gridPos": {
         "x": 0,
@@ -142,21 +142,226 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, agent_id) (rate(ai_agent_latency_ms_bucket[5m])))",
-          "legendFormat": "{{agent_id}} p50"
+          "refId": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le, agent_id) (rate(ai_agent_latency_ms_bucket[30m])))",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "__auto"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le, agent_id) (rate(ai_agent_latency_ms_bucket[5m])))",
-          "legendFormat": "{{agent_id}} p95"
+          "refId": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, agent_id) (rate(ai_agent_latency_ms_bucket[30m])))",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "__auto"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le, agent_id) (rate(ai_agent_latency_ms_bucket[5m])))",
-          "legendFormat": "{{agent_id}} p99"
+          "refId": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, agent_id) (rate(ai_agent_latency_ms_bucket[30m])))",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "__auto"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ms"
+          "unit": "ms",
+          "custom": {
+            "align": "right",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [
+            {
+              "options": {
+                "NaN": {
+                  "text": "no data"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Use case"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "left"
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50 (median)"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 2000
+                    },
+                    {
+                      "color": "red",
+                      "value": 5000
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 2000
+                    },
+                    {
+                      "color": "red",
+                      "value": 5000
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p99 (worst)"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 2000
+                    },
+                    {
+                      "color": "red",
+                      "value": 5000
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "agent_id",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true
+            },
+            "indexByName": {
+              "agent_id": 0,
+              "Value #p50": 1,
+              "Value #p95": 2,
+              "Value #p99": 3
+            },
+            "renameByName": {
+              "agent_id": "Use case",
+              "Value #p50": "p50 (median)",
+              "Value #p95": "p95",
+              "Value #p99": "p99 (worst)"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
         }
       }
     },
