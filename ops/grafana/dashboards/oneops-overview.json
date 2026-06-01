@@ -161,8 +161,8 @@
       }
     },
     {
-      "type": "timeseries",
-      "title": "Turn rate by agent + status (live)",
+      "type": "table",
+      "title": "Turns by agent (all-time)",
       "id": 20,
       "gridPos": {
         "x": 0,
@@ -176,15 +176,205 @@
       },
       "targets": [
         {
-          "expr": "sum by (agent_id, status) (rate(ai_agent_runs_total[5m])) * 60",
-          "legendFormat": "{{agent_id}} {{status}}"
+          "refId": "total",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "expr": "sum by (agent_id) (ai_agent_runs_total{status=~\"success|failed\"})",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "__auto"
+        },
+        {
+          "refId": "success",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "expr": "sum by (agent_id) (ai_agent_runs_total{status=\"success\"})",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "__auto"
+        },
+        {
+          "refId": "failed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "expr": "sum by (agent_id) (ai_agent_runs_total{status=\"failed\"}) or sum by (agent_id) (ai_agent_runs_total{status=\"success\"}) * 0",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "__auto"
+        },
+        {
+          "refId": "rate",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "expr": "sum by (agent_id) (ai_agent_runs_total{status=\"success\"}) / clamp_min(sum by (agent_id) (ai_agent_runs_total{status=~\"success|failed\"}), 1)",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "__auto"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops"
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Success rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.9
+                    },
+                    {
+                      "color": "green",
+                      "value": 0.99
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Failures"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "right"
+              },
+              {
+                "id": "noValue",
+                "value": "0"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Successes"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Total turns"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Total",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "agent_id",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true
+            },
+            "indexByName": {
+              "agent_id": 0,
+              "Value #total": 1,
+              "Value #success": 2,
+              "Value #failed": 3,
+              "Value #rate": 4
+            },
+            "renameByName": {
+              "agent_id": "Agent",
+              "Value #total": "Total turns",
+              "Value #success": "Successes",
+              "Value #failed": "Failures",
+              "Value #rate": "Success rate"
+            }
+          }
         }
-      }
+      ]
     },
     {
       "type": "timeseries",
