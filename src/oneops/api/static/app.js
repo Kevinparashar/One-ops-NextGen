@@ -697,8 +697,14 @@
     // service-aware labels (e.g. "Incident ID", "Assigned Group"). Fall
     // back to raw record + naive humanisation when the LLM half hasn't
     // populated yet (e.g. cache miss with gateway down).
-    let kv = keyDetails;
-    if (!kv && record) {
+    //
+    // For the full-summary outcome we deliberately HIDE this raw key/value
+    // list: the user sees only the compact grounded summary (status line +
+    // narrative + dated bullets), which already weaves in the relevant
+    // fields. Other outcomes (field-read, other UCs) are unaffected — they
+    // either carry no key_details or rely on this block for their display.
+    let kv = (handlerOutcome === "summarized") ? null : keyDetails;
+    if (!kv && record && handlerOutcome !== "summarized") {
       kv = {};
       for (const [k, v] of Object.entries(record)) {
         if (k.startsWith("_") || v == null) continue;

@@ -25,6 +25,12 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("phone", re.compile(r"\b\+?\d[\d\s().-]{7,}\d\b")),
 ]
 
+# A calendar date (YYYY-MM-DD) anywhere in a phone-candidate means the match
+# is really a date / ISO timestamp ("2026-04-01 16:05:00"), not a phone
+# number — the phone char class allows '-' and ' ' so it would otherwise eat
+# the date+hour prefix. Structural guard, not a value catalogue.
+_DATE_LIKE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
 
 def redact_text(text: str) -> tuple[str, set[str]]:
     """Return `text` with structural PII replaced by typed placeholders, plus
@@ -32,7 +38,15 @@ def redact_text(text: str) -> tuple[str, set[str]]:
     found: set[str] = set()
     out = text
     for label, pattern in _PATTERNS:
-        if pattern.search(out):
+        if label == "phone":
+            def _phone_sub(m: re.Match[str]) -> str:
+                s = m.group(0)
+                if _DATE_LIKE.search(s):
+                    return s                    # timestamp, not a phone
+                found.add("phone")
+                return "[REDACTED_PHONE]"
+            out = pattern.sub(_phone_sub, out)
+        elif pattern.search(out):
             found.add(label)
             out = pattern.sub(f"[REDACTED_{label.upper()}]", out)
     return out, found

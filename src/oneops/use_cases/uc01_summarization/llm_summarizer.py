@@ -9,11 +9,18 @@ accounting.
 Output contract (matches the UC-1 cross-service shape):
 
     {
-      "summary": "<LLM-generated paragraph>",
+      "summary": "<compact markdown — a status line, a 3-4 line grounded\n
+                   narrative, then 2-3 dated bullets when the record has\n
+                   work-notes/comments/milestones>",
       "key_details": { "Status": "...", "Priority": "...", ... },
       "model": "<model that served>",
       "usage": {"prompt_tokens": N, "completion_tokens": N, "cost_usd": F}
     }
+
+The `summary` is the SINGLE user-facing block (the frontend hides the raw
+`key_details` list for the summary outcome). `key_details` is still produced
+here — it feeds the cache fingerprint and the deterministic fallback — but it
+is not rendered to the user as a key/value dump.
 
 `key_details` keys are humanised labels (`incident_id` → "Incident ID",
 `ci_name` → "CI Name"). The mapping is registry data — declared once per
@@ -30,7 +37,11 @@ from oneops.llm.gateway import LlmGateway
 from oneops.llm.models import LlmMessage, LlmRequest, ResponseFormat
 from oneops.observability import get_logger, get_tracer, increment
 from oneops.policy.composer import Profile, compose
-from oneops.use_cases._shared.field_labels import humanise_record
+from oneops.use_cases._shared.field_labels import (
+    _detect_service,
+    _label_for,
+    humanise_record,
+)
 from oneops.use_cases.uc01_summarization.cache import SummaryCacheStore
 
 _log = get_logger("oneops.use_cases.uc01.llm_summarizer")
@@ -44,72 +55,64 @@ _tracer = get_tracer("oneops.use_cases.uc01.llm_summarizer")
 # never hand-craft a system prompt). Kept byte-identical across calls so
 # the provider's prompt cache (and ours) reuses the prefix.
 _UC1_SUMMARY_INSTRUCTIONS = (
-    "## UC-1 Summary Rules — STRUCTURED + CONTEXTUAL\n"
-    "Produce a single descriptive paragraph (4-7 sentences) that reads\n"
-    "naturally to an operator but follows a fixed information order so\n"
-    "two calls on the same record produce a stable paragraph. The\n"
-    "paragraph applies to ANY record type — incident, request, problem,\n"
-    "change, asset, CMDB CI, knowledge article. Pick whichever fields\n"
-    "the record exposes; omit slots that aren't present.\n"
+    "## UC-1 Summary Rules — STRUCTURED OUTPUT (assembled deterministically)\n"
+    "You provide grounded CONTENT as structured JSON; the system assembles\n"
+    "the final user-facing layout from it. You do NOT format markdown,\n"
+    "choose bullet characters, or decide whether a section appears — the\n"
+    "code does that from the data you return. This keeps the layout\n"
+    "identical for every record type and impossible to break.\n"
     "\n"
-    "Information order (one sentence per slot, in this order — skip a\n"
-    "slot if the record has no data for it):\n"
+    "Return STRICT JSON with EXACTLY these three keys (no markdown fences):\n"
     "\n"
-    "1. IDENTITY — Open by naming the record's canonical id and a\n"
-    "   one-clause description of WHAT it is, drawn from\n"
-    "   short_description / title / summary / ci_name / name. Use\n"
-    "   natural prose, not a bullet shape. Example: 'The VPN Gateway —\n"
-    "   APAC is a critical network asset currently active in the\n"
-    "   production environment, located in Mumbai-DC.'\n"
+    '  {\n'
+    '    \"status_line\": { <label>: <value>, ... },\n'
+    '    \"narrative\":   \"<2-3 short grounded sentences>\",\n'
+    '    \"key_updates\": [ \"<line>\", ... ]\n'
+    '  }\n'
     "\n"
-    "2. STATE + SEVERITY/CRITICALITY — Current status/state (open /\n"
-    "   in_progress / resolved / closed / active / retired / approved /\n"
-    "   …) plus priority / severity / risk / criticality where\n"
-    "   applicable. Example: 'It is open with P2 priority and high\n"
-    "   severity, impacting multiple floors of the HQ network.'\n"
+    "status_line — a COMPACT object of AT MOST 3-5 HEADLINE facts the user\n"
+    "  needs at a glance: the record's lifecycle state, its current stage /\n"
+    "  phase WHEN the record tracks one (e.g. a service request's approval\n"
+    "  or fulfillment stage), its overall priority / severity / risk /\n"
+    "  criticality, and its primary owner or assignee. Pick the ones that\n"
+    "  genuinely apply. KEY each entry by the record's exact field name\n"
+    "  (e.g. 'status', 'stage', 'priority', 'assigned_to') with its value\n"
+    "  FROM THE RECORD — the system renders the human label, so you do not\n"
+    "  format labels. This is NOT a field dump — do NOT include the id,\n"
+    "  title,\n"
+    "  category, location, dates, technical specs, or other secondary\n"
+    "  attributes here; those belong in the narrative if they matter.\n"
+    "  Include a label ONLY when its value is present and non-empty; if\n"
+    "  none apply, return an empty object {}. Never invent a value, never\n"
+    "  emit 'N/A', 'none', or 'unknown'.\n"
     "\n"
-    "3. OWNERSHIP — Who owns the record. Mention assignment group /\n"
-    "   assigned-to / owner / requested-by / created-by / approved-by\n"
-    "   — whichever apply. Example: 'It is assigned to GRP-NETOPS\n"
-    "   (USR00003), with approvals recorded from USR00005 and\n"
-    "   USR00006.'\n"
+    "narrative — 2-3 plain factual sentences (<= ~60 words), drawn ONLY\n"
+    "  from the record: what the record is / what happened, what is\n"
+    "  currently pending, and any linked/related records named inline by\n"
+    "  id. Terse, no padding, no restating the status_line.\n"
     "\n"
-    "4. KEY OPERATIONAL ATTRIBUTES — Use 1-2 sentences for the\n"
-    "   record-type specific attributes that actually matter to an\n"
-    "   operator. Examples by type:\n"
-    "     • Incident / request: category, subcategory, service, impact,\n"
-    "       urgency, the symptom from work_notes / comments / customer\n"
-    "       quote when available.\n"
-    "     • Problem: known_error, root_cause, workaround.\n"
-    "     • Change: type, risk_level, impact, planned start/end,\n"
-    "       actual start/end, affected_cis.\n"
-    "     • Asset / CMDB CI: ci_type, environment, location, attributes\n"
-    "       (os, model, vendor, ip_address, version, …), depends_on.\n"
-    "     • Knowledge article: category, tags, audience.\n"
-    "   Pull the attributes from the record verbatim; never invent.\n"
+    "key_updates — an array of 0-3 short strings, the chronological /\n"
+    "  decision highlights. Populate it ONLY from real content the record\n"
+    "  carries: prior progress notes or comments (paraphrase each as\n"
+    "  '<date>: <one line>'), or a change's approval/schedule milestones,\n"
+    "  or a problem's root-cause / workaround / known-error findings. If\n"
+    "  the record carries NONE of these (e.g. an asset, a CI, or a ticket\n"
+    "  with no notes), return an empty array []. NEVER add a line that\n"
+    "  announces absence ('no comments', 'none', 'N/A'); just return [].\n"
+    "  Never paste raw note JSON, author/record ids, flags, or a verbatim\n"
+    "  customer quote — paraphrase.\n"
     "\n"
-    "5. LINKED RECORDS — List related/linked entities (related_incidents,\n"
-    "   related_problem, related_change, related_ci_ids, depends_on,\n"
-    "   affected_cis) as comma-separated ids inline. Skip the sentence\n"
-    "   if no links exist. Example: 'It depends on CI0000008 and is\n"
-    "   linked to PBM0003001 and CHG0004001.'\n"
-    "\n"
-    "6. TIMELINE — One closing sentence with the most operationally\n"
-    "   significant date the record exposes (SLA due, planned change\n"
-    "   window, resolved_at, created_at). Skip if not present.\n"
-    "\n"
-    "Hard rules:\n"
-    "- Faithful: every fact must come from the supplied record. Never\n"
-    "  invent fields. Absent fields are not mentioned.\n"
-    "- No embellishment (no 'this is significant because…', no\n"
-    "  'unfortunately', no 'fortunately'). Operator-grade plain prose.\n"
-    "- Same record + same fields → same paragraph (this is paired with\n"
-    "  temperature=0; stylistic variation defeats consistency).\n"
-    "- Return STRICT JSON, no markdown fences:\n"
-    '    {\"summary\": \"<paragraph>\"}\n'
-    "- The caller has already filtered the record by data classification\n"
-    "  and role — never refer to a field that is not in the supplied\n"
-    "  record."
+    "Anti-hallucination hard rules (non-negotiable):\n"
+    "- Every value must be grounded in the supplied record. NEVER invent,\n"
+    "  guess, infer, or add context that is not literally present.\n"
+    "- No vague filler ('it seems', 'likely', 'appears to', 'may have'),\n"
+    "  no embellishment ('unfortunately', 'critically important'), no\n"
+    "  advice or next-step opinions. Operator-grade plain facts only.\n"
+    "- An absent field is simply omitted — never described as missing,\n"
+    "  unknown, or N/A, anywhere in the output.\n"
+    "- The caller already filtered the record by data classification and\n"
+    "  role — never refer to a field that is not in the supplied record.\n"
+    "- Same record + same fields => same JSON (paired with temperature=0)."
 )
 
 
@@ -178,7 +181,7 @@ def build_summarize_fn(gateway: LlmGateway, *, model: str = "gpt-4o-mini"):
             tenant_id=tenant_id,
             user_id=user_id or "",
             temperature=0.0,
-            max_tokens=512,
+            max_tokens=900,
             response_format=ResponseFormat.JSON,
         )
         try:
@@ -192,16 +195,39 @@ def build_summarize_fn(gateway: LlmGateway, *, model: str = "gpt-4o-mini"):
                          tenant_id=tenant_id, error=str(exc)[:200])
             raise
 
-        # Parse strict JSON; tolerate the model occasionally emitting plain
-        # text (some providers ignore `response_format`).
+        # ── Parse the model's STRUCTURED output ──────────────────────────
+        # The layout is then assembled deterministically by `_assemble_
+        # summary` — the model never controls markdown / section presence,
+        # so empty sections and absence-filler are impossible by construction.
+        # Back-compat: a model that ignores the structured schema and emits
+        # the legacy {"summary": "..."} or plain text still renders.
         summary_text: str
         try:
             parsed = json.loads(response.content)
-            summary_text = str(parsed.get("summary") or "").strip()
-            if not summary_text:
-                summary_text = response.content.strip()
         except json.JSONDecodeError:
-            summary_text = response.content.strip()
+            parsed = None
+
+        if isinstance(parsed, dict) and any(
+                k in parsed for k in ("status_line", "narrative", "key_updates")):
+            summary_text = _assemble_summary(parsed, _detect_service(record))
+        elif isinstance(parsed, dict) and "summary" in parsed:
+            summary_text = str(parsed.get("summary") or "").strip()
+        elif parsed is None:
+            # Provider ignored response_format and returned plain text.
+            summary_text = (response.content or "").strip()
+        else:
+            summary_text = ""
+
+        # ── Robustness guard — the format MUST NOT break ─────────────────
+        # If nothing usable came back (empty structure / blank text), do NOT
+        # surface a blank bubble and do NOT fabricate prose. Fall back to a
+        # deterministic, fully-grounded summary built from the registry-
+        # humanised projection. Guarantees a stable, non-empty,
+        # hallucination-free summary on every call.
+        if not summary_text.strip():
+            summary_text = _deterministic_summary(key_details)
+            _log.warning("uc01.llm_summarizer.empty_output_fallback",
+                         tenant_id=tenant_id)
 
         return {
             "summary": summary_text,
@@ -215,6 +241,81 @@ def build_summarize_fn(gateway: LlmGateway, *, model: str = "gpt-4o-mini"):
         }
 
     return summarize
+
+
+def _assemble_summary(parsed: dict[str, Any], service_id: str = "") -> str:
+    """Deterministically assemble the user-facing markdown from the model's
+    STRUCTURED output.
+
+    The layout — not the model — decides what renders, so the output is
+    consistent for every record type and cannot break:
+      * status_line  → '**<label>**: <value>' joined by '  ·  ', present
+                        labels only (empty/blank values dropped). The model
+                        keys each entry by the record's field name; the
+                        canonical human label is applied HERE via the
+                        registry (`_label_for`) so casing is consistent
+                        ('assigned_to' → 'Assigned To') regardless of what
+                        the model echoed.
+      * narrative    → verbatim paragraph.
+      * key_updates  → a '**Key updates**' heading + markdown '- ' bullets,
+                        rendered ONLY when the array has real content; an
+                        empty array yields NO heading and NO bullets, so an
+                        empty section or 'no comments' filler is impossible.
+
+    Fully generic: it iterates whatever fields/strings the model returned and
+    derives labels from the registry — no hardcoded field names — so
+    renamed/added/removed fields just flow through (the no-static rule).
+    """
+    blocks: list[str] = []
+
+    status = parsed.get("status_line")
+    if isinstance(status, dict):
+        parts = [
+            f"**{_label_for(str(field).strip(), service_id)}**: {str(value).strip()}"
+            for field, value in status.items()
+            if value not in (None, "", [], {}) and str(value).strip()
+            and str(field).strip()
+        ]
+        if parts:
+            blocks.append("  ·  ".join(parts))
+
+    narrative = str(parsed.get("narrative") or "").strip()
+    if narrative:
+        blocks.append(narrative)
+
+    updates = parsed.get("key_updates")
+    if isinstance(updates, list):
+        bullets = [
+            "- " + str(u).strip().lstrip("-•* ").strip()
+            for u in updates
+            if str(u).strip()
+        ][:3]
+        if bullets:
+            blocks.append("**Key updates**\n" + "\n".join(bullets))
+
+    return "\n\n".join(blocks).strip()
+
+
+def _deterministic_summary(key_details: dict[str, Any]) -> str:
+    """Grounded, no-LLM fallback summary — used only when the model returns
+    nothing usable.
+
+    Driven ENTIRELY by the registry-humanised `key_details` projection (the
+    same data-driven mapping the cache and UI use). It hardcodes NO field
+    names, so a field that is added, renamed, or deleted in the registry
+    flows through automatically — there is no static catalog here to drift.
+    Every value is verbatim from the record, so it cannot hallucinate, and
+    the result is never blank.
+    """
+    rendered = {
+        str(label): str(value)
+        for label, value in (key_details or {}).items()
+        if value not in (None, "", [], {})
+    }
+    if not rendered:
+        return "No summarisable details are available for this record."
+    return "  ·  ".join(f"**{label}**: {value}"
+                        for label, value in rendered.items())
 
 
 # ── cache-aside wrapper (UC-1 contract E3) ──────────────────────────────

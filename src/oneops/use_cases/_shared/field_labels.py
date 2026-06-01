@@ -160,7 +160,10 @@ _BY_SERVICE: dict[str, tuple[tuple[str, str, str], ...]] = {
 # Changelog:
 #   v1 — initial release
 #   v2 — 2026-05-30 — hide search_tsv + content_hash_* (production leak fix)
-HUMANISE_RECORD_VERSION = "v2"
+#   v3 — 2026-06-01 — UC-1 summary render change (compact narrative + dated
+#                     bullets; raw key_details list hidden in the UI). Bumped
+#                     so every cached summary invalidates to the new format.
+HUMANISE_RECORD_VERSION = "v3"
 
 
 _HIDDEN: frozenset[str] = frozenset({

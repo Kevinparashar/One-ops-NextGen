@@ -12,7 +12,68 @@ from __future__ import annotations
 import pytest
 
 from oneops.llm.models import LlmResponse
-from oneops.use_cases.uc01_summarization.llm_summarizer import build_summarize_fn
+from oneops.use_cases.uc01_summarization.llm_summarizer import (
+    _assemble_summary,
+    build_summarize_fn,
+)
+
+# ── deterministic assembly — the production-grade format guarantee ──────
+
+
+def test_assemble_full_shape_with_bullets():
+    md = _assemble_summary({
+        "status_line": {"status": "open", "priority": "P2"},
+        "narrative": "VPN drops on Wi-Fi handoff.",
+        "key_updates": ["2026-04-01: Reviewed firewall logs.",
+                        "2026-04-02: Temporary AP deployed."],
+    }, "incident")
+    assert md.startswith("**Status**: open  ·  **Priority**: P2")
+    assert "VPN drops on Wi-Fi handoff." in md
+    assert "**Key updates**" in md
+    assert "\n- 2026-04-01: Reviewed firewall logs." in md
+    assert "\n- 2026-04-02: Temporary AP deployed." in md
+
+
+def test_assemble_applies_registry_labels_consistently():
+    """Field-name keys get canonical Title-Case labels from the registry —
+    no raw 'assigned_to' / lowercase leaking to the user (#2)."""
+    md = _assemble_summary(
+        {"status_line": {"assigned_to": "USR00003"}, "narrative": "x",
+         "key_updates": []}, "incident")
+    assert "**Assigned To**: USR00003" in md
+    assert "assigned_to" not in md
+
+
+def test_assemble_empty_key_updates_renders_no_section():
+    """The reported bug: an empty timeline must NOT produce a 'Key updates'
+    heading or any 'no comments' filler — structurally impossible now."""
+    md = _assemble_summary({
+        "status_line": {"status": "open", "priority": "P4"},
+        "narrative": "Access request awaiting approval.",
+        "key_updates": [],
+    }, "request")
+    assert "Key updates" not in md
+    assert "no comment" not in md.lower()
+    assert md.endswith("Access request awaiting approval.")
+
+
+def test_assemble_drops_empty_status_values_and_normalises_bullets():
+    md = _assemble_summary({
+        "status_line": {"status": "active", "priority": "", "owner": None},
+        "narrative": "A CI record.",
+        "key_updates": ["• stray unicode bullet", "* asterisk bullet"],
+    }, "cmdb_ci")
+    # empty / None status values dropped
+    assert "**Status**: active" in md
+    assert md.count("·") == 0          # only one label survived
+    # any stray bullet char normalised to markdown "- "
+    assert "\n- stray unicode bullet" in md
+    assert "\n- asterisk bullet" in md
+    assert "•" not in md
+
+
+def test_assemble_all_empty_returns_blank_for_fallback():
+    assert _assemble_summary({"status_line": {}, "narrative": "", "key_updates": []}) == ""
 
 
 class _StubGateway:
