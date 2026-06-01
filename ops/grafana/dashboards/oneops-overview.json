@@ -391,10 +391,10 @@
             "sum"
           ],
           "fields": [
-            "Total turns",
-            "Successes",
-            "Failures",
-            "Refused (policy)"
+            "Value #total",
+            "Value #success",
+            "Value #failed",
+            "Value #refused"
           ]
         },
         "sortBy": [
