@@ -87,7 +87,7 @@
     },
     {
       "type": "stat",
-      "title": "Turn success ratio",
+      "title": "Turn success ratio (all-time)",
       "id": 4,
       "gridPos": {
         "x": 18,
@@ -101,7 +101,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(ai_agent_runs_total{status=\"success\"}[30m])) / clamp_min(sum(increase(ai_agent_runs_total{status=~\"success|failed\"}[30m])), 1)"
+          "expr": "sum(ai_agent_runs_total{status=\"success\"}) / clamp_min(sum(ai_agent_runs_total{status=~\"success|failed\"}), 1)"
         }
       ],
       "fieldConfig": {
