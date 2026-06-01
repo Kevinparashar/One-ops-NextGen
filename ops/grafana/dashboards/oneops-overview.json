@@ -229,7 +229,7 @@
             "type": "prometheus",
             "uid": "prom"
           },
-          "expr": "sum by (agent_id) (ai_agent_runs_total{status=~\"success|failed|refused|started\"}) or label_replace(sum(ai_uc08_create_sr_total) + on() (sum(ai_uc08_create_sr_failed_total) or vector(0)), \"agent_id\", \"uc08_fulfillment\", \"\", \"\")",
+          "expr": "sum by (agent_id) (ai_agent_runs_total{status=~\"success|failed|refused\"}) or label_replace(sum(ai_uc08_create_sr_total) + on() (sum(ai_uc08_create_sr_failed_total) or vector(0)), \"agent_id\", \"uc08_fulfillment\", \"\", \"\")",
           "instant": true,
           "format": "table",
           "legendFormat": "__auto"
