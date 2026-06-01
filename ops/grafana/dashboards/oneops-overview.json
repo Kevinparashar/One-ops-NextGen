@@ -7,7 +7,7 @@
     "slo"
   ],
   "timezone": "browser",
-  "refresh": "15s",
+  "refresh": "5s",
   "time": {
     "from": "now-30m",
     "to": "now"
