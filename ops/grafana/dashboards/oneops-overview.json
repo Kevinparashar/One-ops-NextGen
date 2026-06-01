@@ -808,6 +808,287 @@
           }
         ]
       }
+    },
+    {
+      "id": 49,
+      "type": "row",
+      "title": "NATS Message Bus \u2014 live pub/sub on the wire",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Messages / sec (delivered, live)",
+      "id": 50,
+      "description": "Outbound delivered-message rate across all subscribers. The live pulse of the bus.",
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 6,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "rate(gnatsd_varz_out_msgs[1m])"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Active connections",
+      "id": 51,
+      "description": "Currently connected NATS clients (agents + workers).",
+      "gridPos": {
+        "x": 6,
+        "y": 45,
+        "w": 6,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "gnatsd_varz_connections"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Active subscriptions",
+      "id": 52,
+      "description": "Total subject subscriptions across all connections.",
+      "gridPos": {
+        "x": 12,
+        "y": 45,
+        "w": 6,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "gnatsd_varz_subscriptions"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Slow consumers",
+      "id": 53,
+      "description": "Subscribers that fell behind. Any nonzero value indicates back-pressure \u2014 healthy operation should hold this at zero.",
+      "gridPos": {
+        "x": 18,
+        "y": 45,
+        "w": 6,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "gnatsd_varz_slow_consumers"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "NATS messages per second (in vs out, live)",
+      "id": 54,
+      "description": "Server-wide publish (in) versus deliver (out). Out > in is normal \u2014 each published message fans out to all subscribers.",
+      "gridPos": {
+        "x": 0,
+        "y": 51,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "rate(gnatsd_varz_in_msgs[1m])",
+          "refId": "A",
+          "legendFormat": "in msgs/s"
+        },
+        {
+          "expr": "rate(gnatsd_varz_out_msgs[1m])",
+          "refId": "B",
+          "legendFormat": "out msgs/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "axisLabel": "msgs / s"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "NATS bytes per second (in vs out, live)",
+      "id": 55,
+      "description": "Wire-level throughput on the message bus.",
+      "gridPos": {
+        "x": 12,
+        "y": 51,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "targets": [
+        {
+          "expr": "rate(gnatsd_varz_in_bytes[1m])",
+          "refId": "A",
+          "legendFormat": "in bytes/s"
+        },
+        {
+          "expr": "rate(gnatsd_varz_out_bytes[1m])",
+          "refId": "B",
+          "legendFormat": "out bytes/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "binBps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "axisLabel": "bytes / s"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     }
   ],
   "description": "Convention: (live) panels show recent activity in a 5-minute window and read zero during idle. (all-time) and (cumulative) panels show running totals since the metric started and persist across idle."
