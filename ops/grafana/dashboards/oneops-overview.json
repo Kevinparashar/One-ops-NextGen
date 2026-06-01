@@ -257,6 +257,17 @@
           "legendFormat": "__auto"
         },
         {
+          "refId": "refused",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "expr": "sum by (agent_id) (ai_agent_runs_total{status=\"refused\"}) or label_replace(vector(0), \"agent_id\", \"uc08_fulfillment\", \"\", \"\")",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "__auto"
+        },
+        {
           "refId": "rate",
           "datasource": {
             "type": "prometheus",
@@ -404,25 +415,29 @@
               "Time 1": true,
               "Time 2": true,
               "Time 3": true,
-              "Time 4": true
+              "Time 4": true,
+              "Time 5": true
             },
             "indexByName": {
               "agent_id": 0,
               "Value #total": 1,
               "Value #success": 2,
               "Value #failed": 3,
-              "Value #rate": 4
+              "Value #refused": 4,
+              "Value #rate": 5
             },
             "renameByName": {
               "agent_id": "Agent",
               "Value #total": "Total turns",
               "Value #success": "Successes",
               "Value #failed": "Failures",
-              "Value #rate": "Success rate"
+              "Value #rate": "Success rate",
+              "Value #refused": "Refused (policy)"
             }
           }
         }
-      ]
+      ],
+      "description": "Turns by agent across the all-time window. Total = Success + Failure + Refused. Refused (policy) counts turns the policy/RBAC layer blocked before doing any work \u2014 for example vague queries that the router could not bind to any tool, out-of-domain asks the scope classifier rejected, or cross-tenant attempts the tenant-isolation gate caught. Refusals are not failures; they prove the security layer is doing its job."
     },
     {
       "type": "timeseries",
