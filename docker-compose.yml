@@ -15,10 +15,11 @@ name: oneops-nextgen
 #   App (uvicorn)    8765   (UC-5 API + frontend)
 #
 # Internal-only ports (no host mapping — used over docker network only):
-#   tempo:4318       (collector → Tempo OTLP HTTP)
-#   otel:4317        (gRPC receiver — not used; app uses HTTP)
-#   otel:8889        (Prometheus → collector scrape)
-#   nats:8623        (NATS monitor — used by container healthcheck only)
+#   tempo:4318               (collector → Tempo OTLP HTTP)
+#   otel:4317                (gRPC receiver — not used; app uses HTTP)
+#   otel:8889                (Prometheus → collector scrape)
+#   nats:8623                (NATS monitor — healthcheck + exporter polls here)
+#   nats-exporter:7777       (Prometheus → NATS bus metrics scrape)
 
 services:
   dragonfly:

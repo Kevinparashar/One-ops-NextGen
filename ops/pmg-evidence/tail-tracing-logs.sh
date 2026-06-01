@@ -88,6 +88,11 @@ docker logs -f --since 0s nextgen-nats 2>&1 \
   | emit "nats   " "02-nats-server.log" &
 heartbeat "nats   " "02-nats-server.log" &
 
+# 04b. NATS Prometheus exporter (drives the dashboard NATS Message Bus row)
+docker logs -f --since 0s nextgen-nats-exporter 2>&1 \
+  | emit "natsexp" "02b-nats-exporter.log" &
+heartbeat "natsexp" "02b-nats-exporter.log" &
+
 # 05. Dragonfly cache — periodic stat sampling (no docker log stream needed)
 while :; do
   hits=$(docker exec nextgen-dragonfly redis-cli INFO stats 2>/dev/null | awk -F: '/keyspace_hits/ {print $2+0}')
