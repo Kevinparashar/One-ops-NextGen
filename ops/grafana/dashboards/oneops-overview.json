@@ -239,7 +239,7 @@
     },
     {
       "type": "stat",
-      "title": "Cache hit ratio (5m)",
+      "title": "Cache hit ratio (all-time)",
       "id": 31,
       "gridPos": {
         "x": 12,
@@ -253,7 +253,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(ai_cache_hits_total[5m])) / clamp_min(sum(rate(ai_cache_hits_total[5m])) + sum(rate(ai_cache_misses_total[5m])), 0.001)"
+          "expr": "sum(ai_cache_hits_total) / clamp_min(sum(ai_cache_hits_total) + sum(ai_cache_misses_total), 1)"
         }
       ],
       "fieldConfig": {
@@ -264,7 +264,7 @@
     },
     {
       "type": "stat",
-      "title": "Tokens (last 5m)",
+      "title": "Tokens (cumulative)",
       "id": 32,
       "gridPos": {
         "x": 18,
@@ -278,7 +278,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(ai_llm_tokens_total[5m]))"
+          "expr": "sum(ai_llm_tokens_total)"
         }
       ]
     },
@@ -296,7 +296,7 @@
     },
     {
       "type": "piechart",
-      "title": "Tokens by model (last 5m)",
+      "title": "Tokens by model (cumulative)",
       "id": 40,
       "gridPos": {
         "x": 0,
@@ -310,7 +310,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (model) (increase(ai_llm_tokens_total[5m]))",
+          "expr": "sum by (model) (ai_llm_tokens_total)",
           "legendFormat": "{{model}}",
           "instant": true
         }
@@ -365,7 +365,7 @@
     },
     {
       "type": "stat",
-      "title": "Total LLM calls (last 5m) \u2014 by model",
+      "title": "Total LLM calls \u2014 by model (cumulative)",
       "id": 42,
       "gridPos": {
         "x": 16,
@@ -379,7 +379,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum by (model) (increase(ai_llm_call_duration_ms_count[5m])))",
+          "expr": "round(sum by (model) (ai_llm_call_duration_ms_count))",
           "legendFormat": "{{model}}",
           "instant": true
         }
