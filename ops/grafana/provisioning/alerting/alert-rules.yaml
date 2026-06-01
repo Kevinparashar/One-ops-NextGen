@@ -1,264 +1,205 @@
-# OneOps SLO alert rules — Grafana unified alerting (provisioned).
-#
-# Production posture for each rule:
-#   - `for:` window — never fires on a single bad sample; sustained signal only.
-#   - `labels.severity` — drives downstream routing (critical / warning / info).
-#   - `annotations.summary` — operator-readable one-line context.
-#   - `annotations.runbook` — short "what to check" pointer.
-#
-# Multi-tenant SaaS: rules use `tenant_id` labels when present so a
-# noisy tenant pages on its own slice, not the whole cluster.
 apiVersion: 1
 groups:
-  - orgId: 1
-    name: oneops-slo
-    folder: OneOps
-    interval: 1m
-    rules:
+- orgId: 1
+  name: oneops-slo
+  folder: OneOps
+  interval: 1m
+  rules:
+  - uid: oneops-failure-ratio
+    title: TurnFailureRateHigh
+    condition: A
+    for: 5m
+    labels:
+      severity: critical
+      team: oneops
+    annotations:
+      summary: '{{ $labels.agent_id }} failure rate > 5% over 5m'
+      description: "Sustained turn failures \u2014 check graph_worker + agent logs and breaker state."
+      runbook: Look at /tmp/oneops-graph.log and /tmp/oneops-agent-*.log; query Tempo for failed traces.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prom
+      model:
+        refId: A
+        expr: "(\n  sum by (agent_id) (rate(ai_agent_runs_total{status=\"failed\"}[5m]))\n  / clamp_min(sum by (agent_id) (rate(ai_agent_runs_total{status=~\"success|failed\"}[5m])), 0.001)\n) > 0.05\n"
+        instant: true
+  - uid: oneops-p99-latency
+    title: AgentP99LatencyHigh
+    condition: A
+    for: 3m
+    labels:
+      severity: warning
+      team: oneops
+    annotations:
+      summary: '{{ $labels.agent_id }} p99 latency > 20s'
+      description: Worker is slow. Could be LLM, DB, or cache miss storm.
+      runbook: Check llm.call spans in Tempo; check oneops:uc01:summary:* keys in Dragonfly.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 300
+        to: 0
+      datasourceUid: prom
+      model:
+        refId: A
+        expr: "histogram_quantile(0.99,\n  sum by (le, agent_id) (rate(ai_agent_latency_ms_bucket[5m]))\n) > 20000\n"
+        instant: true
+  - uid: oneops-breaker-open
+    title: CircuitBreakerOpened
+    condition: A
+    for: 1m
+    labels:
+      severity: warning
+      team: oneops
+    annotations:
+      summary: NATS circuit breaker opened on {{ $labels.subject }}
+      description: Upstream worker degraded; fast-fail is in effect.
+      runbook: 'Check the responder on that subject; expect log: nats_breaker.opened.'
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 300
+        to: 0
+      datasourceUid: prom
+      model:
+        refId: A
+        expr: increase(nats_breaker_opened_total[5m]) > 0
+        instant: true
+  - uid: oneops-cost-burst
+    title: TenantLLMCostBurst
+    condition: A
+    for: 5m
+    labels:
+      severity: warning
+      team: oneops
+    annotations:
+      summary: Tenant {{ $labels.tenant_id }} LLM cost > $1/min
+      description: Sustained spend. Confirm session activity is legitimate; review trimmer settings.
+      runbook: ai_llm_cost_usd_micros_total by tenant. Check session length + prompt cache hit rate.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prom
+      model:
+        refId: A
+        expr: 'sum by (tenant_id) (rate(ai_llm_cost_usd_micros_total[5m])) * 60 / 1e6 > 1.0
 
-      # ── A. Turn failure ratio per agent ───────────────────────────────
-      - uid: oneops-failure-ratio
-        title: TurnFailureRateHigh
-        condition: A
-        for: 5m
-        labels:
-          severity: critical
-          team: oneops
-        annotations:
-          summary: "{{ $labels.agent_id }} failure rate > 5% over 5m"
-          description: "Sustained turn failures — check graph_worker + agent logs and breaker state."
-          runbook: "Look at /tmp/oneops-graph.log and /tmp/oneops-agent-*.log; query Tempo for failed traces."
-        data:
-          - refId: A
-            relativeTimeRange: {from: 600, to: 0}
-            datasourceUid: prom
-            model:
-              refId: A
-              expr: |
-                (
-                  sum by (agent_id) (rate(ai_agent_runs_total{status!="success"}[5m]))
-                  / clamp_min(sum by (agent_id) (rate(ai_agent_runs_total[5m])), 0.001)
-                ) > 0.05
-              instant: true
+          '
+        instant: true
+  - uid: oneops-cache-miss-storm
+    title: CacheMissStorm
+    condition: A
+    for: 5m
+    labels:
+      severity: warning
+      team: oneops
+    annotations:
+      summary: Cache miss ratio > 80% with active traffic
+      description: Hit ratio collapsed; investigate Dragonfly availability and key TTLs.
+      runbook: docker exec nextgen-dragonfly redis-cli INFO. Check ai_cache_* counters.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prom
+      model:
+        refId: A
+        expr: "(\n  sum(rate(ai_cache_misses_total[10m]))\n  / clamp_min(sum(rate(ai_cache_misses_total[10m])) + sum(rate(ai_cache_hits_total[10m])), 0.001)\n) > 0.8\nand sum(rate(ai_cache_misses_total[10m]))\
+          \ > 0.05\n"
+        instant: true
+  - uid: oneops-agent-silent
+    title: AgentSubjectSilent
+    condition: A
+    for: 15m
+    labels:
+      severity: critical
+      team: oneops
+    annotations:
+      summary: No agent runs in last 5m but ingress sees traffic
+      description: Possible worker crash or NATS subject mis-binding.
+      runbook: pgrep -af 'agent_worker'; check /tmp/oneops-agent-*.log; verify NATS subscriptions.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 300
+        to: 0
+      datasourceUid: prom
+      model:
+        refId: A
+        expr: 'sum(rate(ai_agent_runs_total[5m])) == 0
 
-      # ── B. P99 latency spike per agent ────────────────────────────────
-      - uid: oneops-p99-latency
-        title: AgentP99LatencyHigh
-        condition: A
-        for: 3m
-        labels:
-          severity: warning
-          team: oneops
-        annotations:
-          summary: "{{ $labels.agent_id }} p99 latency > 20s"
-          description: "Worker is slow. Could be LLM, DB, or cache miss storm."
-          runbook: "Check llm.call spans in Tempo; check oneops:uc01:summary:* keys in Dragonfly."
-        data:
-          - refId: A
-            relativeTimeRange: {from: 300, to: 0}
-            datasourceUid: prom
-            model:
-              refId: A
-              expr: |
-                histogram_quantile(0.99,
-                  sum by (le, agent_id) (rate(ai_agent_latency_ms_bucket[5m]))
-                ) > 20000
-              instant: true
-
-      # ── C. Circuit breaker opens ──────────────────────────────────────
-      # Any breaker-open event in the recent window is worth knowing about.
-      # Counter doesn't exist yet via Prometheus; this rule will be a no-op
-      # until the resilience module emits `nats_breaker_opened_total`.
-      # Wire that metric in a follow-up; the rule is here so it activates
-      # automatically the moment the metric appears (no provisioning edit).
-      - uid: oneops-breaker-open
-        title: CircuitBreakerOpened
-        condition: A
-        for: 1m
-        labels:
-          severity: warning
-          team: oneops
-        annotations:
-          summary: "NATS circuit breaker opened on {{ $labels.subject }}"
-          description: "Upstream worker degraded; fast-fail is in effect."
-          runbook: "Check the responder on that subject; expect log: nats_breaker.opened."
-        data:
-          - refId: A
-            relativeTimeRange: {from: 300, to: 0}
-            datasourceUid: prom
-            model:
-              refId: A
-              expr: "increase(nats_breaker_opened_total[5m]) > 0"
-              instant: true
-
-      # ── D. Per-tenant LLM cost burst ──────────────────────────────────
-      # Detects a tenant spending more than $1/min — early signal of
-      # runaway prompts, mis-tuned trimmer, or abuse. The threshold is
-      # deliberately low for the demo; production tunes per plan.
-      - uid: oneops-cost-burst
-        title: TenantLLMCostBurst
-        condition: A
-        for: 5m
-        labels:
-          severity: warning
-          team: oneops
-        annotations:
-          summary: "Tenant {{ $labels.tenant_id }} LLM cost > $1/min"
-          description: "Sustained spend. Confirm session activity is legitimate; review trimmer settings."
-          runbook: "ai_llm_cost_usd_micros_total by tenant. Check session length + prompt cache hit rate."
-        data:
-          - refId: A
-            relativeTimeRange: {from: 600, to: 0}
-            datasourceUid: prom
-            model:
-              refId: A
-              expr: |
-                sum by (tenant_id) (rate(ai_llm_cost_usd_micros_total[5m])) * 60 / 1e6 > 1.0
-              instant: true
-
-      # ── E. Cache miss storm ───────────────────────────────────────────
-      # >80% miss-rate over 10 minutes during active traffic = cache layer
-      # likely degraded (Dragonfly restart, key TTL too tight, or new
-      # tenant flooding cold data).
-      - uid: oneops-cache-miss-storm
-        title: CacheMissStorm
-        condition: A
-        for: 5m
-        labels:
-          severity: warning
-          team: oneops
-        annotations:
-          summary: "Cache miss ratio > 80% with active traffic"
-          description: "Hit ratio collapsed; investigate Dragonfly availability and key TTLs."
-          runbook: "docker exec nextgen-dragonfly redis-cli INFO. Check ai_cache_* counters."
-        data:
-          - refId: A
-            relativeTimeRange: {from: 600, to: 0}
-            datasourceUid: prom
-            model:
-              refId: A
-              expr: |
-                (
-                  sum(rate(ai_cache_misses_total[10m]))
-                  / clamp_min(sum(rate(ai_cache_misses_total[10m])) + sum(rate(ai_cache_hits_total[10m])), 0.001)
-                ) > 0.8
-                and sum(rate(ai_cache_misses_total[10m])) > 0.05
-              instant: true
-
-      # ── F. NATS subject silent under load ─────────────────────────────
-      # If agent runs stop completely while ingress is still receiving
-      # turns, a worker likely crashed. Look at agent_worker logs first.
-      - uid: oneops-agent-silent
-        title: AgentSubjectSilent
-        condition: A
-        for: 3m
-        labels:
-          severity: critical
-          team: oneops
-        annotations:
-          summary: "No agent runs in last 5m but ingress sees traffic"
-          description: "Possible worker crash or NATS subject mis-binding."
-          runbook: "pgrep -af 'agent_worker'; check /tmp/oneops-agent-*.log; verify NATS subscriptions."
-        data:
-          - refId: A
-            relativeTimeRange: {from: 300, to: 0}
-            datasourceUid: prom
-            model:
-              refId: A
-              expr: |
-                sum(rate(ai_agent_runs_total[5m])) == 0
-              instant: true
-
-      # ── G. UC-8 create-sr failure ratio ───────────────────────────────
-      # The /api/uc08/create-sr endpoint is the entry point for the
-      # button-mode demo. >5% failure ratio over 5m = LLM gateway or
-      # text-extract degraded — page on-call.
-      - uid: oneops-uc08-create-sr-failure
-        title: UC08CreateSrFailureRateHigh
-        condition: A
-        for: 5m
-        labels:
-          severity: critical
-          team: oneops
-          uc_id: uc08
-        annotations:
-          summary: "UC-8 create-sr failure rate > 5% over 5m"
-          description: "Sustained /api/uc08/create-sr failures — check LLM gateway + text_extract + asyncpg pool."
-          runbook: "Tempo search uc08.create_sr; inspect TextExtractError stack; verify LiteLLM /health."
-        data:
-          - refId: A
-            relativeTimeRange: {from: 600, to: 0}
-            datasourceUid: prom
-            model:
-              refId: A
-              expr: |
-                (
-                  sum(rate(ai_uc08_create_sr_failed_total[5m]))
-                  / clamp_min(
-                      sum(rate(ai_uc08_create_sr_total[5m]))
-                      + sum(rate(ai_uc08_create_sr_failed_total[5m])),
-                      0.001)
-                ) > 0.05
-              instant: true
-
-      # ── H. UC-8 judge UNFAITHFUL rate ─────────────────────────────────
-      # The LLM-as-judge validates extraction + rerank outputs. A
-      # sustained UNFAITHFUL share above 10% means the upstream LLM is
-      # drifting (model swap, prompt regression, bad input distribution).
-      # Validator-only: this does NOT block the flow — it pages a human
-      # to investigate prompt quality.
-      - uid: oneops-uc08-judge-unfaithful
-        title: UC08JudgeUnfaithfulHigh
-        condition: A
-        for: 10m
-        labels:
-          severity: warning
-          team: oneops
-          uc_id: uc08
-        annotations:
-          summary: "UC-8 judge UNFAITHFUL share > 10% over 10m for {{ $labels.judge }}"
-          description: "Upstream LLM output is drifting from input. Review recent prompt changes and model version."
-          runbook: "Tempo search uc08.judge.*; sample raw_response field; compare PROMPT_VERSION."
-        data:
-          - refId: A
-            relativeTimeRange: {from: 900, to: 0}
-            datasourceUid: prom
-            model:
-              refId: A
-              expr: |
-                (
-                  sum by (judge) (rate(ai_uc08_judge_verdict_total{verdict="UNFAITHFUL"}[10m]))
-                  / clamp_min(
-                      sum by (judge) (rate(ai_uc08_judge_verdict_total[10m])),
-                      0.001)
-                ) > 0.10
-              instant: true
-
-      # ── I. UC-8 match failure ratio ───────────────────────────────────
-      - uid: oneops-uc08-match-failure
-        title: UC08MatchFailureRateHigh
-        condition: A
-        for: 5m
-        labels:
-          severity: warning
-          team: oneops
-          uc_id: uc08
-        annotations:
-          summary: "UC-8 match failure rate > 5% over 5m"
-          description: "/api/uc08/match degraded — catalog_search or reranker is failing."
-          runbook: "Check CatalogSearchError + reranker timeouts; verify embedding model availability."
-        data:
-          - refId: A
-            relativeTimeRange: {from: 600, to: 0}
-            datasourceUid: prom
-            model:
-              refId: A
-              expr: |
-                (
-                  sum(rate(ai_uc08_match_failed_total[5m]))
-                  / clamp_min(
-                      sum(rate(ai_uc08_match_total[5m]))
-                      + sum(rate(ai_uc08_match_failed_total[5m])),
-                      0.001)
-                ) > 0.05
-              instant: true
+          '
+        instant: true
+  - uid: oneops-uc08-create-sr-failure
+    title: UC08CreateSrFailureRateHigh
+    condition: A
+    for: 5m
+    labels:
+      severity: critical
+      team: oneops
+      uc_id: uc08
+    annotations:
+      summary: UC-8 create-sr failure rate > 5% over 5m
+      description: "Sustained /api/uc08/create-sr failures \u2014 check LLM gateway + text_extract + asyncpg pool."
+      runbook: Tempo search uc08.create_sr; inspect TextExtractError stack; verify LiteLLM /health.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prom
+      model:
+        refId: A
+        expr: "(\n  sum(rate(ai_uc08_create_sr_failed_total[5m]))\n  / clamp_min(\n      sum(rate(ai_uc08_create_sr_total[5m]))\n      + sum(rate(ai_uc08_create_sr_failed_total[5m])),\n      0.001)\n) >\
+          \ 0.05\n"
+        instant: true
+  - uid: oneops-uc08-judge-unfaithful
+    title: UC08JudgeUnfaithfulHigh
+    condition: A
+    for: 10m
+    labels:
+      severity: warning
+      team: oneops
+      uc_id: uc08
+    annotations:
+      summary: UC-8 judge UNFAITHFUL share > 10% over 10m for {{ $labels.judge }}
+      description: Upstream LLM output is drifting from input. Review recent prompt changes and model version.
+      runbook: Tempo search uc08.judge.*; sample raw_response field; compare PROMPT_VERSION.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prom
+      model:
+        refId: A
+        expr: "(\n  sum by (judge) (rate(ai_uc08_judge_verdict_total{verdict=\"UNFAITHFUL\"}[10m]))\n  / clamp_min(\n      sum by (judge) (rate(ai_uc08_judge_verdict_total[10m])),\n      0.001)\n) > 0.10\n"
+        instant: true
+  - uid: oneops-uc08-match-failure
+    title: UC08MatchFailureRateHigh
+    condition: A
+    for: 5m
+    labels:
+      severity: warning
+      team: oneops
+      uc_id: uc08
+    annotations:
+      summary: UC-8 match failure rate > 5% over 5m
+      description: "/api/uc08/match degraded \u2014 catalog_search or reranker is failing."
+      runbook: Check CatalogSearchError + reranker timeouts; verify embedding model availability.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prom
+      model:
+        refId: A
+        expr: "(\n  sum(rate(ai_uc08_match_failed_total[5m]))\n  / clamp_min(\n      sum(rate(ai_uc08_match_total[5m]))\n      + sum(rate(ai_uc08_match_failed_total[5m])),\n      0.001)\n) > 0.05\n"
+        instant: true
