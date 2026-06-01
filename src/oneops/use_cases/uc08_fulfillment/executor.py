@@ -654,7 +654,7 @@ async def _finalise(
                 agent_id="uc08_fulfillment",
                 tenant_id=tenant_id,
                 source="executor",
-                status="ok" if ritm_outcome == "fulfilled" else ritm_outcome)
+                status="success" if ritm_outcome == "fulfilled" else "failed")
 
     return Outcome(
         tenant_id=tenant_id,

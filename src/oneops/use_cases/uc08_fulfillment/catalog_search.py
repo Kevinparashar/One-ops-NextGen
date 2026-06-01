@@ -297,7 +297,7 @@ async def find_closest_catalog_items(
                     agent_id="uc08_fulfillment",
                     tenant_id=tenant_id,
                     source="catalog_search",
-                    status="ok")
+                    status="success")
 
         _log.info("uc08.catalog_search.completed",
                   tenant_id=tenant_id,

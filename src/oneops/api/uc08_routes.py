@@ -388,7 +388,7 @@ async def create_sr(
     judge_result = await judge_task
 
     _metric_inc("ai.uc08.create_sr.total", 1,
-                tenant_id=tenant_id, status="ok",
+                tenant_id=tenant_id, status="success",
                 judge_verdict=judge_result.verdict.value)
     _log.info("uc08.create_sr.completed",
               tenant_id=tenant_id, request_id=sr_id,

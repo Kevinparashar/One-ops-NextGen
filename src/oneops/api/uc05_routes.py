@@ -297,6 +297,14 @@ async def _propose_impl(*, payload, tenant, store):
                     tenant_id=tenant, operation="propose",
                     status="success")
         return proposal
+    except HTTPException:
+        # 4xx and similar are deliberate refusals (ticket not found,
+        # already triaged, role denied). They are NOT worker failures
+        # and must not pollute the success-ratio denominator.
+        _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+                    tenant_id=tenant, operation="propose",
+                    status="refused")
+        raise
     except Exception:
         _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="propose",
@@ -343,6 +351,12 @@ async def _decide_impl(*, payload, tenant, user, store):
     try:
         return await _decide_impl_inner(payload=payload, tenant=tenant,
                                           user=user, store=store)
+    except HTTPException:
+        # Deliberate refusal — does not represent a worker failure.
+        _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+                    tenant_id=tenant, operation="decide",
+                    status="refused")
+        raise
     except Exception:
         _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="decide",

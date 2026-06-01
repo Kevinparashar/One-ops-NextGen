@@ -544,7 +544,7 @@ async def rerank(
                     agent_id="uc08_fulfillment",
                     tenant_id=tenant_id,
                     source="catalog_rerank",
-                    status="ok" if verdict in ("CHOSEN", "WRONG_INTENT") else "no_match")
+                    status="success" if verdict in ("CHOSEN", "WRONG_INTENT") else "no_match")
 
         _log.info("uc08.rerank.completed",
                   tenant_id=tenant_id,
