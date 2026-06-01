@@ -379,7 +379,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (model) (increase(ai_llm_call_duration_ms_count[5m]))",
+          "expr": "round(sum by (model) (increase(ai_llm_call_duration_ms_count[5m])))",
           "legendFormat": "{{model}}",
           "instant": true
         }
