@@ -1,0 +1,934 @@
+════════ Prometheus metric snapshot 2026-06-01T06:56:20Z ════════
+
+── ai_uc08_create_sr_total ──
+{
+    "status": "success",
+    "data": {
+        "resultType": "vector",
+        "result": [
+            {
+                "metric": {
+                    "__name__": "ai_uc08_create_sr_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "judge_verdict": "FAITHFUL",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "ok",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.549,
+                    "4"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_uc08_create_sr_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "judge_verdict": "FAITHFUL",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "ok",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T003"
+                },
+                "value": [
+                    1780297015.549,
+                    "5"
+                ]
+            }
+        ]
+    }
+}
+
+── ai_uc08_match_total ──
+{
+    "status": "success",
+    "data": {
+        "resultType": "vector",
+        "result": [
+            {
+                "metric": {
+                    "__name__": "ai_uc08_match_total",
+                    "deployment_environment": "local",
+                    "enriched": "false",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "judge_verdict": "none",
+                    "rerank_used": "true",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T003",
+                    "verdict": "NO_MATCH"
+                },
+                "value": [
+                    1780297015.585,
+                    "3"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_uc08_match_total",
+                    "deployment_environment": "local",
+                    "enriched": "true",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "judge_verdict": "FAITHFUL",
+                    "rerank_used": "false",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001",
+                    "verdict": "AUTO_PICK"
+                },
+                "value": [
+                    1780297015.585,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_uc08_match_total",
+                    "deployment_environment": "local",
+                    "enriched": "false",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "judge_verdict": "none",
+                    "rerank_used": "false",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T003",
+                    "verdict": "NO_MATCH"
+                },
+                "value": [
+                    1780297015.585,
+                    "2"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_uc08_match_total",
+                    "deployment_environment": "local",
+                    "enriched": "true",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "judge_verdict": "FAITHFUL",
+                    "rerank_used": "true",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001",
+                    "verdict": "RERANK_CHOSEN"
+                },
+                "value": [
+                    1780297015.585,
+                    "4"
+                ]
+            }
+        ]
+    }
+}
+
+── ai_uc08_fulfill_total ──
+{
+    "status": "success",
+    "data": {
+        "resultType": "vector",
+        "result": [
+            {
+                "metric": {
+                    "__name__": "ai_uc08_fulfill_total",
+                    "deployment_environment": "local",
+                    "dispatch": "nats",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "outcome": "in_progress",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.621,
+                    "2"
+                ]
+            }
+        ]
+    }
+}
+
+── ai_uc08_judge_verdict_total ──
+{
+    "status": "success",
+    "data": {
+        "resultType": "vector",
+        "result": [
+            {
+                "metric": {
+                    "__name__": "ai_uc08_judge_verdict_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "judge": "extraction",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "verdict": "FAITHFUL"
+                },
+                "value": [
+                    1780297015.654,
+                    "9"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_uc08_judge_verdict_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "judge": "rerank",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "verdict": "FAITHFUL"
+                },
+                "value": [
+                    1780297015.654,
+                    "5"
+                ]
+            }
+        ]
+    }
+}
+
+── ai_uc08_agent_events_total ──
+{
+    "status": "success",
+    "data": {
+        "resultType": "vector",
+        "result": [
+            {
+                "metric": {
+                    "__name__": "ai_uc08_agent_events_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "outcome": "received",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.694,
+                    "2"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_uc08_agent_events_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "outcome": "completed",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.694,
+                    "2"
+                ]
+            }
+        ]
+    }
+}
+
+── ai_llm_tokens_total ──
+{
+    "status": "success",
+    "data": {
+        "resultType": "vector",
+        "result": [
+            {
+                "metric": {
+                    "__name__": "ai_llm_tokens_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "model": "gpt-4o-mini-2024-07-18",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.728,
+                    "329239"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_llm_tokens_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "model": "text-embedding-3-large",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.728,
+                    "728"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_llm_tokens_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "model": "gpt-4o-mini-2024-07-18",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T003"
+                },
+                "value": [
+                    1780297015.728,
+                    "137695"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_llm_tokens_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "model": "text-embedding-3-large",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T003"
+                },
+                "value": [
+                    1780297015.728,
+                    "618"
+                ]
+            }
+        ]
+    }
+}
+
+── ai_llm_cost_usd_micros_total ──
+{
+    "status": "success",
+    "data": {
+        "resultType": "vector",
+        "result": [
+            {
+                "metric": {
+                    "__name__": "ai_llm_cost_usd_micros_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "model": "gpt-4o-mini-2024-07-18",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.755,
+                    "333895"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_llm_cost_usd_micros_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "model": "text-embedding-3-large",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.755,
+                    "88"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_llm_cost_usd_micros_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "model": "gpt-4o-mini-2024-07-18",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T003"
+                },
+                "value": [
+                    1780297015.755,
+                    "139862"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_llm_cost_usd_micros_total",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "model": "text-embedding-3-large",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T003"
+                },
+                "value": [
+                    1780297015.755,
+                    "72"
+                ]
+            }
+        ]
+    }
+}
+
+── ai_agent_runs_total ──
+{
+    "status": "success",
+    "data": {
+        "resultType": "vector",
+        "result": [
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc01_summarization",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "success",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1"
+                },
+                "value": [
+                    1780297015.792,
+                    "3"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc03_kb_lookup",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "success",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc01_summarization",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "source": "dashboard_priming",
+                    "status": "boot",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "_boot"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc01_summarization",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "started",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001",
+                    "tool_id": "summarize_entity"
+                },
+                "value": [
+                    1780297015.792,
+                    "2"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc02_similar_tickets",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "source": "dashboard_priming",
+                    "status": "boot",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "_boot"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc03_kb_lookup",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "source": "dashboard_priming",
+                    "status": "boot",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "_boot"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc05_triage",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "source": "dashboard_priming",
+                    "status": "boot",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "_boot"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc08_fulfillment",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "source": "dashboard_priming",
+                    "status": "boot",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "_boot"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc02_similar_tickets",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_id": "incident",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "started",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc02_similar_tickets",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_id": "incident",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "success",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc05_triage",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "operation": "decide",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "started",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc05_triage",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "operation": "decide",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "success",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc05_triage",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "operation": "propose",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "started",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc05_triage",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "operation": "propose",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "success",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc03_kb_lookup",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "started",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001",
+                    "tool_id": "search_kb_by_ticket"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc01_summarization",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "status": "started",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T003",
+                    "tool_id": "summarize_entity"
+                },
+                "value": [
+                    1780297015.792,
+                    "1"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc08_fulfillment",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "source": "catalog_rerank",
+                    "status": "no_match",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T003"
+                },
+                "value": [
+                    1780297015.792,
+                    "3"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc08_fulfillment",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "source": "catalog_search",
+                    "status": "ok",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.792,
+                    "5"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc08_fulfillment",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "source": "catalog_search",
+                    "status": "ok",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T003"
+                },
+                "value": [
+                    1780297015.792,
+                    "5"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc08_fulfillment",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "source": "executor",
+                    "status": "ok",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.792,
+                    "2"
+                ]
+            },
+            {
+                "metric": {
+                    "__name__": "ai_agent_runs_total",
+                    "agent_id": "uc08_fulfillment",
+                    "deployment_environment": "local",
+                    "exported_job": "oneops",
+                    "instance": "nextgen-otel-collector:8889",
+                    "job": "nextgen-otel-collector",
+                    "service_name": "oneops",
+                    "service_version": "0.2.0",
+                    "source": "catalog_rerank",
+                    "status": "ok",
+                    "telemetry_sdk_language": "python",
+                    "telemetry_sdk_name": "opentelemetry",
+                    "telemetry_sdk_version": "1.42.1",
+                    "tenant_id": "T001"
+                },
+                "value": [
+                    1780297015.792,
+                    "4"
+                ]
+            }
+        ]
+    }
+}

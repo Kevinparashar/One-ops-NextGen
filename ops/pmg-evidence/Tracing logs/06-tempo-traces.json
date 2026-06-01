@@ -1,0 +1,361 @@
+════════ Tempo trace search 2026-06-01T06:56:20Z ════════
+── UC-8 traces produced in the last 5 minutes ──
+{
+    "traces": [
+        {
+            "traceID": "23f5e154214f518c994b925f3f985dd7",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780297010669419254",
+            "durationMs": 272
+        },
+        {
+            "traceID": "d044044e5c23310336602ef6cb9a3c",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780297007392095720",
+            "durationMs": 281
+        },
+        {
+            "traceID": "9c8e91e5462b21d554ca0eba58a482d4",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780297004070843987",
+            "durationMs": 292
+        },
+        {
+            "traceID": "b7a4799c25385f65020f1acf6aa75c62",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780297000589679745",
+            "durationMs": 376
+        },
+        {
+            "traceID": "3755144860f811544da8bd0662f28fff",
+            "rootServiceName": "oneops",
+            "rootTraceName": "uc08.dispatch.execute",
+            "startTimeUnixNano": "1780296996937859806",
+            "durationMs": 14637
+        },
+        {
+            "traceID": "3dc2e19b029ea36b2fc786655d978364",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296996922788769",
+            "durationMs": 640
+        },
+        {
+            "traceID": "e9290ce00c535d01f62bcfeeb65b0a57",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296993578650273",
+            "durationMs": 288
+        },
+        {
+            "traceID": "c278bfb2ee7a18516a34c2738ecc17db",
+            "rootServiceName": "oneops",
+            "rootTraceName": "uc08.core.fulfill_request",
+            "startTimeUnixNano": "1780296993432188600",
+            "durationMs": 3368
+        },
+        {
+            "traceID": "5b367d32316ecdd54745ca913577751a",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296992166511102",
+            "durationMs": 141
+        },
+        {
+            "traceID": "b94b5e7946c3564d53c7983cbbebf8cf",
+            "rootServiceName": "oneops",
+            "rootTraceName": "uc08.historical_suggest.run",
+            "startTimeUnixNano": "1780296990189638142",
+            "durationMs": 1950
+        },
+        {
+            "traceID": "531dfba117cc016878d88c18d3b27d9a",
+            "rootServiceName": "oneops",
+            "rootTraceName": "uc08.priority.derive",
+            "startTimeUnixNano": "1780296990189214870"
+        },
+        {
+            "traceID": "c5cabe403526fd39f1303160c9586d67",
+            "rootServiceName": "oneops",
+            "rootTraceName": "embeddings.refresh.process",
+            "startTimeUnixNano": "1780296989913088375",
+            "durationMs": 2253
+        },
+        {
+            "traceID": "c2b2e95289f213eb09951d56d60fe476",
+            "rootServiceName": "oneops",
+            "rootTraceName": "uc08.judge.rerank",
+            "startTimeUnixNano": "1780296989857846846",
+            "durationMs": 1528
+        },
+        {
+            "traceID": "fa8ff7ca35df6d84d4189527a7f3254f",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296989857672325",
+            "durationMs": 331
+        },
+        {
+            "traceID": "59eb7e05945fa07139d372ddd632c24a",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296989624880459",
+            "durationMs": 288
+        },
+        {
+            "traceID": "c43625c5f14dbdede2a41aad13e301c7",
+            "rootServiceName": "oneops",
+            "rootTraceName": "uc08.rerank.call",
+            "startTimeUnixNano": "1780296988188256567",
+            "durationMs": 1669
+        },
+        {
+            "traceID": "8dc84d5636faea66a11d03330fb6cad9",
+            "rootServiceName": "oneops",
+            "rootTraceName": "embeddings.refresh.process",
+            "startTimeUnixNano": "1780296987718346063",
+            "durationMs": 1906
+        },
+        {
+            "traceID": "63d23340be3702079f8d205cc94314a3",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296987427052848",
+            "durationMs": 291
+        },
+        {
+            "traceID": "5049881552fa38cb8e6cca8ef6dc98b3",
+            "rootServiceName": "oneops",
+            "rootTraceName": "uc08.catalog_search.find_closest",
+            "startTimeUnixNano": "1780296985847649823",
+            "durationMs": 2340
+        },
+        {
+            "traceID": "110ffea771d84a7cbfcc1070d2fc2803",
+            "rootServiceName": "oneops",
+            "rootTraceName": "INSERT",
+            "startTimeUnixNano": "1780296984275229556",
+            "durationMs": 437
+        },
+        {
+            "traceID": "a1aebe81b49de8b56b5b43f7bdca395b",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296984034066992",
+            "durationMs": 305
+        },
+        {
+            "traceID": "216a1f05c18be72e142378d7527fde83",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296984000703743",
+            "durationMs": 274
+        },
+        {
+            "traceID": "72dbfc4d838b8053a8a08850f02ca37",
+            "rootServiceName": "oneops",
+            "rootTraceName": "uc08.sr_id.mint",
+            "startTimeUnixNano": "1780296983675688830",
+            "durationMs": 324
+        },
+        {
+            "traceID": "87800a33fbb336ba3c1df9a39dec0ef2",
+            "rootServiceName": "oneops",
+            "rootTraceName": "uc08.judge.extraction",
+            "startTimeUnixNano": "1780296982785778931",
+            "durationMs": 1221
+        },
+        {
+            "traceID": "6fcfc2166ae4d7a052a39547bf46045e",
+            "rootServiceName": "oneops",
+            "rootTraceName": "uc08.text_extract.call",
+            "startTimeUnixNano": "1780296980828283328",
+            "durationMs": 1956
+        },
+        {
+            "traceID": "818fc0ad01347895615ef70c04abb5c",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296980675287314",
+            "durationMs": 291
+        },
+        {
+            "traceID": "5c6b06394e9cbe5e0a74acd29e187930",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296977253255881",
+            "durationMs": 292
+        },
+        {
+            "traceID": "b7458cf828453000f65e6059727d1b03",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296973884353292",
+            "durationMs": 274
+        },
+        {
+            "traceID": "23603c7ba57d475cfba5efd30a3dc5fa",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296967149763745",
+            "durationMs": 287
+        },
+        {
+            "traceID": "2427280e95dea17eab3d5b0b298e43a3",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296957214339682",
+            "durationMs": 302
+        },
+        {
+            "traceID": "1d7699a1338dcc51a7c273c70b96d6c9",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296953820801096",
+            "durationMs": 296
+        },
+        {
+            "traceID": "240d1c5182c0972d6671df4323fefda9",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296950533710820",
+            "durationMs": 283
+        },
+        {
+            "traceID": "78e2df3628a9417df58db5b10845b9c",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296916374857971",
+            "durationMs": 399
+        },
+        {
+            "traceID": "9abcee6d73fdcd490222cb74363cc90",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296909550652222",
+            "durationMs": 331
+        },
+        {
+            "traceID": "17e99c80af5c4cd1352b4eddfc792c22",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296899526611873",
+            "durationMs": 264
+        },
+        {
+            "traceID": "167eae417951d2ecac2dec6b3b237daf",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296886312499943",
+            "durationMs": 283
+        },
+        {
+            "traceID": "16768c7c8c9684a66d2e0001865fa527",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296853068971022",
+            "durationMs": 262
+        },
+        {
+            "traceID": "20b6db4613d2790b6b8716b9a407fcd0",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296836309194801",
+            "durationMs": 290
+        },
+        {
+            "traceID": "4e4199b5a91236c26fe6c6d5fe11272",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296832961980095",
+            "durationMs": 279
+        },
+        {
+            "traceID": "1bceca81697324ab1bbd2f69df676489",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296823100080122",
+            "durationMs": 277
+        },
+        {
+            "traceID": "1f80434f77d3a25dc99ab863e14dcc3e",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296819742858402",
+            "durationMs": 267
+        },
+        {
+            "traceID": "23251ba6fc28f0235c24bc016fd872ef",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296802498665176",
+            "durationMs": 305
+        },
+        {
+            "traceID": "1ceddf87420f43592c11ed0a242bf78",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296795563163382",
+            "durationMs": 273
+        },
+        {
+            "traceID": "4f487fb2ad108f6f32318985cd2da4b",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296788648136938",
+            "durationMs": 361
+        },
+        {
+            "traceID": "155573ee98a0938f83db2241ec651ae8",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296778213204140",
+            "durationMs": 321
+        },
+        {
+            "traceID": "7604a8c05db08d13ff4de6c85f6e58",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296756685685893",
+            "durationMs": 277
+        },
+        {
+            "traceID": "2a3c7e3dafd4a1e1b68d994c8166cbbb",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296749876761275",
+            "durationMs": 296
+        },
+        {
+            "traceID": "18873a86ffa5218f8b82d242dab125ab",
+            "rootServiceName": "oneops",
+            "rootTraceName": "uc08.judge.rerank",
+            "startTimeUnixNano": "1780296734204303378",
+            "durationMs": 1761
+        },
+        {
+            "traceID": "1f75e87205570f7758931f387e951bef",
+            "rootServiceName": "oneops",
+            "rootTraceName": "embeddings.refresh.process",
+            "startTimeUnixNano": "1780296730941318943",
+            "durationMs": 8641
+        },
+        {
+            "traceID": "3a8a2ce0a89873277efd3ef91a93340",
+            "rootServiceName": "oneops",
+            "rootTraceName": "SELECT",
+            "startTimeUnixNano": "1780296720467302615",
+            "durationMs": 277
+        }
+    ],
+    "metrics": {
+        "inspectedTraces": 135,
+        "inspectedBytes": "72272",
+        "completedJobs": 1,
+        "totalJobs": 1
+    }
+}

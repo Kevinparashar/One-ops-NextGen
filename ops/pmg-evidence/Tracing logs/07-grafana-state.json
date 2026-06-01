@@ -1,0 +1,628 @@
+════════ Grafana state 2026-06-01T06:56:20Z ════════
+
+── provisioned datasources ──
+[
+    {
+        "id": 1,
+        "uid": "prom",
+        "orgId": 1,
+        "name": "Prometheus",
+        "type": "prometheus",
+        "typeName": "Prometheus",
+        "typeLogoUrl": "public/app/plugins/datasource/prometheus/img/prometheus_logo.svg",
+        "access": "proxy",
+        "url": "http://nextgen-prometheus:9090",
+        "user": "",
+        "database": "",
+        "basicAuth": false,
+        "isDefault": true,
+        "jsonData": {
+            "timeInterval": "15s"
+        },
+        "readOnly": true
+    },
+    {
+        "id": 2,
+        "uid": "tempo",
+        "orgId": 1,
+        "name": "Tempo",
+        "type": "tempo",
+        "typeName": "Tempo",
+        "typeLogoUrl": "public/app/plugins/datasource/tempo/img/tempo_logo.svg",
+        "access": "proxy",
+        "url": "http://nextgen-tempo:3200",
+        "user": "",
+        "database": "",
+        "basicAuth": false,
+        "isDefault": false,
+        "jsonData": {
+            "nodeGraph": {
+                "enabled": true
+            },
+            "serviceMap": {
+                "datasourceUid": "prom"
+            },
+            "tracesToLogs": {
+                "datasourceUid": "prom"
+            }
+        },
+        "readOnly": true
+    }
+]
+
+── provisioned alert rules ──
+[
+    {
+        "id": 1,
+        "uid": "oneops-failure-ratio",
+        "orgID": 1,
+        "folderUID": "afnje1raqqoe8e",
+        "ruleGroup": "oneops-slo",
+        "title": "TurnFailureRateHigh",
+        "condition": "A",
+        "data": [
+            {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                    "from": 600,
+                    "to": 0
+                },
+                "datasourceUid": "prom",
+                "model": {
+                    "expr": "(\n  sum by (agent_id) (rate(ai_agent_runs_total{status=\"failed\"}[5m]))\n  / clamp_min(sum by (agent_id) (rate(ai_agent_runs_total{status=~\"success|failed\"}[5m])), 0.001)\n) > 0.05\n",
+                    "instant": true,
+                    "intervalMs": 1000,
+                    "maxDataPoints": 43200,
+                    "refId": "A"
+                }
+            }
+        ],
+        "updated": "2026-06-01T06:43:42Z",
+        "noDataState": "NoData",
+        "execErrState": "Alerting",
+        "for": "5m",
+        "annotations": {
+            "description": "Sustained turn failures \u2014 check graph_worker + agent logs and breaker state.",
+            "runbook": "Look at /tmp/oneops-graph.log and /tmp/oneops-agent-*.log; query Tempo for failed traces.",
+            "summary": "{{ $labels.agent_id }} failure rate > 5% over 5m"
+        },
+        "labels": {
+            "severity": "critical",
+            "team": "oneops"
+        },
+        "provenance": "file",
+        "isPaused": false,
+        "notification_settings": null,
+        "record": null
+    },
+    {
+        "id": 2,
+        "uid": "oneops-p99-latency",
+        "orgID": 1,
+        "folderUID": "afnje1raqqoe8e",
+        "ruleGroup": "oneops-slo",
+        "title": "AgentP99LatencyHigh",
+        "condition": "A",
+        "data": [
+            {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                    "from": 300,
+                    "to": 0
+                },
+                "datasourceUid": "prom",
+                "model": {
+                    "expr": "histogram_quantile(0.99,\n  sum by (le, agent_id) (rate(ai_agent_latency_ms_bucket[5m]))\n) > 20000\n",
+                    "instant": true,
+                    "intervalMs": 1000,
+                    "maxDataPoints": 43200,
+                    "refId": "A"
+                }
+            }
+        ],
+        "updated": "2026-06-01T06:43:42Z",
+        "noDataState": "NoData",
+        "execErrState": "Alerting",
+        "for": "3m",
+        "annotations": {
+            "description": "Worker is slow. Could be LLM, DB, or cache miss storm.",
+            "runbook": "Check llm.call spans in Tempo; check oneops:uc01:summary:* keys in Dragonfly.",
+            "summary": "{{ $labels.agent_id }} p99 latency > 20s"
+        },
+        "labels": {
+            "severity": "warning",
+            "team": "oneops"
+        },
+        "provenance": "file",
+        "isPaused": false,
+        "notification_settings": null,
+        "record": null
+    },
+    {
+        "id": 3,
+        "uid": "oneops-breaker-open",
+        "orgID": 1,
+        "folderUID": "afnje1raqqoe8e",
+        "ruleGroup": "oneops-slo",
+        "title": "CircuitBreakerOpened",
+        "condition": "A",
+        "data": [
+            {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                    "from": 300,
+                    "to": 0
+                },
+                "datasourceUid": "prom",
+                "model": {
+                    "expr": "increase(nats_breaker_opened_total[5m]) > 0",
+                    "instant": true,
+                    "intervalMs": 1000,
+                    "maxDataPoints": 43200,
+                    "refId": "A"
+                }
+            }
+        ],
+        "updated": "2026-06-01T06:43:42Z",
+        "noDataState": "NoData",
+        "execErrState": "Alerting",
+        "for": "1m",
+        "annotations": {
+            "description": "Upstream worker degraded; fast-fail is in effect.",
+            "runbook": "Check the responder on that subject; expect log: nats_breaker.opened.",
+            "summary": "NATS circuit breaker opened on {{ $labels.subject }}"
+        },
+        "labels": {
+            "severity": "warning",
+            "team": "oneops"
+        },
+        "provenance": "file",
+        "isPaused": false,
+        "notification_settings": null,
+        "record": null
+    },
+    {
+        "id": 4,
+        "uid": "oneops-cost-burst",
+        "orgID": 1,
+        "folderUID": "afnje1raqqoe8e",
+        "ruleGroup": "oneops-slo",
+        "title": "TenantLLMCostBurst",
+        "condition": "A",
+        "data": [
+            {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                    "from": 600,
+                    "to": 0
+                },
+                "datasourceUid": "prom",
+                "model": {
+                    "expr": "sum by (tenant_id) (rate(ai_llm_cost_usd_micros_total[5m])) * 60 / 1e6 > 1.0\n",
+                    "instant": true,
+                    "intervalMs": 1000,
+                    "maxDataPoints": 43200,
+                    "refId": "A"
+                }
+            }
+        ],
+        "updated": "2026-06-01T06:43:42Z",
+        "noDataState": "NoData",
+        "execErrState": "Alerting",
+        "for": "5m",
+        "annotations": {
+            "description": "Sustained spend. Confirm session activity is legitimate; review trimmer settings.",
+            "runbook": "ai_llm_cost_usd_micros_total by tenant. Check session length + prompt cache hit rate.",
+            "summary": "Tenant {{ $labels.tenant_id }} LLM cost > $1/min"
+        },
+        "labels": {
+            "severity": "warning",
+            "team": "oneops"
+        },
+        "provenance": "file",
+        "isPaused": false,
+        "notification_settings": null,
+        "record": null
+    },
+    {
+        "id": 5,
+        "uid": "oneops-cache-miss-storm",
+        "orgID": 1,
+        "folderUID": "afnje1raqqoe8e",
+        "ruleGroup": "oneops-slo",
+        "title": "CacheMissStorm",
+        "condition": "A",
+        "data": [
+            {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                    "from": 600,
+                    "to": 0
+                },
+                "datasourceUid": "prom",
+                "model": {
+                    "expr": "(\n  sum(rate(ai_cache_misses_total[10m]))\n  / clamp_min(sum(rate(ai_cache_misses_total[10m])) + sum(rate(ai_cache_hits_total[10m])), 0.001)\n) > 0.8\nand sum(rate(ai_cache_misses_total[10m])) > 0.05\n",
+                    "instant": true,
+                    "intervalMs": 1000,
+                    "maxDataPoints": 43200,
+                    "refId": "A"
+                }
+            }
+        ],
+        "updated": "2026-06-01T06:43:42Z",
+        "noDataState": "NoData",
+        "execErrState": "Alerting",
+        "for": "5m",
+        "annotations": {
+            "description": "Hit ratio collapsed; investigate Dragonfly availability and key TTLs.",
+            "runbook": "docker exec nextgen-dragonfly redis-cli INFO. Check ai_cache_* counters.",
+            "summary": "Cache miss ratio > 80% with active traffic"
+        },
+        "labels": {
+            "severity": "warning",
+            "team": "oneops"
+        },
+        "provenance": "file",
+        "isPaused": false,
+        "notification_settings": null,
+        "record": null
+    },
+    {
+        "id": 6,
+        "uid": "oneops-agent-silent",
+        "orgID": 1,
+        "folderUID": "afnje1raqqoe8e",
+        "ruleGroup": "oneops-slo",
+        "title": "AgentSubjectSilent",
+        "condition": "A",
+        "data": [
+            {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                    "from": 300,
+                    "to": 0
+                },
+                "datasourceUid": "prom",
+                "model": {
+                    "expr": "sum(rate(ai_agent_runs_total[5m])) == 0\n",
+                    "instant": true,
+                    "intervalMs": 1000,
+                    "maxDataPoints": 43200,
+                    "refId": "A"
+                }
+            }
+        ],
+        "updated": "2026-06-01T06:43:42Z",
+        "noDataState": "NoData",
+        "execErrState": "Alerting",
+        "for": "15m",
+        "annotations": {
+            "description": "Possible worker crash or NATS subject mis-binding.",
+            "runbook": "pgrep -af 'agent_worker'; check /tmp/oneops-agent-*.log; verify NATS subscriptions.",
+            "summary": "No agent runs in last 5m but ingress sees traffic"
+        },
+        "labels": {
+            "severity": "critical",
+            "team": "oneops"
+        },
+        "provenance": "file",
+        "isPaused": false,
+        "notification_settings": null,
+        "record": null
+    },
+    {
+        "id": 7,
+        "uid": "oneops-uc08-create-sr-failure",
+        "orgID": 1,
+        "folderUID": "afnje1raqqoe8e",
+        "ruleGroup": "oneops-slo",
+        "title": "UC08CreateSrFailureRateHigh",
+        "condition": "A",
+        "data": [
+            {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                    "from": 600,
+                    "to": 0
+                },
+                "datasourceUid": "prom",
+                "model": {
+                    "expr": "(\n  sum(rate(ai_uc08_create_sr_failed_total[5m]))\n  / clamp_min(\n      sum(rate(ai_uc08_create_sr_total[5m]))\n      + sum(rate(ai_uc08_create_sr_failed_total[5m])),\n      0.001)\n) > 0.05\n",
+                    "instant": true,
+                    "intervalMs": 1000,
+                    "maxDataPoints": 43200,
+                    "refId": "A"
+                }
+            }
+        ],
+        "updated": "2026-06-01T06:43:42Z",
+        "noDataState": "NoData",
+        "execErrState": "Alerting",
+        "for": "5m",
+        "annotations": {
+            "description": "Sustained /api/uc08/create-sr failures \u2014 check LLM gateway + text_extract + asyncpg pool.",
+            "runbook": "Tempo search uc08.create_sr; inspect TextExtractError stack; verify LiteLLM /health.",
+            "summary": "UC-8 create-sr failure rate > 5% over 5m"
+        },
+        "labels": {
+            "severity": "critical",
+            "team": "oneops",
+            "uc_id": "uc08"
+        },
+        "provenance": "file",
+        "isPaused": false,
+        "notification_settings": null,
+        "record": null
+    },
+    {
+        "id": 8,
+        "uid": "oneops-uc08-judge-unfaithful",
+        "orgID": 1,
+        "folderUID": "afnje1raqqoe8e",
+        "ruleGroup": "oneops-slo",
+        "title": "UC08JudgeUnfaithfulHigh",
+        "condition": "A",
+        "data": [
+            {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                    "from": 900,
+                    "to": 0
+                },
+                "datasourceUid": "prom",
+                "model": {
+                    "expr": "(\n  sum by (judge) (rate(ai_uc08_judge_verdict_total{verdict=\"UNFAITHFUL\"}[10m]))\n  / clamp_min(\n      sum by (judge) (rate(ai_uc08_judge_verdict_total[10m])),\n      0.001)\n) > 0.10\n",
+                    "instant": true,
+                    "intervalMs": 1000,
+                    "maxDataPoints": 43200,
+                    "refId": "A"
+                }
+            }
+        ],
+        "updated": "2026-06-01T06:43:42Z",
+        "noDataState": "NoData",
+        "execErrState": "Alerting",
+        "for": "10m",
+        "annotations": {
+            "description": "Upstream LLM output is drifting from input. Review recent prompt changes and model version.",
+            "runbook": "Tempo search uc08.judge.*; sample raw_response field; compare PROMPT_VERSION.",
+            "summary": "UC-8 judge UNFAITHFUL share > 10% over 10m for {{ $labels.judge }}"
+        },
+        "labels": {
+            "severity": "warning",
+            "team": "oneops",
+            "uc_id": "uc08"
+        },
+        "provenance": "file",
+        "isPaused": false,
+        "notification_settings": null,
+        "record": null
+    },
+    {
+        "id": 9,
+        "uid": "oneops-uc08-match-failure",
+        "orgID": 1,
+        "folderUID": "afnje1raqqoe8e",
+        "ruleGroup": "oneops-slo",
+        "title": "UC08MatchFailureRateHigh",
+        "condition": "A",
+        "data": [
+            {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                    "from": 600,
+                    "to": 0
+                },
+                "datasourceUid": "prom",
+                "model": {
+                    "expr": "(\n  sum(rate(ai_uc08_match_failed_total[5m]))\n  / clamp_min(\n      sum(rate(ai_uc08_match_total[5m]))\n      + sum(rate(ai_uc08_match_failed_total[5m])),\n      0.001)\n) > 0.05\n",
+                    "instant": true,
+                    "intervalMs": 1000,
+                    "maxDataPoints": 43200,
+                    "refId": "A"
+                }
+            }
+        ],
+        "updated": "2026-06-01T06:43:42Z",
+        "noDataState": "NoData",
+        "execErrState": "Alerting",
+        "for": "5m",
+        "annotations": {
+            "description": "/api/uc08/match degraded \u2014 catalog_search or reranker is failing.",
+            "runbook": "Check CatalogSearchError + reranker timeouts; verify embedding model availability.",
+            "summary": "UC-8 match failure rate > 5% over 5m"
+        },
+        "labels": {
+            "severity": "warning",
+            "team": "oneops",
+            "uc_id": "uc08"
+        },
+        "provenance": "file",
+        "isPaused": false,
+        "notification_settings": null,
+        "record": null
+    }
+]
+
+── current alert states ──
+{
+    "status": "success",
+    "data": {
+        "alerts": [
+            {
+                "labels": {
+                    "alertname": "AgentSubjectSilent",
+                    "datasource_uid": "prom",
+                    "grafana_folder": "OneOps",
+                    "ref_id": "A",
+                    "severity": "critical",
+                    "team": "oneops"
+                },
+                "annotations": {
+                    "description": "Possible worker crash or NATS subject mis-binding.",
+                    "runbook": "pgrep -af 'agent_worker'; check /tmp/oneops-agent-*.log; verify NATS subscriptions.",
+                    "summary": "No agent runs in last 5m but ingress sees traffic"
+                },
+                "state": "NoData",
+                "activeAt": "2026-06-01T06:53:00Z",
+                "value": ""
+            },
+            {
+                "labels": {
+                    "alertname": "AgentP99LatencyHigh",
+                    "datasource_uid": "prom",
+                    "grafana_folder": "OneOps",
+                    "ref_id": "A",
+                    "severity": "warning",
+                    "team": "oneops"
+                },
+                "annotations": {
+                    "description": "Worker is slow. Could be LLM, DB, or cache miss storm.",
+                    "runbook": "Check llm.call spans in Tempo; check oneops:uc01:summary:* keys in Dragonfly.",
+                    "summary": "[no value] p99 latency > 20s"
+                },
+                "state": "NoData",
+                "activeAt": "2026-05-29T15:44:00Z",
+                "value": ""
+            },
+            {
+                "labels": {
+                    "alertname": "UC08CreateSrFailureRateHigh",
+                    "datasource_uid": "prom",
+                    "grafana_folder": "OneOps",
+                    "ref_id": "A",
+                    "severity": "critical",
+                    "team": "oneops",
+                    "uc_id": "uc08"
+                },
+                "annotations": {
+                    "description": "Sustained /api/uc08/create-sr failures \u2014 check LLM gateway + text_extract + asyncpg pool.",
+                    "runbook": "Tempo search uc08.create_sr; inspect TextExtractError stack; verify LiteLLM /health.",
+                    "summary": "UC-8 create-sr failure rate > 5% over 5m"
+                },
+                "state": "NoData",
+                "activeAt": "2026-05-31T14:32:00Z",
+                "value": ""
+            },
+            {
+                "labels": {
+                    "alertname": "UC08MatchFailureRateHigh",
+                    "datasource_uid": "prom",
+                    "grafana_folder": "OneOps",
+                    "ref_id": "A",
+                    "severity": "warning",
+                    "team": "oneops",
+                    "uc_id": "uc08"
+                },
+                "annotations": {
+                    "description": "/api/uc08/match degraded \u2014 catalog_search or reranker is failing.",
+                    "runbook": "Check CatalogSearchError + reranker timeouts; verify embedding model availability.",
+                    "summary": "UC-8 match failure rate > 5% over 5m"
+                },
+                "state": "NoData",
+                "activeAt": "2026-05-31T14:32:00Z",
+                "value": ""
+            },
+            {
+                "labels": {
+                    "alertname": "TenantLLMCostBurst",
+                    "datasource_uid": "prom",
+                    "grafana_folder": "OneOps",
+                    "ref_id": "A",
+                    "severity": "warning",
+                    "team": "oneops"
+                },
+                "annotations": {
+                    "description": "Sustained spend. Confirm session activity is legitimate; review trimmer settings.",
+                    "runbook": "ai_llm_cost_usd_micros_total by tenant. Check session length + prompt cache hit rate.",
+                    "summary": "Tenant [no value] LLM cost > $1/min"
+                },
+                "state": "NoData",
+                "activeAt": "2026-05-29T15:44:00Z",
+                "value": ""
+            },
+            {
+                "labels": {
+                    "alertname": "UC08JudgeUnfaithfulHigh",
+                    "datasource_uid": "prom",
+                    "grafana_folder": "OneOps",
+                    "ref_id": "A",
+                    "severity": "warning",
+                    "team": "oneops",
+                    "uc_id": "uc08"
+                },
+                "annotations": {
+                    "description": "Upstream LLM output is drifting from input. Review recent prompt changes and model version.",
+                    "runbook": "Tempo search uc08.judge.*; sample raw_response field; compare PROMPT_VERSION.",
+                    "summary": "UC-8 judge UNFAITHFUL share > 10% over 10m for [no value]"
+                },
+                "state": "NoData",
+                "activeAt": "2026-05-31T16:47:00Z",
+                "value": ""
+            },
+            {
+                "labels": {
+                    "alertname": "TurnFailureRateHigh",
+                    "datasource_uid": "prom",
+                    "grafana_folder": "OneOps",
+                    "ref_id": "A",
+                    "severity": "critical",
+                    "team": "oneops"
+                },
+                "annotations": {
+                    "description": "Sustained turn failures \u2014 check graph_worker + agent logs and breaker state.",
+                    "runbook": "Look at /tmp/oneops-graph.log and /tmp/oneops-agent-*.log; query Tempo for failed traces.",
+                    "summary": "[no value] failure rate > 5% over 5m"
+                },
+                "state": "NoData",
+                "activeAt": "2026-06-01T06:44:00Z",
+                "value": ""
+            },
+            {
+                "labels": {
+                    "alertname": "CircuitBreakerOpened",
+                    "datasource_uid": "prom",
+                    "grafana_folder": "OneOps",
+                    "ref_id": "A",
+                    "severity": "warning",
+                    "team": "oneops"
+                },
+                "annotations": {
+                    "description": "Upstream worker degraded; fast-fail is in effect.",
+                    "runbook": "Check the responder on that subject; expect log: nats_breaker.opened.",
+                    "summary": "NATS circuit breaker opened on [no value]"
+                },
+                "state": "NoData",
+                "activeAt": "2026-05-29T15:44:00Z",
+                "value": ""
+            },
+            {
+                "labels": {
+                    "alertname": "CacheMissStorm",
+                    "datasource_uid": "prom",
+                    "grafana_folder": "OneOps",
+                    "ref_id": "A",
+                    "severity": "warning",
+                    "team": "oneops"
+                },
+                "annotations": {
+                    "description": "Hit ratio collapsed; investigate Dragonfly availability and key TTLs.",
+                    "runbook": "docker exec nextgen-dragonfly redis-cli INFO. Check ai_cache_* counters.",
+                    "summary": "Cache miss ratio > 80% with active traffic"
+                },
+                "state": "NoData",
+                "activeAt": "2026-05-29T15:44:00Z",
+                "value": ""
+            }
+        ]
+    }
+}
