@@ -486,11 +486,11 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(ai_cache_hits_total[5m])) * 60",
+          "expr": "((sum(rate(ai_cache_hits_total[5m])) or vector(0)) + (sum(rate(ai_chat_turn_cache_hits_total[5m])) or vector(0)) + (sum(rate(ai_fast_path_edge_cache_hits_total[5m])) or vector(0)) + (sum(rate(ai_uc02_cache_hits_total[5m])) or vector(0))) * 60",
           "legendFormat": "hits/min"
         },
         {
-          "expr": "sum(rate(ai_cache_misses_total[5m])) * 60",
+          "expr": "((sum(rate(ai_cache_misses_total[5m])) or vector(0)) + (sum(rate(ai_chat_turn_cache_misses_total[5m])) or vector(0)) + (sum(rate(ai_fast_path_edge_cache_misses_total[5m])) or vector(0)) + (sum(rate(ai_uc02_cache_misses_total[5m])) or vector(0))) * 60",
           "legendFormat": "misses/min"
         }
       ]
@@ -511,7 +511,7 @@
       },
       "targets": [
         {
-          "expr": "sum(ai_cache_hits_total) / clamp_min(sum(ai_cache_hits_total) + sum(ai_cache_misses_total), 1)"
+          "expr": "((sum(ai_cache_hits_total) or vector(0)) + (sum(ai_chat_turn_cache_hits_total) or vector(0)) + (sum(ai_fast_path_edge_cache_hits_total) or vector(0)) + (sum(ai_uc02_cache_hits_total) or vector(0))) / clamp_min(((sum(ai_cache_hits_total) or vector(0)) + (sum(ai_chat_turn_cache_hits_total) or vector(0)) + (sum(ai_fast_path_edge_cache_hits_total) or vector(0)) + (sum(ai_uc02_cache_hits_total) or vector(0))) + ((sum(ai_cache_misses_total) or vector(0)) + (sum(ai_chat_turn_cache_misses_total) or vector(0)) + (sum(ai_fast_path_edge_cache_misses_total) or vector(0)) + (sum(ai_uc02_cache_misses_total) or vector(0))), 1)"
         }
       ],
       "fieldConfig": {
