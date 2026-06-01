@@ -15,7 +15,7 @@
   "panels": [
     {
       "type": "stat",
-      "title": "Turns / minute",
+      "title": "Turns / minute (live)",
       "id": 1,
       "gridPos": {
         "x": 0,
@@ -128,7 +128,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Per-UC latency p50 / p95 / p99 (ms)",
+      "title": "Per-UC latency p50 / p95 / p99 (ms, live)",
       "id": 10,
       "gridPos": {
         "x": 0,
@@ -162,7 +162,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Turn rate by agent + status",
+      "title": "Turn rate by agent + status (live)",
       "id": 20,
       "gridPos": {
         "x": 0,
@@ -188,7 +188,7 @@
     },
     {
       "type": "timeseries",
-      "title": "LLM cost per minute by tenant ($/min)",
+      "title": "LLM cost per minute by tenant ($/min, live)",
       "id": 21,
       "gridPos": {
         "x": 12,
@@ -214,7 +214,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Cache hit / miss",
+      "title": "Cache hit / miss (live, per minute)",
       "id": 30,
       "gridPos": {
         "x": 0,
@@ -388,7 +388,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Cost $/min by model",
+      "title": "Cost $/min by model (live)",
       "id": 41,
       "gridPos": {
         "x": 8,
@@ -571,5 +571,6 @@
         ]
       }
     }
-  ]
+  ],
+  "description": "Convention: (live) panels show recent activity in a 5-minute window and read zero during idle. (all-time) and (cumulative) panels show running totals since the metric started and persist across idle."
 }
