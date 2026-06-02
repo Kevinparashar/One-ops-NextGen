@@ -313,6 +313,16 @@ class HandlerStepExecutor:
 
         timeout_s = (tool.timeout_ms / 1000.0) if tool.timeout_ms else self._default_timeout_s
         arguments = dict(step.get("parameters") or {})
+        # Data-flow binding (generic — every UC, no per-handler code). The
+        # executor resolved declared bindings into `bound_inputs`
+        # ({to_param: upstream_value}); merge them into the handler arguments so
+        # ANY handler receives them as ordinary parameters and never needs to
+        # know bindings exist. A bound value wins for its declared param — the
+        # planner explicitly routed that input from an upstream result. Empty
+        # unless this step declared bindings ⇒ zero change for every other path.
+        bound_inputs = request.get("bound_inputs") or {}
+        if bound_inputs:
+            arguments.update(bound_inputs)
         context = _build_handler_context(request)
 
         # Live UI: announce the tool is now executing (no-op unless a

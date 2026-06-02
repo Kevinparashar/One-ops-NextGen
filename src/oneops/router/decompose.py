@@ -248,29 +248,55 @@ Return STRICT JSON ONLY in the shape shown above:
 # LLM to declare a data-flow edge when a later ask consumes an earlier result.
 _BINDINGS_PROMPT = """\
 
-## Data-flow bindings (OPTIONAL — omit unless truly needed)
+## Data-flow bindings — the ENTITY-vs-PRODUCED-VALUE decision
 
-A `depends_on` edge already enforces ORDER. Add a `bindings` array ONLY when a
-dependent sub-query must also consume a SPECIFIC VALUE the earlier sub-query
-produces — i.e. one of its inputs is satisfied by the upstream result
-(`previous_results`), not by the user's own words. This follows the platform
-dependency rule: declare a data dependency only when a later step TRULY
-REQUIRES an earlier step's output.
+A later sub-query can refer back to an earlier one in TWO different ways. Tell
+them apart — they are handled oppositely:
 
-Shape (on the dependent sub-query):
-  {"from":"sq1","from_field":"<field in sq1's result>","to_param":"<input the later ask needs>"}
+1. ENTITY reference — the later ask points at a RECORD the user already named
+   ("it", "this incident", "that ticket", "this change"). The entity id is
+   known NOW, so resolve it the normal way: INLINE the canonical id and set
+   depends_on. NO binding. (This is the Inlining rule above — unchanged.)
 
-Example — "summarize INC1 and find the KB for the root cause it surfaces":
-  sq2 binds {"from":"sq1","from_field":"root_cause","to_param":"query"}
-(the root cause is only known after sq1 runs, so it must be CARRIED, not guessed).
+2. PRODUCED-VALUE reference — the later ask needs a VALUE that the earlier
+   sub-query COMPUTES OR SURFACES and that does NOT exist until it runs:
+   "the root cause it surfaces", "the error it returns", "whatever CIs it
+   finds", "that risk score", "the workaround it gives". You CANNOT inline a
+   value you do not have yet. Instead:
+     • write the later sub-query text WITHOUT the missing value (generic — describe
+       the ask, e.g. "find KB for the root cause"), AND
+     • add a `bindings` entry carrying that value from the earlier sub-query:
+       {"from":"sq1","from_field":"<field sq1 produces>","to_param":"<the later input>"}
+     • set depends_on too (a binding always implies ordering).
+
+Decision test: "Could I write the exact value into the text right now?" If it is
+an id the user typed → yes → inline (case 1). If it only exists AFTER the earlier
+step runs → no → bind (case 2). When unsure, prefer a binding over fabricating a
+value.
+
+Contrast (same shape, opposite handling):
+
+INPUT: "details of INC0001001 and any docs for it"
+OUTPUT:
+{"reasoning":"'it' = the named entity INC0001001 (known now) → inline, no binding",
+ "subqueries":[
+   {"id":"sq1","text":"details of INC0001001","depends_on":[]},
+   {"id":"sq2","text":"any docs for INC0001001","depends_on":["sq1"]}]}
+
+INPUT: "summarize INC0001001 and find KB for the root cause it surfaces"
+OUTPUT:
+{"reasoning":"'the root cause it surfaces' = a VALUE sq1 produces, not known now → bind, generic text",
+ "subqueries":[
+   {"id":"sq1","text":"summarize INC0001001","depends_on":[]},
+   {"id":"sq2","text":"find KB for the root cause","depends_on":["sq1"],
+    "bindings":[{"from":"sq1","from_field":"root_cause","to_param":"query"}]}]}
 
 Rules:
   - Most splits need NO bindings — omit the field entirely.
   - `from` MUST be an earlier sub-query id; never bind a sub-query to itself
     and never form a cycle (the dependency graph stays acyclic).
   - `from_field` and `to_param` are NAMES, not values — never invent or inline
-    a value you do not have; deferring that value to runtime is the whole point
-    of a binding."""
+    a value you do not have; deferring it to runtime is the whole point."""
 
 
 class LlmDecomposer:
