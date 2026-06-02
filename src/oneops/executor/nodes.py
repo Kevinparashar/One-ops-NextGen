@@ -703,6 +703,33 @@ class ExecutorNodes:
         # Always set the marker so the graph's conditional edge sees it.
         update: dict[str, Any] = {"control_gate_outcome": result.control_type}
         if result.is_control and result.response_text:
+            # ── Data-driven domain backstop (2026-06-02 RCA) ─────────────
+            # The gate's `out_of_scope` verdict is occasionally wrong — and
+            # not perfectly deterministic even at temperature 0 — for
+            # borderline IT how-to phrasings ("how do I configure a VPN
+            # client?" refused while "...client" answered). Before refusing,
+            # probe the KB CORPUS itself, the authoritative + deterministic
+            # domain signal: if it has a real answer the query IS in-domain,
+            # so return that answer instead of "out of scope". A genuine
+            # off-topic query ("recommend a pizza place") matches nothing
+            # (search_kb's relevance gate) and refuses exactly as before —
+            # this only rescues real IT questions the scope LLM mishandled.
+            if result.control_type == "out_of_scope":
+                from oneops.use_cases.uc03_kb_lookup.handlers import (
+                    kb_backstop_answer,
+                )
+                ctx = {
+                    "tenant_id": state.get("tenant_id", "") or "",
+                    "user_id": state.get("user_id", "") or "",
+                    "role": state.get("role", "") or "",
+                    "request_id": state.get("request_id", "") or "",
+                }
+                kb = await kb_backstop_answer(
+                    state.get("message", "") or "", ctx)
+                if kb:
+                    return {"control_gate_outcome": "kb_backstop",
+                            "final_status": "executed",
+                            "final_response": kb}
             # Short-circuit. final_status mirrors the boundary's
             # `clarification` for non-task replies so the UI renders the
             # same way it does today for greetings/OOS.

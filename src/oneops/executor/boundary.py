@@ -20,6 +20,10 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from oneops.observability import get_logger
+
+_log = get_logger("oneops.executor.boundary")
+
 
 class BoundaryResponder(Protocol):
     async def respond(
@@ -311,6 +315,23 @@ class LlmBoundaryResponder:
         self._model = model
         self._fallback = DeterministicBoundaryResponder()
 
+    async def _kb_backstop(self, request: dict[str, Any]) -> str:
+        """Probe the KB corpus as the authoritative domain oracle.
+
+        Returns the composed KB answer when the message genuinely matches
+        authored content (so it IS in-domain), else "". The KB search has
+        its own relevance gate, so a true off-topic query returns nothing
+        and this stays out of the way. Best-effort — never raises into the
+        boundary path."""
+        from oneops.use_cases.uc03_kb_lookup.handlers import kb_backstop_answer
+        ctx = {
+            "tenant_id": request.get("tenant_id") or "",
+            "user_id": request.get("user_id") or "",
+            "role": request.get("role") or "",
+            "request_id": request.get("request_id") or "",
+        }
+        return await kb_backstop_answer(str(request.get("message") or ""), ctx)
+
     async def respond(
         self, *, outcome: str, reason: str, request: dict[str, Any]
     ) -> str:
@@ -354,7 +375,13 @@ class LlmBoundaryResponder:
                 model=self._model,
                 tenant_id=request.get("tenant_id") or "_unknown",
                 user_id=request.get("user_id", "") or "",
-                temperature=0.3, max_tokens=200,
+                # temperature=0 — the scope verdict (in-domain vs out-of-
+                # scope) MUST be deterministic: the same query has to get
+                # the same routing every time. At 0.3 an identical message
+                # ("how to set vpn password") flipped between in-scope→KB
+                # and "out of scope" across runs (2026-06-02 RCA). All other
+                # routing classifiers (intent, rewriter) are already 0.0.
+                temperature=0.0, max_tokens=200,
                 response_format=ResponseFormat.JSON,
                 request_id=request.get("request_id", "")))
             content = (response.content or "").strip()
@@ -381,6 +408,24 @@ class LlmBoundaryResponder:
             except json.JSONDecodeError:
                 category = ""
                 reply = content
+            # ── Data-driven domain backstop (2026-06-02 RCA) ─────────────
+            # The LLM scope verdict mis-fires on borderline IT how-to
+            # phrasings ("configure a VPN client?" → out_of_scope while
+            # "configure a VPN client" → in-scope), and an
+            # `in_scope_kb_search` verdict only PROPOSES a search rather than
+            # running one. Both fail the user. Use the KB CORPUS ITSELF as
+            # the authoritative domain oracle: if the message matches
+            # authored IT content, surface that content. This is data-driven
+            # (the published KB defines the domain), deterministic, and needs
+            # no keyword catalog. Genuinely off-topic queries ("pizza") match
+            # nothing and fall through to OUT_OF_SCOPE_REPLY unchanged — so
+            # this never flips a real out-of-scope, it only rescues real IT
+            # questions that the scope LLM or the router mishandled.
+            if category in ("out_of_scope", "in_scope_kb_search",
+                            "in_scope_unclear"):
+                kb_answer = await self._kb_backstop(request)
+                if kb_answer:
+                    return kb_answer
             # Server-side enforcement of the out-of-scope literal. The LLM
             # is asked to produce this verbatim; we ignore its actual reply
             # if classification says out_of_scope, so a hallucination of the

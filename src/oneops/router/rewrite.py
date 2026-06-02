@@ -433,6 +433,36 @@ class LlmRewriter:
                 rewritten = _reject_focus_injection_into_self_contained(
                     original=text, rewritten=rewritten)
                 changed = rewritten != text
+            # ── Topic-replacement guard (deterministic, 2026-06-02) ─────
+            # The rewriter RESOLVES implicit references; it must never
+            # REPLACE the topic. On a garbled/typo'd new message the LLM
+            # occasionally swaps in a PRIOR turn's subject (observed:
+            # "database conncection failes" -> "how to set vpn password
+            # for INC0001021"). If the rewrite preserves NONE of the
+            # original's content words, that is a topic swap, not a
+            # resolution — revert.
+            if changed:
+                rewritten = _reject_topic_replacement(
+                    original=text, rewritten=rewritten)
+                changed = rewritten != text
+            # ── Pure-rephrase guard (deterministic, 2026-06-02 RCA) ─────
+            # The rewriter's ONLY legitimate edit is RESOLVING a reference
+            # to a concrete record id (a pronoun / bare-digit / linked-phrase
+            # becoming an explicit id). If it "changed" the text but
+            # introduced NO new canonical id, it merely REPHRASED a
+            # self-contained query. That rephrase is non-deterministic across
+            # runs (LLMs are not bit-stable even at temperature 0), so the
+            # downstream KB embedding — hence the answer — flips run-to-run
+            # for the SAME input ("how do I configure a VPN client" scored
+            # 0.51 on one rephrase and 0.10 on another). Revert to the user's
+            # exact words → deterministic query → consistent routing.
+            # Reference resolutions (which add an id) are always kept.
+            if changed:
+                new_ids = (set(_extract_record_ids(rewritten))
+                           - set(_extract_record_ids(text)))
+                if not new_ids:
+                    rewritten = text
+                    changed = False
             # ── Authoritative focus guard (Stage 2, 2026-05-28) ─────────
             # For focus-bound messages (linked-record refs, pronouns,
             # bare-attribute reads), enforce the LangGraph state's
@@ -629,6 +659,28 @@ def _history_focus_ids_user_only(
             if hid not in out:
                 out.append(hid)
     return out
+
+
+def _reject_topic_replacement(*, original: str, rewritten: str) -> str:
+    """Deterministic guard: the rewriter resolves references, it never
+    replaces the topic.
+
+    If the original carries a real phrase (>=2 content words, len>=4) and
+    the rewrite preserves NONE of them, the LLM swapped in a different
+    subject (a prior turn's topic) rather than resolving a reference —
+    revert to the original. Short messages (<2 content words, e.g. a bare
+    id-completion "1003" -> "INC0001003" or "summarise it") are left to the
+    other guards; this one only fires on a clear multi-word topic swap.
+    """
+    orig_content = {w for w in _WORD_RE.findall(original.lower()) if len(w) >= 4}
+    if len(orig_content) < 2:
+        return rewritten
+    rw_content = {w for w in _WORD_RE.findall(rewritten.lower()) if len(w) >= 4}
+    if orig_content & rw_content:
+        return rewritten                               # topic preserved
+    _log.warning("rewriter.topic_replacement_rejected",
+                 original=original, rewritten=rewritten)
+    return original
 
 
 def _reject_focus_injection_into_self_contained(

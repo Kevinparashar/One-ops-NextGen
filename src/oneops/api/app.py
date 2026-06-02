@@ -910,6 +910,33 @@ async def _lifespan(app: FastAPI):
                   ttl_seconds=_ttl_s,
                   ttl_minutes=(_ttl_s // 60) if isinstance(_ttl_s, int) else None)
 
+        # ── Semantic turn cache (cross-session consistency, 2026-06-02) ──
+        # Standalone chat queries get a deterministic embedding-similarity
+        # cache so the SAME query returns the SAME answer regardless of the
+        # routing pipeline's LLM non-determinism (the documented "temp=0 is
+        # only mostly deterministic" problem). Reuses the chat-turn cache's
+        # Dragonfly client + the wired KB embedder; disabled gracefully if
+        # either is unavailable (the turn just runs the pipeline as before).
+        app.state.semantic_cache = None
+        try:
+            from oneops.api.semantic_turn_cache import SemanticTurnCache
+            from oneops.use_cases.uc03_kb_lookup.kb_embed import get_kb_embed_fn
+            _sem_redis = getattr(app.state.chat_turn_cache, "_redis", None)
+            _sem_embed = get_kb_embed_fn()
+            if _sem_redis is not None and _sem_embed is not None:
+                _sem_ttl = int(os.getenv("SEMANTIC_TURN_CACHE_TTL_S", "600"))
+                app.state.semantic_cache = SemanticTurnCache(
+                    redis=_sem_redis, embed=_sem_embed, ttl_seconds=_sem_ttl)
+                _log.info("oneops.api.semantic_turn_cache_wired",
+                          ttl_seconds=_sem_ttl)
+            else:
+                _log.info("oneops.api.semantic_turn_cache_skipped",
+                          have_redis=_sem_redis is not None,
+                          have_embed=_sem_embed is not None)
+        except Exception as exc:                               # noqa: BLE001
+            _log.warning("oneops.api.semantic_turn_cache_wire_failed",
+                         error=str(exc)[:160])
+
         # UC-2 result cache rides on the same backend (key prefix
         # 'uc02:sim:' keeps it disjoint from chat-turn entries).
         try:
@@ -1519,11 +1546,35 @@ def build_app() -> FastAPI:
 
         rid = str(envelope.get("request_id") or "")
         sid = str(envelope.get("session_id") or "")
-        q = open_sink(rid)
+        tenant_id = str(envelope.get("tenant_id") or "")
+        role = str(envelope.get("role") or "")
+        message = str(envelope.get("message") or "")
 
         def _line(obj: dict[str, Any]) -> str:
             return _json.dumps(obj, default=str) + "\n"
 
+        # ── Semantic turn cache — cross-session consistency for standalone
+        # chat queries. A hit returns the IDENTICAL prior answer with no
+        # pipeline run, so LLM non-determinism cannot flip the result.
+        # Scoped to the chat door + standalone queries (no pronoun/record id)
+        # so focus context never leaks. Best-effort.
+        from oneops.api.chat_turn_cache import should_cache as _should_cache
+        from oneops.api.semantic_turn_cache import is_standalone as _is_standalone
+        sem = getattr(request.app.state, "semantic_cache", None)
+        sem_eligible = (door == "chat" and sem is not None
+                        and _is_standalone(message))
+        if sem_eligible:
+            cached = await sem.get(tenant_id=tenant_id, role=role, query=message)
+            if cached is not None:
+                cached = dict(cached)
+                cached["request_id"] = rid
+                cached["session_id"] = sid
+                yield _line({"type": "turn_start", "request_id": rid,
+                             "session_id": sid})
+                yield _line({"type": "final", "payload": cached})
+                return
+
+        q = open_sink(rid)
         task = _asyncio.ensure_future(
             _run(request, envelope, door=door, thread_id=rid, session_id=sid))
         try:
@@ -1556,6 +1607,13 @@ def build_app() -> FastAPI:
                         user_id=str(envelope.get("user_id") or ""),
                         title=str(envelope.get("message") or "")[:120],
                         bump_turn_count=True)
+                # Store the answer for future semantically-equivalent
+                # standalone queries (consistency). Only successful, useful
+                # responses are cached (same predicate as the turn cache).
+                if sem_eligible and _should_cache(payload):
+                    with suppress(Exception):
+                        await sem.put(tenant_id=tenant_id, role=role,
+                                      query=message, response=payload)
                 yield _line({"type": "final", "payload": payload})
                 break
         finally:

@@ -21,6 +21,7 @@ Spec conformance:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -107,11 +108,36 @@ def _audiences_for(context: dict[str, Any]) -> tuple[str, ...]:
     return get_field_policy().kb_audiences_for(role)
 
 
+_KB_ID_RE = re.compile(r"\b[A-Z]{2,4}\d{6,}\b")
+_KB_DANGLING_RE = re.compile(
+    r"\b(?:for|regarding|about|on|of|in|to|with|re)\s*$", re.IGNORECASE)
+
+
+def _kb_search_text(query: str) -> str:
+    """Strip canonical record ids (INC…/REQ…/PBM…/CHG…) from a KB query.
+
+    Knowledge-base articles are GENERAL content, not tied to a specific
+    record — an id attached upstream by the focus channel / rewriter (e.g.
+    "database connection fails for INC0001021") is pure noise that pollutes
+    both the embedding and the FTS match. Remove it plus any connector word
+    ("… for") left dangling. Never returns empty — falls back to the
+    original if stripping would clear the whole query (e.g. a bare id, which
+    should not have routed here anyway).
+    """
+    cleaned = _KB_ID_RE.sub("", query)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" ,")
+    prev = ""
+    while prev != cleaned:
+        prev = cleaned
+        cleaned = _KB_DANGLING_RE.sub("", cleaned).strip(" ,")
+    return cleaned or query
+
+
 async def search_kb(
     arguments: dict[str, Any], context: dict[str, Any]
 ) -> dict[str, Any]:
     """Keyword search of the published knowledge base, audience-scoped."""
-    query = str(arguments.get("query") or "").strip()
+    query = _kb_search_text(str(arguments.get("query") or "").strip())
     tenant_id = str(context.get("tenant_id") or "").strip()
 
     if not query:
@@ -452,6 +478,29 @@ async def get_kb_article(
     return _article("found", article_id, grounded, article)
 
 
+async def kb_backstop_answer(message: str, context: dict[str, Any]) -> str:
+    """Domain-oracle probe for the scope gates (control_gate / boundary).
+
+    Returns the composed KB answer when `message` genuinely matches authored
+    content (so it IS in-domain), else "". The published KB corpus is the
+    authoritative, data-driven domain signal — a query the KB can answer is
+    never wrongly refused as "out of scope", and a true off-topic query
+    matches nothing (search_kb's own relevance gate) so it is unaffected.
+    Deterministic (embedding similarity), so it removes the LLM scope
+    verdict's run-to-run / phrasing flip-flop. Best-effort — never raises.
+    """
+    msg = (message or "").strip()
+    if not msg:
+        return ""
+    try:
+        res = await search_kb({"query": msg}, context)
+        if isinstance(res, dict) and res.get("outcome") == "found":
+            return str(res.get("message") or "").strip()
+    except Exception as exc:                                # noqa: BLE001
+        _log.warning("uc03.kb_backstop.error", error=str(exc)[:160])
+    return ""
+
+
 async def search_kb_by_ticket(
     arguments: dict[str, Any], context: dict[str, Any]
 ) -> dict[str, Any]:
@@ -484,6 +533,24 @@ async def search_kb_by_ticket(
     hits = await get_kb_store().linked_to(
         entity_id=ticket_id, tenant_id=tenant_id, audiences=_audiences_for(context))
     if not hits:
+        # No KB is *linked* to this ticket. If the user actually expressed a
+        # content topic (e.g. "VPN error 809 for INC0001021" — the id was
+        # attached by the focus channel, not the user's intent), broaden to
+        # a general content search instead of dead-ending. Result-driven
+        # (an empty linked-set triggers the broadening) — NOT a heuristic
+        # threshold on the query. Reuses search_kb (which strips the id).
+        had_user_topic = bool(
+            str(arguments.get("user_message") or "").strip()
+            or str(arguments.get("query") or "").strip())
+        content_q = _kb_search_text(user_query)
+        if had_user_topic and content_q:
+            _log.info("uc03.search_kb_by_ticket.fallback_to_content",
+                      ticket_id=ticket_id, content_query=content_q[:80])
+            fb = await search_kb({"query": content_q}, context)
+            # search_kb has its own relevance gate — only return it when it
+            # genuinely matched, otherwise keep the linked-record answer.
+            if isinstance(fb, dict) and fb.get("outcome") == "found":
+                return fb
         return _search("no_match",
                        f"No knowledge-base article is linked to {ticket_id}.")
 
