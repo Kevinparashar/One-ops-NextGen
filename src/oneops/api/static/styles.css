@@ -1349,3 +1349,14 @@ details.uc08-alts[open] summary::before { transform: rotate(90deg); }
 .live-row .live-lat { color: var(--muted, #8b93a7); margin-left: auto; }
 .live-spin { display: inline-block; animation: live-pulse 1s ease-in-out infinite; }
 @keyframes live-pulse { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+/* Live row: explicit agent + tool naming (2026-06-02) */
+.live-line1 { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.live-tool {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #6ea8fe;
+    background: rgba(110,168,254,0.12);
+    border-radius: 4px;
+    padding: 0 5px;
+}
+.live-row .live-action { margin-left: 20px; display: block; }

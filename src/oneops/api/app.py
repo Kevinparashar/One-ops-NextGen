@@ -1109,6 +1109,17 @@ def build_app() -> FastAPI:
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+    @app.middleware("http")
+    async def _no_store_static(request: Request, call_next):
+        """Force browsers to always re-fetch JS/CSS. Without this a tab can
+        keep running a stale `app.js` after a frontend deploy (the cause of
+        'I don't see the new UI' — the SPA never re-downloads its bundle).
+        `no-store` makes every reload pull the current asset."""
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def _index() -> HTMLResponse:
         """Serve index.html with cache-busted asset URLs.

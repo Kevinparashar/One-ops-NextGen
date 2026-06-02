@@ -895,10 +895,12 @@
         if (!routingCleared) { routingRow.remove(); routingCleared = true; }
         const li = document.createElement("li");
         li.className = "live-row running";
+        // Name the real agent AND the real tool that is executing now.
         li.innerHTML =
-          '<span class="live-spin">⏳</span> <b>' + agentName(ev.agent_id) +
-          '</b> <span class="live-action">' +
-          ((ev.action || ev.tool_id || "") + "…") + "</span>";
+          '<div class="live-line1"><span class="live-spin">⏳</span> <b>' +
+          agentName(ev.agent_id) + " agent</b> is running " +
+          '<span class="live-tool">' + (ev.tool_id || "tool") + "</span></div>" +
+          (ev.action ? '<div class="live-action">↳ ' + ev.action + "…</div>" : "");
         list.appendChild(li);
         rows[keyOf(ev)] = li;
         conv.scrollTop = conv.scrollHeight;
@@ -907,10 +909,13 @@
         const ok = ev.status === "success";
         if (li) {
           li.className = "live-row " + (ok ? "done" : "failed");
-          li.innerHTML = (ok ? "✓" : "✗") + " <b>" + agentName(ev.agent_id) +
-            "</b> → " + ev.tool_id +
+          li.innerHTML =
+            '<div class="live-line1">' + (ok ? "✓" : "✗") + " <b>" +
+            agentName(ev.agent_id) + " agent</b> · " +
+            '<span class="live-tool">' + ev.tool_id + "</span>" +
             ' <span class="live-lat">' +
-            (ev.latency_ms != null ? ev.latency_ms + " ms" : "") + "</span>";
+            (ev.latency_ms != null ? ev.latency_ms + " ms" : "") +
+            "</span></div>";
         }
       }
     };
