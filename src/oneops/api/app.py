@@ -1489,6 +1489,117 @@ def build_app() -> FastAPI:
 
         return response
 
+    async def _stream_turn(request: Request, envelope: dict[str, Any], *,
+                           door: str):
+        """Run one turn and yield NDJSON live events, then a final payload.
+
+        Shared by the chat and fast-path (button) streaming doors so both
+        animate identically. Emits:
+          {"type":"turn_start"} → {"type":"tool_start"|"tool_done"}* →
+          {"type":"final","payload": <TurnResponse>}
+        Best-effort event sink keyed by request_id; the executor path is
+        unchanged whether or not anyone is streaming.
+        """
+        import asyncio as _asyncio
+        import json as _json
+
+        from oneops.observability.event_sink import close_sink, open_sink
+        from oneops.session.lifecycle import get_lifecycle
+
+        rid = str(envelope.get("request_id") or "")
+        sid = str(envelope.get("session_id") or "")
+        q = open_sink(rid)
+
+        def _line(obj: dict[str, Any]) -> str:
+            return _json.dumps(obj, default=str) + "\n"
+
+        task = _asyncio.ensure_future(
+            _run(request, envelope, door=door, thread_id=rid, session_id=sid))
+        try:
+            yield _line({"type": "turn_start", "request_id": rid,
+                         "session_id": sid})
+            while True:
+                getter = _asyncio.ensure_future(q.get())
+                done, _pending = await _asyncio.wait(
+                    {getter, task}, return_when=_asyncio.FIRST_COMPLETED)
+                if getter in done:
+                    yield _line(getter.result())
+                    continue
+                getter.cancel()
+                while not q.empty():                       # flush buffered
+                    yield _line(q.get_nowait())
+                try:
+                    resp = task.result()
+                    payload = (resp.model_dump()
+                               if hasattr(resp, "model_dump") else dict(resp))
+                except Exception as exc:                   # noqa: BLE001
+                    payload = {
+                        "door": door, "final_status": "failed",
+                        "final_response": f"stream error: {exc}",
+                        "step_results": [], "session_id": sid,
+                        "request_id": rid, "trace_id": None, "latency_ms": 0}
+                with suppress(Exception):
+                    await get_lifecycle().touch(
+                        tenant_id=str(envelope.get("tenant_id") or ""),
+                        session_id=sid,
+                        user_id=str(envelope.get("user_id") or ""),
+                        title=str(envelope.get("message") or "")[:120],
+                        bump_turn_count=True)
+                yield _line({"type": "final", "payload": payload})
+                break
+        finally:
+            close_sink(rid)
+            if not task.done():
+                task.cancel()
+
+    @app.post("/api/chat/stream")
+    async def _chat_stream(req: ChatRequest, request: Request):
+        """Live streaming variant of /api/chat (NDJSON).
+
+        Emits one JSON object per line as the turn executes:
+          {"type":"turn_start", ...}
+          {"type":"tool_start", agent_id, tool_id, action}   ← tool now running
+          {"type":"tool_done",  agent_id, tool_id, status, latency_ms}
+          {"type":"final", "payload": <full TurnResponse>}
+        Turn-cache is intentionally bypassed so the user always sees the
+        agents + tools do the work. Same handler/pipeline as /api/chat, so
+        the final payload is identical — only the transport differs.
+        """
+        from fastapi.responses import StreamingResponse
+
+        from oneops.session.lifecycle import get_lifecycle
+
+        tenant_id, user_id, role = _principal_from_headers(request)
+        request_id = _new_request_id()
+        lifecycle = get_lifecycle()
+        client_sid = (req.session_id or "").strip()
+        if client_sid:
+            existing = await lifecycle.get(
+                tenant_id=tenant_id, session_id=client_sid)
+            if existing is None:
+                fresh = await lifecycle.create(
+                    tenant_id=tenant_id, user_id=user_id,
+                    title=(req.message or "")[:120], session_id=client_sid)
+                session_id = (fresh.session_id if fresh is not None
+                              else client_sid)
+            else:
+                session_id = client_sid
+        else:
+            fresh = await lifecycle.create(
+                tenant_id=tenant_id, user_id=user_id,
+                title=(req.message or "")[:120])
+            session_id = (fresh.session_id if fresh is not None
+                          else _new_session_id())
+
+        envelope: dict[str, Any] = {
+            "request_id": request_id, "tenant_id": tenant_id,
+            "session_id": session_id, "user_id": user_id, "role": role,
+            "message": req.message,
+        }
+        return StreamingResponse(
+            _stream_turn(request, envelope, door="chat"),
+            media_type="application/x-ndjson")
+
     # ── chat door (WebSocket) ─────────────────────────────────────────
     # Production topology (per architecture plan):
     #   Browser ── WebSocket ──> AWS API Gateway (WebSocket API) ──>
@@ -1717,6 +1828,74 @@ def build_app() -> FastAPI:
             except Exception:                                       # noqa: BLE001
                 pass
         return response
+
+    @app.post("/api/fast/{uc_id}/stream")
+    async def _fast_path_stream(
+        uc_id: str = Path(..., min_length=1),
+        req: FastPathPostRequest | None = None,
+        request: Request = None,                # type: ignore[assignment]
+    ):
+        """Live streaming variant of the fast-path button (NDJSON).
+
+        Same event shape as /api/chat/stream, so the button animates its
+        agents + tools identically. Edge-cache is bypassed so the work is
+        always visibly executed.
+        """
+        import json as _json
+
+        from fastapi.responses import StreamingResponse
+
+        tenant_id, user_id, role = _principal_from_headers(request)
+        request_id = _new_request_id()
+        session_id = ((req and req.session_id) or _new_session_id()).strip()
+        inputs = (req.inputs if req else {}) or {}
+
+        try:
+            dispatch = app.state.dispatcher.dispatch(
+                FastPathRequest(uc_id=uc_id, inputs=inputs))
+        except FastPathError as exc:
+            _log.info("fast_path.stream.input_clarification",
+                      uc_id=uc_id, error=str(exc)[:200])
+            primary = next(iter(inputs.values()), "") if inputs else ""
+            primary_text = f" '{primary}'" if primary else ""
+            payload = TurnResponse(
+                door="fast_path", request_id=request_id, trace_id=None,
+                session_id=session_id, final_status="clarification",
+                final_response=(
+                    "I couldn't act on that input" + primary_text +
+                    ". Please provide a complete record id (for example "
+                    "INC0001001, REQ0002001, PBM0003001, CHG0004001) and "
+                    "try again."),
+                step_results=[], router_diagnostics=[], latency_ms=0,
+                summarizer_wired=_summarizer_is_wired(),
+                cache_hit=None, cache_age_s=None,
+            ).model_dump()
+
+            async def _clarify():
+                yield _json.dumps({"type": "turn_start",
+                                   "request_id": request_id,
+                                   "session_id": session_id}) + "\n"
+                yield _json.dumps({"type": "final", "payload": payload},
+                                  default=str) + "\n"
+
+            return StreamingResponse(_clarify(),
+                                     media_type="application/x-ndjson")
+
+        plan_state = [
+            {"step_id": s.step_id, "agent_id": s.agent_id,
+             "parameters": dict(s.parameters), "depends_on": list(s.depends_on)}
+            for s in dispatch.plan.steps
+        ]
+        envelope: dict[str, Any] = {
+            "request_id": request_id, "tenant_id": tenant_id,
+            "session_id": session_id, "user_id": user_id, "role": role,
+            "message": _humanise_fast_path_request(uc_id, inputs),
+            "plan": plan_state, "route_outcome": "routed",
+            "entry_mode": "fast_path",
+        }
+        return StreamingResponse(
+            _stream_turn(request, envelope, door="fast_path"),
+            media_type="application/x-ndjson")
 
     return app
 

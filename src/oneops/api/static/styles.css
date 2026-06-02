@@ -1284,3 +1284,68 @@ details.uc08-alts[open] summary::before { transform: rotate(90deg); }
     .uc08-fields-2col { grid-template-columns: 1fr; }
     .uc08-row-wide { grid-column: span 1; }
 }
+
+/* ── Execution trace — "which agents + tools ran this query" (2026-06-02) ─
+   One collapsible panel per turn, identical for chat + fast-path doors. */
+.exec-trace {
+    margin-top: 10px;
+    border-top: 1px dashed var(--border, #2a2f3a);
+    padding-top: 6px;
+    font-size: 12px;
+}
+.exec-trace > summary {
+    cursor: pointer;
+    color: var(--muted, #8b93a7);
+    list-style: none;
+    user-select: none;
+}
+.exec-trace > summary::-webkit-details-marker { display: none; }
+.exec-trace > summary::before { content: "▸ "; }
+.exec-trace[open] > summary::before { content: "▾ "; }
+.exec-trace > summary:hover { color: var(--fg, #e6e9ef); }
+.exec-trace-rows {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0 0 0 4px;
+}
+.exec-trace-row {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 2px 0;
+    white-space: nowrap;
+    overflow-x: auto;
+}
+.exec-trace-row.ok { color: #5bd6a0; }
+.exec-trace-row.bad { color: #ff6b6b; }
+.exec-trace-row.neutral { color: var(--muted, #8b93a7); }
+.exec-trace-link {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 11px;
+    color: #6ea8fe;
+    text-decoration: none;
+}
+.exec-trace-link:hover { text-decoration: underline; }
+
+/* ── Live activity — agents + tools lighting up as a turn runs (2026-06-02) */
+.live-head {
+    color: var(--muted, #8b93a7);
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+.live-activity { list-style: none; margin: 0; padding: 0; }
+.live-row {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    padding: 3px 0;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.live-row.running { color: var(--fg, #e6e9ef); }
+.live-row.done { color: #5bd6a0; }
+.live-row.failed { color: #ff6b6b; }
+.live-row .live-action { color: var(--muted, #8b93a7); }
+.live-row .live-lat { color: var(--muted, #8b93a7); margin-left: auto; }
+.live-spin { display: inline-block; animation: live-pulse 1s ease-in-out infinite; }
+@keyframes live-pulse { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }

@@ -557,13 +557,82 @@
         // its children up so we keep ONE outer wrapper.
         while (sub.firstChild) wrapper.appendChild(sub.firstChild);
       });
-      return wrapper;
+    } else {
+      // Single-step (or empty) path — original behavior.
+      const single = renderSingleStep(payload, steps[0] || {});
+      while (single.firstChild) wrapper.appendChild(single.firstChild);
     }
 
-    // Single-step (or empty) path — original behavior.
-    const single = renderSingleStep(payload, steps[0] || {});
-    while (single.firstChild) wrapper.appendChild(single.firstChild);
+    // ── execution trace — which agents + tools handled this turn ──────
+    // One panel per turn, identical for chat AND button (both doors render
+    // through this function). Built from the RAW step_results so it shows
+    // every executed step, not the deduped answer view.
+    const trace = buildExecutionTrace(payload);
+    if (trace) wrapper.appendChild(trace);
     return wrapper;
+  }
+
+  // Collapsible "How this was answered" panel: agent → tool → status →
+  // latency for each executed step, with a deep-link to the full Tempo
+  // trace. Returns null when the turn has no steps (e.g. a cached turn).
+  function buildExecutionTrace(payload) {
+    const steps = payload.step_results || [];
+    if (!steps.length) return null;
+
+    const agentLabel = (id) =>
+      String(id || "").replace(/^uc\d+_/, "").replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
+
+    const agents = new Set();
+    const tools = new Set();
+    steps.forEach((s) => {
+      if (s.agent_id) agents.add(s.agent_id);
+      if (s.tool_id) tools.add(s.tool_id);
+    });
+
+    const details = document.createElement("details");
+    details.className = "exec-trace";
+
+    const summary = document.createElement("summary");
+    const total = (payload.latency_ms != null)
+      ? " · " + (payload.latency_ms / 1000).toFixed(1) + "s" : "";
+    const plural = (n) => (n === 1 ? "" : "s");
+    summary.textContent =
+      `How this was answered — ${agents.size} agent${plural(agents.size)}` +
+      (tools.size ? ` · ${tools.size} tool${plural(tools.size)}` : "") + total;
+    details.appendChild(summary);
+
+    const ul = document.createElement("ul");
+    ul.className = "exec-trace-rows";
+    steps.forEach((s) => {
+      const li = document.createElement("li");
+      const ok = s.status === "success";
+      const failed = s.status === "failed";
+      li.className = "exec-trace-row " + (ok ? "ok" : (failed ? "bad" : "neutral"));
+      const badge = ok ? "✓" : (failed ? "✗" : "•");
+      const tool = s.tool_id ? " → " + s.tool_id : "";
+      const lat = (s.latency_ms != null) ? "  ·  " + s.latency_ms + " ms" : "";
+      li.textContent = `${badge}  ${agentLabel(s.agent_id)}${tool}  (${s.status})${lat}`;
+      ul.appendChild(li);
+    });
+    details.appendChild(ul);
+
+    if (payload.trace_id) {
+      const url = "http://localhost:3041/explore?orgId=1&left=" +
+        encodeURIComponent(JSON.stringify({
+          datasource: "Tempo",
+          queries: [{ query: payload.trace_id, queryType: "traceql" }],
+          range: { from: "now-1h", to: "now" },
+        }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.className = "exec-trace-link";
+      a.textContent = "Open full trace in Tempo →";
+      details.appendChild(a);
+    }
+    return details;
   }
 
   function renderSingleStep(payload, step) {
@@ -783,6 +852,134 @@
 
   // ── chat door ────────────────────────────────────────────────────────
 
+  // Shared live-streaming turn driver — used by BOTH the chat door and the
+  // fast-path buttons. Renders a live "working" panel whose rows light up as
+  // each agent/tool runs (Claude-style), then the final answer + trace panel.
+  async function streamTurnInto({ url, body, door, statusLabel }) {
+    const pending = addPending({ door, text: "Working on it…" });
+    setStatus(statusLabel || "Working…", "busy");
+
+    const bubble = pending.querySelector(".bubble");
+    bubble.textContent = "";
+    const head = document.createElement("div");
+    head.className = "live-head";
+    head.textContent = "Working on it…";
+    bubble.appendChild(head);
+    const list = document.createElement("ul");
+    list.className = "live-activity";
+    bubble.appendChild(list);
+
+    // Immediate "routing" row so the panel is never blank during the
+    // decompose/route/disambiguate phase (which precedes the first tool).
+    const routingRow = document.createElement("li");
+    routingRow.className = "live-row running";
+    routingRow.innerHTML =
+      '<span class="live-spin">🧭</span> ' +
+      '<span class="live-action">Understanding your request &amp; selecting agents…</span>';
+    list.appendChild(routingRow);
+    let routingCleared = false;
+    // Keep the live panel on screen for at least this long so the
+    // "agents + tools working" phase is always perceptible — even when a
+    // cached result makes the tools finish in milliseconds.
+    const panelStart = performance.now();
+    const MIN_PANEL_MS = 1100;
+
+    const agentName = (id) => String(id || "")
+      .replace(/^uc\d+_/, "").replace(/_/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
+    const rows = {};
+    const keyOf = (ev) => ev.step_id || (ev.agent_id + "::" + ev.tool_id);
+
+    const onEvent = (ev) => {
+      if (ev.type === "tool_start") {
+        if (!routingCleared) { routingRow.remove(); routingCleared = true; }
+        const li = document.createElement("li");
+        li.className = "live-row running";
+        li.innerHTML =
+          '<span class="live-spin">⏳</span> <b>' + agentName(ev.agent_id) +
+          '</b> <span class="live-action">' +
+          ((ev.action || ev.tool_id || "") + "…") + "</span>";
+        list.appendChild(li);
+        rows[keyOf(ev)] = li;
+        conv.scrollTop = conv.scrollHeight;
+      } else if (ev.type === "tool_done") {
+        const li = rows[keyOf(ev)];
+        const ok = ev.status === "success";
+        if (li) {
+          li.className = "live-row " + (ok ? "done" : "failed");
+          li.innerHTML = (ok ? "✓" : "✗") + " <b>" + agentName(ev.agent_id) +
+            "</b> → " + ev.tool_id +
+            ' <span class="live-lat">' +
+            (ev.latency_ms != null ? ev.latency_ms + " ms" : "") + "</span>";
+        }
+      }
+    };
+
+    try {
+      const res = await fetch(url, {
+        method: "POST", headers: envelopeHeaders(),
+        body: JSON.stringify(body),
+      });
+      if (!res.ok || !res.body) {
+        const txt = await res.text().catch(() => res.statusText);
+        pending.remove();
+        addAssistantBubble({ door, error: true,
+          text: `HTTP ${res.status}: ${txt}` });
+        setStatus("Turn failed.", "error");
+        return null;
+      }
+      // Read the NDJSON stream line-by-line, updating the live panel.
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      let finalPayload = null;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line) continue;
+          let ev;
+          try { ev = JSON.parse(line); } catch (_) { continue; }
+          if (ev.type === "final") finalPayload = ev.payload;
+          else onEvent(ev);
+        }
+      }
+      // Hold the live panel briefly so the working phase is always seen.
+      const shownFor = performance.now() - panelStart;
+      if (shownFor < MIN_PANEL_MS) {
+        await new Promise((r) => setTimeout(r, MIN_PANEL_MS - shownFor));
+      }
+      pending.remove();
+      if (finalPayload) {
+        addAssistantBubble({
+          door,
+          meta: metaForPayload(finalPayload),
+          content: renderResponseContent(finalPayload),
+        });
+        sessionId = finalPayload.session_id || sessionId;
+        saveSessionId(sessionId);
+        renderSession();
+        tallyTurn(finalPayload);
+        setStatus("Ready.");
+        refreshThreadList();
+        return finalPayload;
+      }
+      addAssistantBubble({ door, error: true,
+        text: "No final response received from the stream." });
+      setStatus("Turn incomplete.", "error");
+      return null;
+    } catch (err) {
+      pending.remove();
+      addAssistantBubble({ door, error: true, text: String(err) });
+      setStatus("Error: " + err, "error");
+      return null;
+    }
+  }
+
   $("#chat-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const input = $("#chat-input");
@@ -790,37 +987,12 @@
     if (!msg) return;
     input.value = "";
     addUserBubble({ door: "chat", text: msg });
-    const pending = addPending({ door: "chat", text: "thinking…" });
-    setStatus("Submitting chat turn…", "busy");
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST", headers: envelopeHeaders(),
-        body: JSON.stringify({ message: msg, session_id: sessionId }),
-      });
-      const payload = await res.json();
-      pending.remove();
-      if (!res.ok) {
-        addAssistantBubble({ door: "chat", error: true,
-          text: `HTTP ${res.status}: ${payload.detail || res.statusText}` });
-        setStatus("Chat turn failed.", "error");
-      } else {
-        addAssistantBubble({
-          door: "chat",
-          meta: metaForPayload(payload),
-          content: renderResponseContent(payload),
-        });
-        sessionId = payload.session_id || sessionId;
-        saveSessionId(sessionId);
-        renderSession();
-        tallyTurn(payload);
-        setStatus("Ready.");
-        refreshThreadList();
-      }
-    } catch (err) {
-      pending.remove();
-      addAssistantBubble({ door: "chat", error: true, text: String(err) });
-      setStatus("Chat error: " + err, "error");
-    }
+    await streamTurnInto({
+      url: "/api/chat/stream",
+      body: { message: msg, session_id: sessionId },
+      door: "chat",
+      statusLabel: "Working…",
+    });
   });
 
   function metaForPayload(p) {
@@ -963,37 +1135,14 @@
     const firstValue = Object.values(inputsValues)[0] || "";
     const userText = `${humaniseUcId(spec.uc_id)} "${firstValue}"`;
     addUserBubble({ door: "fast_path", text: userText });
-    const pending = addPending({ door: "fast_path", text: "running…" });
-    setStatus(`Running ${spec.uc_id}…`, "busy");
-    try {
-      const res = await fetch(`/api/fast/${encodeURIComponent(spec.uc_id)}`, {
-        method: "POST", headers: envelopeHeaders(),
-        body: JSON.stringify({ inputs: inputsValues, session_id: sessionId }),
-      });
-      const payload = await res.json();
-      pending.remove();
-      if (!res.ok) {
-        addAssistantBubble({ door: "fast_path", error: true,
-          text: `HTTP ${res.status}: ${payload.detail || res.statusText}` });
-        setStatus(spec.uc_id + " failed.", "error");
-      } else {
-        addAssistantBubble({
-          door: "fast_path",
-          meta: metaForPayload(payload),
-          content: renderResponseContent(payload),
-        });
-        sessionId = payload.session_id || sessionId;
-        saveSessionId(sessionId);
-        renderSession();
-        tallyTurn(payload);
-        setStatus("Ready.");
-        refreshThreadList();
-      }
-    } catch (err) {
-      pending.remove();
-      addAssistantBubble({ door: "fast_path", error: true, text: String(err) });
-      setStatus("Error: " + err, "error");
-    }
+    // Live streaming door — same panel as chat, so the button shows its
+    // agents + tools working in real time too.
+    await streamTurnInto({
+      url: `/api/fast/${encodeURIComponent(spec.uc_id)}/stream`,
+      body: { inputs: inputsValues, session_id: sessionId },
+      door: "fast_path",
+      statusLabel: `Running ${spec.uc_id}…`,
+    });
   }
 
   loadFastPathActions();

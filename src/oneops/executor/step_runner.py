@@ -26,7 +26,19 @@ from typing import Any, Protocol
 
 from oneops.errors import ToolHandlerError
 from oneops.observability import get_logger, get_tracer
+from oneops.observability.event_sink import publish as _publish_event
 from oneops.observability.metrics import increment as _metric_inc
+
+
+def _tool_action(tool: Any) -> str:
+    """A one-line, human 'what this tool does' phrase for the live UI —
+    derived from the tool's REGISTRY description (first sentence). No static
+    per-tool phrase catalogue: it tracks whatever the registry declares."""
+    desc = (getattr(tool, "description", "") or "").strip()
+    if not desc:
+        return ""
+    first = desc.replace("\n", " ").split(". ")[0].strip().rstrip(".")
+    return first[:160]
 
 _log = get_logger("oneops.executor.step_runner")
 _tracer = get_tracer("oneops.executor.step_runner")
@@ -41,15 +53,24 @@ class StepExecutor(Protocol):
 
 
 def make_result(
-    step: dict[str, Any], *, status: str, output: Any = None, error: str | None = None
+    step: dict[str, Any], *, status: str, output: Any = None,
+    error: str | None = None, tool_id: str = "", latency_ms: int | None = None,
 ) -> dict[str, Any]:
-    """Build a well-formed step-result dict."""
+    """Build a well-formed step-result dict.
+
+    `tool_id` + `latency_ms` surface which tool the executor invoked for this
+    step and how long it took. They feed the UI's execution-trace panel
+    ("which agents + tools ran this query") and are additive, optional fields
+    on the response contract — older consumers ignore them.
+    """
     return {
         "step_id": step.get("step_id"),
         "agent_id": step.get("agent_id"),
         "status": status,
         "output": output,
         "error": error,
+        "tool_id": tool_id,
+        "latency_ms": latency_ms,
     }
 
 
@@ -294,6 +315,17 @@ class HandlerStepExecutor:
         arguments = dict(step.get("parameters") or {})
         context = _build_handler_context(request)
 
+        # Live UI: announce the tool is now executing (no-op unless a
+        # streaming sink is open for this request).
+        rid = str(request.get("request_id") or "")
+        _publish_event(rid, {
+            "type": "tool_start",
+            "step_id": step.get("step_id") or "",
+            "agent_id": agent_id,
+            "tool_id": tool_id,
+            "action": _tool_action(tool),
+        })
+
         with _tracer.start_as_current_span(
             "executor.step.handler_call",
             attributes={
@@ -327,10 +359,15 @@ class HandlerStepExecutor:
                 _log.warning("executor.step.timeout",
                              agent_id=agent_id, tool_id=tool_id,
                              timeout_s=timeout_s)
+                _publish_event(rid, {
+                    "type": "tool_done", "step_id": step.get("step_id") or "",
+                    "agent_id": agent_id, "tool_id": tool_id,
+                    "status": "failed", "latency_ms": latency_ms})
                 return make_result(
                     step, status="failed",
                     error=f"handler timed out after {timeout_s:.1f}s "
-                          f"(tool={tool_id})")
+                          f"(tool={tool_id})",
+                    tool_id=tool_id, latency_ms=latency_ms)
             except Exception as exc:                      # noqa: BLE001 — boundary
                 latency_ms = int((time.monotonic() - t0) * 1000)
                 span.set_attribute("error", True)
@@ -338,13 +375,23 @@ class HandlerStepExecutor:
                 _log.warning("executor.step.handler_raised",
                              agent_id=agent_id, tool_id=tool_id,
                              error=str(exc)[:200])
+                _publish_event(rid, {
+                    "type": "tool_done", "step_id": step.get("step_id") or "",
+                    "agent_id": agent_id, "tool_id": tool_id,
+                    "status": "failed", "latency_ms": latency_ms})
                 return make_result(
                     step, status="failed",
-                    error=f"handler raised {type(exc).__name__}: {exc}")
+                    error=f"handler raised {type(exc).__name__}: {exc}",
+                    tool_id=tool_id, latency_ms=latency_ms)
             latency_ms = int((time.monotonic() - t0) * 1000)
             span.set_attribute("step.status", "success")
             span.set_attribute("step.latency_ms", latency_ms)
-            return make_result(step, status="success", output=output)
+            _publish_event(rid, {
+                "type": "tool_done", "step_id": step.get("step_id") or "",
+                "agent_id": agent_id, "tool_id": tool_id,
+                "status": "success", "latency_ms": latency_ms})
+            return make_result(step, status="success", output=output,
+                               tool_id=tool_id, latency_ms=latency_ms)
 
 
 def _build_handler_context(request: dict[str, Any]) -> dict[str, Any]:
