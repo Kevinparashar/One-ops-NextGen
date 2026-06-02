@@ -30,10 +30,13 @@ _tracer = get_tracer("oneops.router.decompose")
 
 
 def planner_emit_bindings_enabled() -> bool:
-    """Feature flag (default OFF). When off, the decomposer prompt + parsing
-    are byte-identical to before — zero routing impact. Flip on only after the
-    routing regression suite is green with it on (D4 gate)."""
-    return os.getenv("ONEOPS_PLANNER_EMIT_BINDINGS", "").strip().lower() in (
+    """Feature flag (default ON as of D4 enable). Data-flow binding was validated
+    end-to-end (PBM root_cause → KB) and the full devils + unit + integration
+    cycle came back clean against baseline with it on, so it now ships enabled.
+    Set ONEOPS_PLANNER_EMIT_BINDINGS to 0/false/no/off to disable (kill-switch).
+    When disabled, the decomposer prompt + parsing are byte-identical to before —
+    bindings are pure enrichment, so off is a safe, zero-impact rollback."""
+    return os.getenv("ONEOPS_PLANNER_EMIT_BINDINGS", "1").strip().lower() in (
         "1", "true", "yes", "on")
 
 
@@ -248,55 +251,49 @@ Return STRICT JSON ONLY in the shape shown above:
 # LLM to declare a data-flow edge when a later ask consumes an earlier result.
 _BINDINGS_PROMPT = """\
 
-## Data-flow bindings — the ENTITY-vs-PRODUCED-VALUE decision
+## Data-flow bindings — ADDITIVE enrichment, never a replacement
 
-A later sub-query can refer back to an earlier one in TWO different ways. Tell
-them apart — they are handled oppositely:
+Resolve every back-reference the normal way FIRST: follow the Inlining rule —
+INLINE the canonical entity id into the dependent sub-query and set depends_on.
+That keeps each sub-query self-contained and routable on its own. This never
+changes.
 
-1. ENTITY reference — the later ask points at a RECORD the user already named
-   ("it", "this incident", "that ticket", "this change"). The entity id is
-   known NOW, so resolve it the normal way: INLINE the canonical id and set
-   depends_on. NO binding. (This is the Inlining rule above — unchanged.)
+THEN, and only additionally, when the later ask consumes a VALUE the earlier
+sub-query PRODUCES (not the record itself) — "the root cause it surfaces", "the
+error it returns", "whatever CIs it finds", "that risk score", "the workaround
+it gives" — add a `bindings` entry as an ENRICHMENT hint that carries that value
+from the earlier sub-query:
+  {"from":"sq1","from_field":"<field sq1 produces>","to_param":"<the later input>"}
 
-2. PRODUCED-VALUE reference — the later ask needs a VALUE that the earlier
-   sub-query COMPUTES OR SURFACES and that does NOT exist until it runs:
-   "the root cause it surfaces", "the error it returns", "whatever CIs it
-   finds", "that risk score", "the workaround it gives". You CANNOT inline a
-   value you do not have yet. Instead:
-     • write the later sub-query text WITHOUT the missing value (generic — describe
-       the ask, e.g. "find KB for the root cause"), AND
-     • add a `bindings` entry carrying that value from the earlier sub-query:
-       {"from":"sq1","from_field":"<field sq1 produces>","to_param":"<the later input>"}
-     • set depends_on too (a binding always implies ordering).
+The binding is a HINT, not a replacement:
+  - ALWAYS keep the inlined entity in the text (never strip it). If the produced
+    value is available at runtime the step is enriched with it; if not, the
+    inlined text alone still gives a correct, self-contained query.
+  - This is why a binding can never make a query worse than plain inlining.
 
-Decision test: "Could I write the exact value into the text right now?" If it is
-an id the user typed → yes → inline (case 1). If it only exists AFTER the earlier
-step runs → no → bind (case 2). When unsure, prefer a binding over fabricating a
-value.
-
-Contrast (same shape, opposite handling):
+Examples (note: BOTH keep the entity inlined; the second ALSO adds a hint):
 
 INPUT: "details of INC0001001 and any docs for it"
 OUTPUT:
-{"reasoning":"'it' = the named entity INC0001001 (known now) → inline, no binding",
+{"reasoning":"'it' = entity INC0001001 → inline; pure record reference, no produced value",
  "subqueries":[
    {"id":"sq1","text":"details of INC0001001","depends_on":[]},
    {"id":"sq2","text":"any docs for INC0001001","depends_on":["sq1"]}]}
 
 INPUT: "summarize INC0001001 and find KB for the root cause it surfaces"
 OUTPUT:
-{"reasoning":"'the root cause it surfaces' = a VALUE sq1 produces, not known now → bind, generic text",
+{"reasoning":"sq2 consumes the root cause sq1 produces → inline the entity AND add an enrichment binding",
  "subqueries":[
    {"id":"sq1","text":"summarize INC0001001","depends_on":[]},
-   {"id":"sq2","text":"find KB for the root cause","depends_on":["sq1"],
+   {"id":"sq2","text":"find KB for the root cause of INC0001001","depends_on":["sq1"],
     "bindings":[{"from":"sq1","from_field":"root_cause","to_param":"query"}]}]}
 
 Rules:
   - Most splits need NO bindings — omit the field entirely.
+  - NEVER strip the entity to add a binding; the binding is always extra.
   - `from` MUST be an earlier sub-query id; never bind a sub-query to itself
     and never form a cycle (the dependency graph stays acyclic).
-  - `from_field` and `to_param` are NAMES, not values — never invent or inline
-    a value you do not have; deferring it to runtime is the whole point."""
+  - `from_field` and `to_param` are NAMES, not values — never invent a value."""
 
 
 class LlmDecomposer:

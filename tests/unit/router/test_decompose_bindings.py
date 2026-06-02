@@ -1,7 +1,8 @@
-"""D4 — planner emits data-flow bindings (flag-gated, default OFF).
+"""D4 — planner emits data-flow bindings (flag-gated, default ON as of enable).
 
-The decomposer only parses/asks-for bindings when ONEOPS_PLANNER_EMIT_BINDINGS
-is on; with it off the output is byte-identical to before (zero routing risk).
+The decomposer parses/asks-for bindings by default; setting
+ONEOPS_PLANNER_EMIT_BINDINGS to 0/false/no/off restores byte-identical-to-before
+output (the kill-switch — bindings are enrichment, so disabling is zero-risk).
 """
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ from oneops.router.decompose import (
     SubQuery,
     _parse_bindings,
     _sanitize_subqueries,
+    planner_emit_bindings_enabled,
 )
 
 _DOC_WITH_BINDINGS = (
@@ -42,12 +44,20 @@ _CTX = {"tenant_id": "t", "user_id": "u", "request_id": "r"}
 
 
 async def test_flag_off_drops_bindings(monkeypatch):
-    monkeypatch.delenv("ONEOPS_PLANNER_EMIT_BINDINGS", raising=False)
+    # Default is now ON (D4 enabled), so OFF must be requested explicitly via the
+    # kill-switch — this asserts the disable path still strips bindings cleanly.
+    monkeypatch.setenv("ONEOPS_PLANNER_EMIT_BINDINGS", "0")
     dec = LlmDecomposer(_FakeGateway(_DOC_WITH_BINDINGS))
     subs = await dec.decompose("summarize INC0001001 and find kb for root cause",
                                request_ctx=_CTX)
     sq2 = next(s for s in subs if s.id == "sq2")
     assert sq2.bindings == ()                 # parsed away when flag off
+
+
+def test_flag_defaults_on_when_env_unset(monkeypatch):
+    # D4 enable: with the env var absent the feature is ON (was OFF pre-enable).
+    monkeypatch.delenv("ONEOPS_PLANNER_EMIT_BINDINGS", raising=False)
+    assert planner_emit_bindings_enabled() is True
 
 
 async def test_flag_on_parses_bindings(monkeypatch):
