@@ -29,6 +29,14 @@ PAIRS = [
 
 @pytest.fixture
 def store() -> InMemoryKbStore:
+    # Order-independence: reset the KB global singletons so a leftover embed_fn /
+    # relevance_scorer from another test can't perturb this scorecard.
+    from oneops.use_cases.uc03_kb_lookup.kb_embed import (
+        set_kb_embed_fn,
+        set_kb_relevance_scorer,
+    )
+    set_kb_embed_fn(None)
+    set_kb_relevance_scorer(None)
     s = InMemoryKbStore()
     s.seed(kb_id="KB0001", tenant_id="T1", title="Fix VPN disconnects on Wi-Fi handoff",
            summary="Resolve VPN tunnel drops when roaming between APs",

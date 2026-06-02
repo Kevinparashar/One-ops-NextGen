@@ -17,6 +17,17 @@ from oneops.use_cases.uc03_kb_lookup.handlers import (
 
 @pytest.fixture
 def store() -> InMemoryKbStore:
+    # Reset the module-global KB singletons so these tests are ORDER-INDEPENDENT:
+    # another test elsewhere may have left a real embed_fn / relevance_scorer
+    # installed, which would change retrieval behaviour here (the cause of
+    # full-suite-only uc03 flakes). Start every test from a clean, deterministic
+    # in-memory state.
+    from oneops.use_cases.uc03_kb_lookup.kb_embed import (
+        set_kb_embed_fn,
+        set_kb_relevance_scorer,
+    )
+    set_kb_embed_fn(None)
+    set_kb_relevance_scorer(None)
     s = InMemoryKbStore()
     s.seed(kb_id="KB0001", tenant_id="T1", title="Fix VPN disconnects",
            summary="Resolve VPN tunnel drops", content="update the vpn client",
