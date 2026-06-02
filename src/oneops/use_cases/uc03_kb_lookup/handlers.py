@@ -81,6 +81,33 @@ def _article(outcome: str, article_id: str, message: str,
                            message=message, article=article).to_dict()
 
 
+# The exact signature of the composer's no-match template (answer_composer.py).
+# The LLM composer is INSTRUCTED to render present articles and emit this only
+# for an empty list — but being an LLM it can disobey on vaguely-worded queries.
+_COMPOSER_NO_MATCH_SIGNATURE = "No matching knowledge-base article was found"
+
+
+def _composer_wrongly_said_no_match(text: str) -> bool:
+    """True when a composer reply is empty or a no-match template even though
+    articles ARE present. The found/no-match OUTCOME is the handler's decision
+    (it knows the article list), not the LLM's — this lets the handler ENFORCE
+    that contract in code: articles present ⇒ the user sees them, never a
+    composer-emitted 'no match'."""
+    t = (text or "").strip()
+    return (not t) or (_COMPOSER_NO_MATCH_SIGNATURE in t)
+
+
+async def _render_present_articles(
+    query: str, hits: list[dict[str, Any]], context: dict[str, Any],
+) -> str:
+    """Deterministic, reliable rendering of articles the gate already passed —
+    used when the LLM composer empty/no-matched despite present articles."""
+    return await DeterministicComposer().compose(
+        query=query, articles=[dict(h) for h in hits],
+        tenant_id=str(context.get("tenant_id") or ""),
+        user_id=str(context.get("user_id") or ""))
+
+
 def _preview(article: dict[str, Any]) -> dict[str, Any]:
     """A compact, citation-ready preview of one article for a result list.
 
@@ -373,6 +400,15 @@ async def search_kb(
             "no_match",
             grounded or ("No published knowledge-base article matched "
                          "that query."))
+
+    # CODE-ENFORCED CONTRACT (same as search_kb_by_ticket): articles passed the
+    # relevance gate → the user MUST see them. The LLM composer writes phrasing
+    # only; if it emitted empty/no-match despite present articles, render them
+    # deterministically rather than show a false "no match".
+    if _composer_wrongly_said_no_match(grounded):
+        _log.warning("uc03.search_kb.composer_no_match_override",
+                     articles=len(hits))
+        grounded = await _render_present_articles(query, hits, context)
 
     articles = tuple(_preview(h) for h in hits)
     return _search(
@@ -674,6 +710,17 @@ async def search_kb_by_ticket(
         _log.warning("uc03.search_kb_by_ticket.compose_failed",
                      error=str(exc)[:200])
         grounded = ""
+
+    # CODE-ENFORCED CONTRACT: these articles are LINKED to the ticket AND passed
+    # the relevance gate — the found/no-match OUTCOME is decided here, not by the
+    # LLM. The composer writes phrasing only; it must not flip a found result to
+    # a no-match. If it emitted empty/no-match anyway (LLM disobeyed its
+    # render-linked-articles instruction on a vague query), render the present
+    # articles deterministically so the user always sees the article we found.
+    if _composer_wrongly_said_no_match(grounded):
+        _log.warning("uc03.search_kb_by_ticket.composer_no_match_override",
+                     ticket_id=ticket_id, articles=len(hits))
+        grounded = await _render_present_articles(user_query, hits, context)
 
     articles = tuple(_preview(h) for h in hits)
     return _search(
