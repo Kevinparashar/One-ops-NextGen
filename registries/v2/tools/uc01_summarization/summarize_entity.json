@@ -29,7 +29,7 @@
         },
         {
           "data_classification": "internal",
-          "description": "Tenant scope \u2014 supplied from the request envelope, never user text.",
+          "description": "Tenant scope — supplied from the request envelope, never user text.",
           "name": "tenant_id",
           "required": true,
           "type": "str"
@@ -48,7 +48,13 @@
       "status": "active",
       "timeout_ms": 60000,
       "updated_at": "2026-05-20T10:49:43.471410+00:00",
-      "version": 1
+      "version": 1,
+      "output_fields": [
+        "outcome",
+        "ticket_id",
+        "summary",
+        "message"
+      ]
     }
   }
 }

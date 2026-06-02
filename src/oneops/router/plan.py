@@ -207,6 +207,23 @@ def _topo_subqueries(routes: list[SubQueryRoute]) -> list[SubQueryRoute]:
     return ordered
 
 
+def _producer_output_fields(registry: RegistryService, agent_id: str) -> set[str]:
+    """The bindable output surface a producer agent declares — the top-level
+    fields its primary tool emits (`ToolRecord.output_fields`). Returns an empty
+    set when the agent has no fast-path tool or the tool declares no fields, in
+    which case binding-field validation is skipped (graceful: undeclared tools
+    keep today's behaviour). This is the output-field CONTRACT: a data-flow
+    binding may only target a field the producer actually emits."""
+    if not agent_id:
+        return set()
+    agent = registry.agents.get_optional(agent_id)
+    fast_path = getattr(agent, "fast_path", None) if agent else None
+    if fast_path is None:
+        return set()
+    tool = registry.tools.get_optional(fast_path.primary_tool_id)
+    return set(getattr(tool, "output_fields", ()) or ()) if tool else set()
+
+
 def assemble_plan(
     routes: list[SubQueryRoute],
     registry: RegistryService,
@@ -227,6 +244,7 @@ def assemble_plan(
 
     steps: list[PlanStep] = []
     steps_by_subquery: dict[str, list[str]] = {}
+    terminal_agent_by_subquery: dict[str, str] = {}   # sq_id → its primary agent
     counter = 0
 
     for route in _topo_subqueries(routes):
@@ -263,6 +281,19 @@ def assemble_plan(
                 _log.warning("router.binding_dropped_unknown_source",
                              route=route.sub_query_id, from_sq=from_sq)
                 continue
+            # Output-field contract: a binding may only target a field the
+            # producer DECLARES it emits. If the producer declared its output
+            # surface and `from_field` isn't in it, the planner guessed a field
+            # that doesn't exist — drop the binding at plan time (loud) so it
+            # falls back to ordering-only, instead of resolving to a runtime
+            # block. Undeclared producers (empty set) skip this check.
+            declared = _producer_output_fields(
+                registry, terminal_agent_by_subquery.get(from_sq, ""))
+            if declared and from_field not in declared:
+                _log.warning("router.binding_dropped_undeclared_field",
+                             route=route.sub_query_id, from_sq=from_sq,
+                             from_field=from_field, declared=sorted(declared))
+                continue
             from_step = up_steps[-1]
             prim_bindings.append(ParameterBinding(
                 from_step=from_step, from_field=from_field,
@@ -290,6 +321,7 @@ def assemble_plan(
                 dependency_types=tuple(prim_dep_types) if is_primary else (),
             ))
         steps_by_subquery[route.sub_query_id] = list(local_step_id.values())
+        terminal_agent_by_subquery[route.sub_query_id] = primary_agent or ""
 
     return RoutePlan(steps=tuple(steps))
 

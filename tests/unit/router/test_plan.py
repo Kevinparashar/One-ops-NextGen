@@ -148,3 +148,101 @@ def test_no_bindings_plan_is_unchanged(tmp_path):
     plan = assemble_plan([_route("sq1", ["uc_a"])], reg)
     assert plan.steps[0].parameter_bindings == ()
     assert plan.steps[0].dependency_types == ()
+
+
+# ── output-field CONTRACT: validate bindings against producer's declared fields ──
+
+
+def _producer_registry(tmp_path):
+    """A registry with a producer agent whose primary tool DECLARES its output
+    fields, plus a plain consumer agent."""
+    from oneops.registry.models import (
+        AbacTags,
+        ActivationCondition,
+        AgentRecord,
+        ConditionOperator,
+        ConditionSignal,
+        DeterminismLevel,
+        ExecutionTier,
+        FastPathInputField,
+        FastPathSpec,
+        RoutingShape,
+        ToolParameter,
+        ToolRecord,
+        ToolRef,
+    )
+    from oneops.registry.service import RegistryService
+    from oneops.registry.store import FileBackend
+
+    cond = ActivationCondition(operator=ConditionOperator.LEAF,
+                               signal=ConditionSignal.INTENT_IN, values=("summary",))
+    tool = ToolRecord(
+        id="produce_tool", owner="team-test", description="A producer tool.",
+        activation_condition=cond, handler_ref="mod:fn",
+        execution_type=ExecutionTier.READ,
+        parameters=(ToolParameter(name="ticket_id", type="str", required=True,
+                                  description="id"),),
+        output_fields=("summary", "status"))          # declared bindable surface
+    producer = AgentRecord(
+        id="uc_producer", version=1, owner="team-test",
+        description="Producer agent.", intent_family="testing",
+        routing_shape=RoutingShape.SINGLE, activation_condition=cond,
+        abac_tags=AbacTags(tier=ExecutionTier.READ),
+        determinism_level=DeterminismLevel.LOW,
+        tool_refs=(ToolRef(tool_id="produce_tool", version=1),),
+        fast_path=FastPathSpec(
+            enabled=True, primary_tool_id="produce_tool",
+            input_fields=(FastPathInputField(name="ticket_id", type="str",
+                                             required=True, description="id"),)))
+    consumer = make_agent("uc_consumer")
+
+    svc = RegistryService(FileBackend(tmp_path))
+    svc.tools.create(tool); svc.tools.activate("produce_tool", 1)
+    for a in (producer, consumer):
+        svc.agents.create(a); svc.agents.activate(a.id, 1)
+    return svc
+
+
+def _bound_route(sq_id, agent_ids, *, depends_on_sq, bindings):
+    return SubQueryRoute(sub_query_id=sq_id, agent_ids=list(agent_ids),
+                         depends_on_subqueries=list(depends_on_sq),
+                         bindings=list(bindings))
+
+
+def test_binding_to_declared_field_survives(tmp_path):
+    reg = _producer_registry(tmp_path)
+    plan = assemble_plan([
+        _route("sq1", ["uc_producer"]),
+        _bound_route("sq2", ["uc_consumer"], depends_on_sq=("sq1",),
+                     bindings=[("sq1", "summary", "query")]),   # 'summary' IS declared
+    ], reg)
+    consumer = next(s for s in plan.steps if s.agent_id == "uc_consumer")
+    assert len(consumer.parameter_bindings) == 1
+    assert consumer.parameter_bindings[0].from_field == "summary"
+
+
+def test_binding_to_undeclared_field_is_dropped(tmp_path):
+    reg = _producer_registry(tmp_path)
+    plan = assemble_plan([
+        _route("sq1", ["uc_producer"]),
+        _bound_route("sq2", ["uc_consumer"], depends_on_sq=("sq1",),
+                     bindings=[("sq1", "root_cause", "query")]),  # NOT declared → drop
+    ], reg)
+    consumer = next(s for s in plan.steps if s.agent_id == "uc_consumer")
+    assert consumer.parameter_bindings == ()       # dropped at plan-time, not blocked
+    # ordering edge to the producer is still present (fallback to ordering-only)
+    producer = next(s for s in plan.steps if s.agent_id == "uc_producer")
+    assert producer.step_id in consumer.depends_on
+
+
+def test_undeclared_producer_skips_validation(tmp_path):
+    """A producer with no declared output_fields (no fast_path tool) keeps the
+    binding — graceful: undeclared tools retain today's behaviour."""
+    reg = make_registry(tmp_path, [make_agent("uc_a"), make_agent("uc_b")])
+    plan = assemble_plan([
+        _route("sq1", ["uc_a"]),
+        _bound_route("sq2", ["uc_b"], depends_on_sq=("sq1",),
+                     bindings=[("sq1", "anything", "query")]),
+    ], reg)
+    consumer = next(s for s in plan.steps if s.agent_id == "uc_b")
+    assert len(consumer.parameter_bindings) == 1   # not validated → kept

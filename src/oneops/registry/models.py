@@ -390,6 +390,12 @@ class ToolRecord(_VersionedRecord):
     timeout_ms: int = Field(default=30_000, ge=100, le=600_000)
     idempotent: bool = True
     requires_scopes: tuple[str, ...] = ()
+    # Bindable output surface (data-flow binding contract): the top-level field
+    # names this tool's handler emits in its result `output`. A downstream
+    # data-flow binding may only target a declared field — the planner is
+    # validated against this so it can't bind to a field the producer doesn't
+    # emit. Empty ⇒ undeclared (binding validation is skipped for this tool).
+    output_fields: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _action_rules(self) -> ToolRecord:
