@@ -21,6 +21,7 @@ Spec conformance:
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -108,6 +109,41 @@ async def _render_present_articles(
         user_id=str(context.get("user_id") or ""))
 
 
+async def _ticket_symptom_text(ticket_id: str, tenant_id: str) -> str:
+    """The ticket's OWN symptom text — title + description + category — used as
+    the semantic KB query when no KB is *linked* to the ticket.
+
+    This is the production KB model (centralized / no-incident-reference): a KB
+    article carries no ticket id, so "KB for this ticket" is matched by MEANING
+    on the ticket's symptoms (which carry the technical terms + error codes the
+    hybrid retriever keys on), NOT by a stored link or the user's vague phrasing.
+    Returns '' when the ticket can't be fetched (caller falls back to the user's
+    query) — never raises."""
+    try:
+        from oneops.router.entity_id import EntityIdNormalizer
+        from oneops.use_cases._shared.ticket_store import get_ticket_store
+        extracted = EntityIdNormalizer.from_registry_file().extract(ticket_id)
+        if not extracted.entities:
+            return ""
+        e = extracted.entities[0]
+        tstore = get_ticket_store()
+        if tstore is None:
+            return ""
+        record = await tstore.get(ticket_id=e.entity_id, service_id=e.service_id,
+                                  tenant_id=tenant_id)
+        if not record:
+            return ""
+        parts = [
+            str(record.get("title") or record.get("short_description") or ""),
+            str(record.get("description") or ""),
+            str(record.get("category") or ""),
+        ]
+        return " ".join(p for p in parts if p).strip()
+    except Exception as exc:                                  # noqa: BLE001
+        _log.info("uc03.ticket_symptom_lookup_skipped", error=str(exc)[:120])
+        return ""
+
+
 def _preview(article: dict[str, Any]) -> dict[str, Any]:
     """A compact, citation-ready preview of one article for a result list.
 
@@ -187,7 +223,14 @@ async def search_kb(
     import asyncio as _asyncio
     import math as _math
     embed_fn = get_kb_embed_fn()
-    PER_SIDE = 10
+    # Candidate pool per branch (lexical / semantic) before RRF + the relevance
+    # gate. Research consensus: retrieve BROAD, then narrow — a thin pool drops
+    # the right article before the gate ever sees it. Env-tunable (not hardcoded);
+    # the gate + top_k still narrow the final answer set.
+    try:
+        PER_SIDE = max(1, int(os.getenv("UC03_RETRIEVE_PER_SIDE", "25")))
+    except ValueError:
+        PER_SIDE = 25
     MIN_FUSED_SCORE = 0.012
     FUSE_TOP_K = 5
 
@@ -569,26 +612,29 @@ async def search_kb_by_ticket(
     hits = await get_kb_store().linked_to(
         entity_id=ticket_id, tenant_id=tenant_id, audiences=_audiences_for(context))
     if not hits:
-        # No KB is *linked* to this ticket. If the user actually expressed a
-        # content topic (e.g. "VPN error 809 for INC0001021" — the id was
-        # attached by the focus channel, not the user's intent), broaden to
-        # a general content search instead of dead-ending. Result-driven
-        # (an empty linked-set triggers the broadening) — NOT a heuristic
-        # threshold on the query. Reuses search_kb (which strips the id).
-        had_user_topic = bool(
-            str(arguments.get("user_message") or "").strip()
-            or str(arguments.get("query") or "").strip())
-        content_q = _kb_search_text(user_query)
-        if had_user_topic and content_q:
-            _log.info("uc03.search_kb_by_ticket.fallback_to_content",
-                      ticket_id=ticket_id, content_query=content_q[:80])
+        # No KB is *linked* to this ticket. In the production KB model this is
+        # the NORMAL case (KB carries no incident reference), so we don't
+        # dead-end: we match a KB by MEANING on the ticket's own SYMPTOMS
+        # (title + description + category) — which carry the technical terms and
+        # error codes the hybrid retriever keys on. This is the right query, not
+        # the user's vague phrasing ("find KB for the root cause"). Fall back to
+        # the user's topic words only when the ticket can't be fetched. Runs
+        # through search_kb's full hybrid → RRF → relevance-gate stack.
+        symptom_q = await _ticket_symptom_text(ticket_id, tenant_id)
+        user_topic = _kb_search_text(user_query)
+        content_q = symptom_q or user_topic
+        if content_q:
+            _log.info("uc03.search_kb_by_ticket.semantic_on_symptoms",
+                      ticket_id=ticket_id, query=content_q[:80],
+                      source=("symptoms" if symptom_q else "user_topic"))
             fb = await search_kb({"query": content_q}, context)
             # search_kb has its own relevance gate — only return it when it
-            # genuinely matched, otherwise keep the linked-record answer.
+            # genuinely matched.
             if isinstance(fb, dict) and fb.get("outcome") == "found":
                 return fb
-        return _search("no_match",
-                       f"No knowledge-base article is linked to {ticket_id}.")
+        return _search(
+            "no_match",
+            f"No knowledge-base article matches the symptoms of {ticket_id}.")
 
     # ── Semantic relevance gate (2026-05-29) ────────────────────────────
     # The linked_to() SQL is a HARD TAG JOIN — articles whose

@@ -158,6 +158,26 @@ async def test_search_by_ticket_no_link_is_no_match(store):
     assert out["outcome"] == "no_match"
 
 
+async def test_search_by_ticket_no_link_searches_by_ticket_symptoms(store, monkeypatch):
+    """Production KB model (no incident→KB reference): when no KB is *linked* to
+    the ticket, match by MEANING on the ticket's SYMPTOMS — not the user's vague
+    phrasing. INC9999 has no linked KB; feeding its symptoms ('vpn disconnects')
+    surfaces KB0001 via the hybrid search, whereas 'find KB for the root cause'
+    would dead-end at no_match."""
+    import oneops.use_cases.uc03_kb_lookup.handlers as H
+
+    async def fake_symptoms(ticket_id: str, tenant_id: str) -> str:
+        return "vpn disconnects"
+
+    monkeypatch.setattr(H, "_ticket_symptom_text", fake_symptoms)
+    out = await search_kb_by_ticket(
+        {"ticket_id": "INC9999", "service_id": "incident",
+         "user_message": "find KB for the root cause"},
+        {"tenant_id": "T1", "role": "employee"})
+    assert out["outcome"] == "found"                       # symptom search found it
+    assert "KB0001" in [a["kb_id"] for a in out["articles"]]
+
+
 async def test_search_by_ticket_missing_id_is_invalid_request(store):
     out = await search_kb_by_ticket(
         {"service_id": "incident"}, {"tenant_id": "T1", "role": "employee"})
