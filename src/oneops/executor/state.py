@@ -144,17 +144,32 @@ class ExecutorState(TypedDict, total=False):
 
 def serialise_plan(plan_steps: Any) -> list[dict[str, Any]]:
     """Turn a router `RoutePlan`'s steps into the JSON-shaped list the state
-    holds. Accepts the `RoutePlan` object or its `.steps`."""
+    holds. Accepts the `RoutePlan` object or its `.steps`.
+
+    Data-flow fields (`parameter_bindings`, `dependency_types`) are emitted
+    only when present, so existing plans serialise byte-identically to before.
+    """
     steps = getattr(plan_steps, "steps", plan_steps)
-    return [
-        {
+    out: list[dict[str, Any]] = []
+    for s in steps:
+        d: dict[str, Any] = {
             "step_id": s.step_id,
             "agent_id": s.agent_id,
             "parameters": dict(s.parameters),
             "depends_on": list(s.depends_on),
         }
-        for s in steps
-    ]
+        bindings = getattr(s, "parameter_bindings", ()) or ()
+        if bindings:
+            d["parameter_bindings"] = [
+                {"from_step": b.from_step, "from_field": b.from_field,
+                 "to_param": b.to_param, "required": b.required}
+                for b in bindings
+            ]
+        dep_types = getattr(s, "dependency_types", ()) or ()
+        if dep_types:
+            d["dependency_types"] = [list(t) for t in dep_types]
+        out.append(d)
+    return out
 
 
 __all__ = ["ExecutorState", "merge_step_results", "merge_plan", "serialise_plan"]

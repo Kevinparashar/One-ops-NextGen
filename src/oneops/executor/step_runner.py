@@ -426,6 +426,13 @@ def _build_handler_context(request: dict[str, Any]) -> dict[str, Any]:
         # Hot conversation window (G2 already trims). Optional — handlers
         # that need prior context read it; most ignore it.
         "conversation_history": request.get("conversation_history", []) or [],
+        # Data-flow binding (previous_results). `bound_inputs` is the resolved
+        # {to_param: value} map from declared upstream bindings; `previous_results`
+        # is the raw upstream results so a handler can read deps directly. Both
+        # empty unless this step declared bindings — handlers ignore them
+        # otherwise (zero behaviour change for existing UCs).
+        "bound_inputs": request.get("bound_inputs", {}) or {},
+        "previous_results": request.get("previous_results", {}) or {},
     }
 
 

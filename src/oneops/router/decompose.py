@@ -19,6 +19,7 @@ needs sub-query A's result first); the router turns them into plan-DAG edges.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -28,6 +29,14 @@ _log = get_logger("oneops.router.decompose")
 _tracer = get_tracer("oneops.router.decompose")
 
 
+def planner_emit_bindings_enabled() -> bool:
+    """Feature flag (default OFF). When off, the decomposer prompt + parsing
+    are byte-identical to before — zero routing impact. Flip on only after the
+    routing regression suite is green with it on (D4 gate)."""
+    return os.getenv("ONEOPS_PLANNER_EMIT_BINDINGS", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
 @dataclass(frozen=True)
 class SubQuery:
     """One atomic job extracted from the user message."""
@@ -35,6 +44,11 @@ class SubQuery:
     id: str
     text: str
     depends_on: tuple[str, ...] = ()        # other SubQuery ids that must run first
+    # Optional data-flow bindings: (from_sq, from_field, to_param) — feed a
+    # specific value an upstream sub-query produced into this one's input.
+    # Empty unless the planner-emit-bindings flag is on AND the LLM declared a
+    # value dependency. Mapped to step-level ParameterBindings in assemble_plan.
+    bindings: tuple[tuple[str, str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -229,6 +243,36 @@ Return STRICT JSON ONLY in the shape shown above:
 {"reasoning":"...","subqueries":[{"id":"sq1","text":"...","depends_on":[]}]}"""
 
 
+# Appended to the prompt ONLY when the planner-emit-bindings flag is on, so the
+# default prompt is byte-identical (cached, zero behaviour change). Teaches the
+# LLM to declare a data-flow edge when a later ask consumes an earlier result.
+_BINDINGS_PROMPT = """\
+
+## Data-flow bindings (OPTIONAL — omit unless truly needed)
+
+A `depends_on` edge already enforces ORDER. Add a `bindings` array ONLY when a
+dependent sub-query must also consume a SPECIFIC VALUE the earlier sub-query
+produces — i.e. one of its inputs is satisfied by the upstream result
+(`previous_results`), not by the user's own words. This follows the platform
+dependency rule: declare a data dependency only when a later step TRULY
+REQUIRES an earlier step's output.
+
+Shape (on the dependent sub-query):
+  {"from":"sq1","from_field":"<field in sq1's result>","to_param":"<input the later ask needs>"}
+
+Example — "summarize INC1 and find the KB for the root cause it surfaces":
+  sq2 binds {"from":"sq1","from_field":"root_cause","to_param":"query"}
+(the root cause is only known after sq1 runs, so it must be CARRIED, not guessed).
+
+Rules:
+  - Most splits need NO bindings — omit the field entirely.
+  - `from` MUST be an earlier sub-query id; never bind a sub-query to itself
+    and never form a cycle (the dependency graph stays acyclic).
+  - `from_field` and `to_param` are NAMES, not values — never invent or inline
+    a value you do not have; deferring that value to runtime is the whole point
+    of a binding."""
+
+
 class LlmDecomposer:
     """Production decomposer — one gateway call returning structured sub-queries.
 
@@ -256,8 +300,10 @@ class LlmDecomposer:
             # Every LLM call carries the policy layer (Component Spec C15). The
             # task instruction rides as an extra section; the profile is static so
             # the composed prefix is cached (latency) and byte-stable (token cost).
-            system_prompt = compose(Profile.INTERNAL_AGENT,
-                                    extra_sections=[_DECOMPOSE_PROMPT])
+            emit_bindings = planner_emit_bindings_enabled()
+            extra = ([_DECOMPOSE_PROMPT, _BINDINGS_PROMPT] if emit_bindings
+                     else [_DECOMPOSE_PROMPT])
+            system_prompt = compose(Profile.INTERNAL_AGENT, extra_sections=extra)
             try:
                 response = await self._gateway.call(LlmRequest(
                     # System prefix = policy-composed prefix + decompose rules.
@@ -273,7 +319,8 @@ class LlmDecomposer:
                 doc = json.loads(response.content)
                 subs = [
                     SubQuery(id=str(s["id"]), text=str(s["text"]),
-                             depends_on=tuple(s.get("depends_on") or ()))
+                             depends_on=tuple(s.get("depends_on") or ()),
+                             bindings=_parse_bindings(s) if emit_bindings else ())
                     for s in doc.get("subqueries", []) if s.get("text")
                 ]
                 subs = _sanitize_subqueries(subs)
@@ -286,6 +333,22 @@ class LlmDecomposer:
                 _log.warning("decomposer.llm_failed_falling_back", error=str(exc))
         # Fallback — the message is still handled, as one sub-query.
         return [SubQuery(id="sq1", text=message)]
+
+
+def _parse_bindings(s: dict) -> tuple[tuple[str, str, str], ...]:
+    """Pull a sub-query's optional `bindings` array into normalised triples,
+    dropping any malformed or self-referential entry (defensive — the LLM
+    output is untrusted)."""
+    out: list[tuple[str, str, str]] = []
+    for bd in (s.get("bindings") or []):
+        if not isinstance(bd, dict):
+            continue
+        fr = str(bd.get("from") or "").strip()
+        ff = str(bd.get("from_field") or "").strip()
+        tp = str(bd.get("to_param") or "").strip()
+        if fr and ff and tp and fr != str(s.get("id") or ""):
+            out.append((fr, ff, tp))
+    return tuple(out)
 
 
 def _sanitize_subqueries(subs: list[SubQuery]) -> list[SubQuery]:
@@ -335,6 +398,10 @@ def _sanitize_subqueries(subs: list[SubQuery]) -> list[SubQuery]:
             text=s.text,
             depends_on=tuple(id_remap[d] for d in s.depends_on
                              if d in id_remap),
+            # Remap each binding's source sub-query id; drop bindings whose
+            # source was deduped away (no longer a valid upstream).
+            bindings=tuple((id_remap[fr], ff, tp) for (fr, ff, tp) in s.bindings
+                           if fr in id_remap),
         )
         for s in deduped
     ]

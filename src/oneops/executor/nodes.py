@@ -125,6 +125,91 @@ def _normalise_generated_steps(
     return out, note
 
 
+# ── data-flow binding (previous_results) ──────────────────────────────────
+# A step can consume an upstream step's RUNTIME output via declared bindings:
+# `to_param ← from_step.output.<from_field>`. Resolution is a pure function of
+# (step, the completed dependency results) — so it is deterministic and
+# checkpoint-replay-safe (the dependency results live in the durable
+# `step_results` channel; nothing derived is persisted). Policy-aligned with
+# updated_policy_v2.md TEAM_COORDINATION / ORDERING (`previous_results`,
+# `dependency_type: hard|soft`).
+
+
+def dotted_get(obj: Any, path: str) -> Any:
+    """Walk a dotted path into nested dicts / objects. Returns None if any
+    segment is missing (never raises) — `output.summary.root_cause`,
+    `affected_ci_ids`. Pure."""
+    cur = obj
+    for seg in str(path).split("."):
+        if seg == "":
+            return None
+        if isinstance(cur, dict):
+            if seg not in cur:
+                return None
+            cur = cur[seg]
+        else:
+            cur = getattr(cur, seg, None)
+        if cur is None:
+            return None
+    return cur
+
+
+def _resolve_bindings(
+    step: dict[str, Any], previous_results: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], str, str]:
+    """Resolve a step's declared `parameter_bindings` against its completed
+    dependency results.
+
+    Returns `(bound_inputs, status, reason)`:
+      * `status == "ok"`  → `bound_inputs` is the `{to_param: value}` map to
+        deliver to the handler (empty when the step declares no bindings).
+      * `status == "blocked"` → a *hard* dependency did not succeed, or a
+        *required* field was missing; `reason` is the user-safe explanation
+        (surfaced, never silent — thumb rule #11).
+
+    `dependency_type` (hard|soft) gates a failed upstream: hard → block; soft
+    → proceed best-effort (the binding from that dep is simply omitted).
+    """
+    bindings = step.get("parameter_bindings") or []
+    if not bindings:
+        return {}, "ok", ""
+
+    def dep_kind(dep_step_id: str) -> str:
+        for pair in step.get("dependency_types") or []:
+            if len(pair) == 2 and pair[0] == dep_step_id:
+                return pair[1]
+        return "hard"
+
+    bound: dict[str, Any] = {}
+    for b in bindings:
+        from_step = b.get("from_step", "")
+        from_field = b.get("from_field", "")
+        to_param = b.get("to_param", "")
+        required = b.get("required", True)
+        prev = previous_results.get(from_step)
+        kind = dep_kind(from_step)
+
+        if prev is None or prev.get("status") != "success":
+            if kind == "soft":
+                continue                      # best-effort: omit this dep's value
+            if required:
+                why = ("did not succeed" if prev is not None
+                       else "produced no result")
+                return {}, "blocked", f"upstream step '{from_step}' {why}"
+            continue                          # hard but optional binding → omit
+
+        val = dotted_get(prev.get("output"), from_field)
+        if val is None:
+            if required:
+                return ({}, "blocked",
+                        f"required input '{to_param}' is missing — "
+                        f"'{from_step}.{from_field}' was not in its output")
+            continue                          # optional missing → omit + proceed
+        bound[to_param] = val
+
+    return bound, "ok", ""
+
+
 def _envelope(state: dict[str, Any]) -> dict[str, Any]:
     env = {k: state.get(k, "") for k in
            ("request_id", "tenant_id", "session_id", "user_id", "role", "message")}
@@ -228,6 +313,15 @@ def friendly_step_response(
                 return message.strip()
         # A success step with no surfaceable text — short ack, never empty.
         return "Done."
+
+    # ── blocked path (data-flow dependency could not be satisfied) ──────
+    # A step is `blocked` when a required upstream output was missing or a
+    # hard dependency did not succeed. Surface the reason plainly — the user
+    # learns what could not run and why (no fabrication, no silent skip).
+    if status == "blocked":
+        reason = error.strip()
+        return reason or ("This step was skipped because a prerequisite "
+                          "did not complete.")
 
     # ── failure / denial paths ─────────────────────────────────────────
     lowered = error.lower()
@@ -604,6 +698,25 @@ class ExecutorNodes:
                         output={"canned_response": decision.canned_response,
                                 "policy_rule": decision.matched_rule_id})]}
 
+            # ── data-flow binding (previous_results) ─────────────────────
+            # Resolve declared bindings from upstream outputs BEFORE hooks /
+            # approval: a step blocked on a missing required dependency must
+            # not run its before-hooks or ask the user to approve work that
+            # cannot proceed. `bound_inputs` are delivered to the handler via
+            # context; `previous_results` is exposed raw too (policy term, so a
+            # handler can read deps directly even without a declared binding).
+            previous_results = payload.get("_previous_results") or {}
+            bound_inputs, bind_status, bind_reason = _resolve_bindings(
+                step, previous_results)
+            if bind_status == "blocked":
+                span.set_attribute("executor.blocked_reason", bind_reason)
+                _log.info("executor.step_blocked",
+                          step_id=step.get("step_id"), reason=bind_reason)
+                return {"step_results": [make_result(
+                    step, status="blocked", error=bind_reason)]}
+            if bound_inputs:
+                span.set_attribute("executor.bindings_resolved", len(bound_inputs))
+
             before = list(agent.hooks.before_invocation)
             after = list(agent.hooks.after_invocation)
             is_action = agent.abac_tags.tier is ExecutionTier.ACTION
@@ -645,7 +758,14 @@ class ExecutorNodes:
 
             # ── the step's work ──────────────────────────────────────────
             try:
-                result = await self._step_executor.run(step, request)
+                # Deliver dependency outputs to the handler. Only build a
+                # copy when there is something to add — no-binding steps pass
+                # the original envelope unchanged (zero behaviour change).
+                run_request = (
+                    {**request, "previous_results": previous_results,
+                     "bound_inputs": bound_inputs}
+                    if (previous_results or bound_inputs) else request)
+                result = await self._step_executor.run(step, run_request)
             except Exception as exc:  # noqa: BLE001 — typed into a failed result
                 _log.warning("executor.step_executor_raised",
                              agent_id=agent_id, error=str(exc))
@@ -724,9 +844,24 @@ class ExecutorNodes:
         plan = state.get("plan") or []
         unrouted = state.get("unrouted") or []
 
+        # No-silent-skip (thumb rule #11): any plan step that never produced a
+        # result — transitively blocked by an upstream failure, or a
+        # malformed-plan deadlock — is surfaced as `blocked` rather than
+        # vanishing. Well-formed plans run every step, so this is a no-op for
+        # them (existing behaviour unchanged).
+        result_ids = {r.get("step_id") for r in results}
+        synthesized = [
+            make_result(s, status="blocked",
+                        error="not executed — an upstream dependency did "
+                              "not complete")
+            for s in plan if s.get("step_id") not in result_ids
+        ]
+        all_results = list(results) + synthesized
+
         order = {s["step_id"]: i for i, s in enumerate(plan)}
         plan_by_step = {s.get("step_id"): s for s in plan}
-        ordered = sorted(results, key=lambda r: order.get(r.get("step_id"), 10**6))
+        ordered = sorted(all_results,
+                         key=lambda r: order.get(r.get("step_id"), 10**6))
 
         # Per-agent run metric — every step, every status (drives the
         # per-agent error-rate dashboard, ARCHITECTURE.md §7).
@@ -736,11 +871,14 @@ class ExecutorNodes:
 
         succeeded = [r for r in ordered if r.get("status") == "success"]
         failed = [r for r in ordered if r.get("status") in ("failed", "denied")]
+        blocked = [r for r in ordered if r.get("status") == "blocked"]
 
-        if succeeded and not failed and not unrouted:
+        if succeeded and not failed and not blocked and not unrouted:
             status = "executed"
         elif succeeded:
-            status = "partial"
+            status = "partial"            # some worked, some blocked/failed
+        elif blocked and not failed:
+            status = "blocked"            # nothing ran; a dependency stopped it
         else:
             status = "failed"
 
@@ -936,6 +1074,7 @@ def dispatch_wave(state: ExecutorState) -> list[Send] | str:
     plan = state.get("plan") or []
     results = state.get("step_results") or []
     completed = {r.get("step_id") for r in results}
+    results_by_id = {r.get("step_id"): r for r in results}
 
     remaining = [s for s in plan if s["step_id"] not in completed]
     if not remaining:
@@ -946,12 +1085,22 @@ def dispatch_wave(state: ExecutorState) -> list[Send] | str:
                 if all(dep in completed for dep in s.get("depends_on", []))]
     if not runnable:
         # No step can advance though some remain — a malformed plan (a valid
-        # DAG never reaches here). Stop the loop; aggregate reports the rest.
+        # DAG never reaches here). Stop the loop; aggregate reports the rest
+        # (transitively-blocked steps are surfaced there, never silent).
         _log.warning("executor.dispatch_deadlock",
                      remaining=[s["step_id"] for s in remaining])
         return "aggregate"
 
-    return [Send("run_step", {"_step": s, "_request": request}) for s in runnable]
+    # Attach each step's dependency outputs so `run_step` can resolve declared
+    # data-flow bindings (previous_results). Pure derivation from the durable
+    # `step_results` channel ⇒ deterministic on checkpoint replay.
+    sends: list[Send] = []
+    for s in runnable:
+        dep_results = {d: results_by_id[d]
+                       for d in s.get("depends_on", []) if d in results_by_id}
+        sends.append(Send("run_step", {"_step": s, "_request": request,
+                                       "_previous_results": dep_results}))
+    return sends
 
 
 __all__ = ["ExecutorNodes", "route_branch", "dispatch_wave"]

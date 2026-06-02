@@ -105,3 +105,46 @@ def test_dependent_subquery_runs_after_in_step_order(tmp_path):
     ], reg)
     # sq1's agent must appear before sq2's in the topologically-ordered plan.
     assert plan.agent_ids.index("uc_a") < plan.agent_ids.index("uc_b")
+
+
+# ── data-flow bindings (D4: sub-query binding → step-level ParameterBinding) ──
+
+
+def test_subquery_binding_maps_to_primary_step(tmp_path):
+    reg = make_registry(tmp_path, [make_agent("uc_a"), make_agent("uc_b")])
+    plan = assemble_plan([
+        _route("sq1", ["uc_a"]),
+        SubQueryRoute(sub_query_id="sq2", agent_ids=["uc_b"],
+                      depends_on_subqueries=["sq1"],
+                      bindings=[("sq1", "root_cause", "query")]),
+    ], reg)
+    by_agent = {s.agent_id: s for s in plan.steps}
+    a, b = by_agent["uc_a"], by_agent["uc_b"]
+    # The binding lands on uc_b, sourced from uc_a's terminal step, hard dep.
+    assert len(b.parameter_bindings) == 1
+    pb = b.parameter_bindings[0]
+    assert (pb.from_step, pb.from_field, pb.to_param) == (a.step_id, "root_cause", "query")
+    assert (a.step_id, "hard") in b.dependency_types
+    assert a.step_id in b.depends_on          # ordering edge guaranteed
+    assert a.parameter_bindings == ()          # source step carries none
+
+
+def test_binding_to_unknown_source_is_dropped_not_fatal(tmp_path):
+    """A binding naming a non-upstream sub-query is dropped (logged), and the
+    plan still assembles — never an unresolvable plan, never a crash."""
+    reg = make_registry(tmp_path, [make_agent("uc_a")])
+    plan = assemble_plan([
+        SubQueryRoute(sub_query_id="sq1", agent_ids=["uc_a"],
+                      bindings=[("sq_ghost", "x", "y")]),
+    ], reg)
+    assert len(plan.steps) == 1
+    assert plan.steps[0].parameter_bindings == ()   # bad binding dropped
+
+
+def test_no_bindings_plan_is_unchanged(tmp_path):
+    """Regression: a route with no bindings yields steps with empty binding
+    fields (existing plans byte-identical)."""
+    reg = make_registry(tmp_path, [make_agent("uc_a")])
+    plan = assemble_plan([_route("sq1", ["uc_a"])], reg)
+    assert plan.steps[0].parameter_bindings == ()
+    assert plan.steps[0].dependency_types == ()

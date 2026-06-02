@@ -210,6 +210,106 @@ async def test_hallucinated_generated_agent_is_refused_not_executed(tmp_path):
     assert "unknown agent 'uc_ghost'" in (seed.get("generation_note") or "")
 
 
+# ── data-flow binding (previous_results) end-to-end ───────────────────────
+
+
+def _binding_plan():
+    """Fast-path 2-step plan: step_2 binds step_1's output.ticket_id → its
+    `id` param. (The planner emits bindings only at D4; fast-path lets us
+    drive the executor mechanism directly.)"""
+    return [
+        {"step_id": "step_1", "agent_id": "uc_a", "parameters": {},
+         "depends_on": []},
+        {"step_id": "step_2", "agent_id": "uc_b", "parameters": {},
+         "depends_on": ["step_1"],
+         "parameter_bindings": [
+             {"from_step": "step_1", "from_field": "ticket_id",
+              "to_param": "id", "required": True}]},
+    ]
+
+
+class _CaptureExecutor:
+    """uc_a emits a payload; uc_b records the bound_inputs it received."""
+
+    def __init__(self, a_output):
+        self._a_output = a_output
+        self.b_bound = "NOT_CALLED"
+
+    async def run(self, step, request):
+        if step["agent_id"] == "uc_a":
+            return make_result(step, status="success", output=self._a_output)
+        self.b_bound = request.get("bound_inputs")
+        return make_result(step, status="success",
+                           output={"received": request.get("bound_inputs")})
+
+
+async def test_binding_delivers_upstream_output_to_downstream_step(tmp_path):
+    reg = _registry(tmp_path, [_agent("uc_a"), _agent("uc_b")])
+    ex = _CaptureExecutor({"ticket_id": "INC0001021"})
+    graph = build_executor_graph(_ExplodingRouter(), reg, step_executor=ex)
+    env = _envelope(); env["entry_mode"] = "fast_path"
+    env["route_outcome"] = "routed"; env["plan"] = _binding_plan()
+    out = await run_turn(graph, env)
+    assert out["final_status"] == "executed"
+    # uc_b received step_1's runtime output, threaded as bound_inputs.
+    assert ex.b_bound == {"id": "INC0001021"}
+
+
+async def test_binding_passes_structured_value_intact(tmp_path):
+    """A list value flows through bound_inputs without being stringified."""
+    reg = _registry(tmp_path, [_agent("uc_a"), _agent("uc_b")])
+    ex = _CaptureExecutor({"ticket_id": ["INC1", "INC2", "INC3"]})
+    graph = build_executor_graph(_ExplodingRouter(), reg, step_executor=ex)
+    env = _envelope(); env["entry_mode"] = "fast_path"
+    env["route_outcome"] = "routed"; env["plan"] = _binding_plan()
+    out = await run_turn(graph, env)
+    assert out["final_status"] == "executed"
+    assert ex.b_bound == {"id": ["INC1", "INC2", "INC3"]}   # list preserved
+
+
+async def test_binding_blocks_when_required_field_missing(tmp_path):
+    """uc_a succeeds but omits the bound field → uc_b is blocked (not run),
+    the reason is surfaced, and final_status reflects the partial outcome."""
+    reg = _registry(tmp_path, [_agent("uc_a"), _agent("uc_b")])
+    ex = _CaptureExecutor({})                    # uc_a ok but no ticket_id
+    graph = build_executor_graph(_ExplodingRouter(), reg, step_executor=ex)
+    env = _envelope(); env["entry_mode"] = "fast_path"
+    env["route_outcome"] = "routed"; env["plan"] = _binding_plan()
+    out = await run_turn(graph, env)
+    b = next(r for r in out["step_results"] if r["agent_id"] == "uc_b")
+    assert b["status"] == "blocked"
+    assert ex.b_bound == "NOT_CALLED"            # handler never ran
+    assert out["final_status"] == "partial"      # uc_a ok, uc_b blocked
+    assert "ticket_id" in out["final_response"]  # reason surfaced, not silent
+
+
+async def test_binding_blocks_when_hard_upstream_fails(tmp_path):
+    """A hard dependency that failed blocks the dependent (cascade), and the
+    whole turn reports failed since nothing succeeded."""
+    reg = _registry(tmp_path, [_agent("uc_a"), _agent("uc_b")])
+
+    class _AFails:
+        def __init__(self):
+            self.b_called = False
+
+        async def run(self, step, request):
+            if step["agent_id"] == "uc_a":
+                return make_result(step, status="failed", error="boom")
+            self.b_called = True
+            return make_result(step, status="success", output={})
+
+    ex = _AFails()
+    graph = build_executor_graph(_ExplodingRouter(), reg, step_executor=ex)
+    env = _envelope(); env["entry_mode"] = "fast_path"
+    env["route_outcome"] = "routed"; env["plan"] = _binding_plan()
+    out = await run_turn(graph, env)
+    b = next(r for r in out["step_results"] if r["agent_id"] == "uc_b")
+    assert b["status"] == "blocked"
+    assert ex.b_called is False                  # never ran on failed hard dep
+    assert out["final_status"] == "failed"
+    assert "step_1" in out["final_response"]
+
+
 # ── non-routed → boundary ────────────────────────────────────────────────
 
 

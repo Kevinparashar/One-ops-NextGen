@@ -253,6 +253,7 @@ class Router:
                         agent_ids=outcome.agent_ids,
                         parameters_by_agent=outcome.parameters_by_agent,
                         depends_on_subqueries=list(sq.depends_on),
+                        bindings=list(sq.bindings),
                     ))
                 else:
                     unrouted.append(sq.text)

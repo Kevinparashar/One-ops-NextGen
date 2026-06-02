@@ -26,6 +26,23 @@ _log = get_logger("oneops.router.plan")
 
 
 @dataclass(frozen=True)
+class ParameterBinding:
+    """A data-flow edge: feed an upstream step's runtime output into this
+    step's input. Resolved by the executor at dispatch time (not plan time).
+
+    `from_field` is a dotted path into the upstream result's `output`
+    (e.g. "affected_ci_ids", "summary.root_cause"). `to_param` is the
+    downstream handler parameter to populate. `required=True` means a missing
+    value blocks the step (surfaced, never silent); `required=False` omits it.
+    """
+
+    from_step: str
+    from_field: str
+    to_param: str
+    required: bool = True
+
+
+@dataclass(frozen=True)
 class PlanStep:
     """One agent invocation. `depends_on` holds the step_ids of prerequisites."""
 
@@ -33,9 +50,25 @@ class PlanStep:
     agent_id: str
     parameters: tuple[tuple[str, str], ...] = ()
     depends_on: tuple[str, ...] = ()
+    # Data-flow bindings: pull declared fields from upstream results into this
+    # step's inputs at dispatch time. Empty ⇒ ordering-only dependency (today's
+    # behaviour). See `executor.nodes._resolve_bindings`.
+    parameter_bindings: tuple[ParameterBinding, ...] = ()
+    # Per-dependency enforcement (policy ORDERING §dependency_type): a
+    # (dep_step_id, "hard"|"soft") pair. Absent dep ⇒ "hard" (default): a
+    # hard dep that did not succeed blocks this step; a soft dep that failed
+    # lets this step proceed best-effort. Empty ⇒ all deps hard.
+    dependency_types: tuple[tuple[str, str], ...] = ()
 
     def params_dict(self) -> dict[str, str]:
         return dict(self.parameters)
+
+    def dependency_type(self, dep_step_id: str) -> str:
+        """`"hard"` (default) or `"soft"` for the given dependency."""
+        for dep, kind in self.dependency_types:
+            if dep == dep_step_id:
+                return kind
+        return "hard"
 
 
 @dataclass(frozen=True)
@@ -123,6 +156,9 @@ class SubQueryRoute:
     agent_ids: list[str]
     parameters_by_agent: dict[str, dict[str, str]] = field(default_factory=dict)
     depends_on_subqueries: list[str] = field(default_factory=list)
+    # Data-flow bindings carried from the decomposer: (from_sq, from_field,
+    # to_param). Mapped to step-level ParameterBindings in assemble_plan.
+    bindings: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 def _expand_with_deps(agent_ids: list[str], registry: RegistryService) -> list[str]:
@@ -207,15 +243,51 @@ def assemble_plan(
             counter += 1
             local_step_id[agent_id] = f"step_{counter}"
 
+        # Translate sub-query-level data-flow bindings into step-level
+        # ParameterBindings on this route's PRIMARY step (the terminal agent,
+        # after its prereqs). Source = the terminal step of the referenced
+        # upstream sub-query. This is a structural mapping — no keywords, no
+        # field catalogs; the (from_sq, from_field, to_param) triples were
+        # declared by the planner LLM, and the executor resolves them with a
+        # generic dotted-path lookup at dispatch time.
+        primary_agent = needed[-1] if needed else None
+        prim_bindings: list[ParameterBinding] = []
+        prim_dep_types: list[tuple[str, str]] = []
+        prim_extra_deps: list[str] = []
+        for from_sq, from_field, to_param in route.bindings:
+            up_steps = steps_by_subquery.get(from_sq)
+            if not up_steps:
+                # Binding names a sub-query that isn't an upstream of this one
+                # — a planner mistake. Drop it (loudly, never silent) rather
+                # than emit an unresolvable plan.
+                _log.warning("router.binding_dropped_unknown_source",
+                             route=route.sub_query_id, from_sq=from_sq)
+                continue
+            from_step = up_steps[-1]
+            prim_bindings.append(ParameterBinding(
+                from_step=from_step, from_field=from_field,
+                to_param=to_param, required=True))
+            prim_dep_types.append((from_step, "hard"))
+            prim_extra_deps.append(from_step)
+
         for agent_id in needed:
             agent = registry.agents.get(agent_id)
             params = route.parameters_by_agent.get(agent_id, {})
             dep_steps = [local_step_id[d] for d in agent.depends_on] + upstream
+            is_primary = agent_id == primary_agent
+            if is_primary and prim_extra_deps:
+                # A bound dependency implies an ordering edge — add any that the
+                # registry/sub-query deps didn't already cover, so the source
+                # has a result before this step resolves its bindings.
+                dep_steps = dep_steps + [d for d in prim_extra_deps
+                                         if d not in dep_steps]
             steps.append(PlanStep(
                 step_id=local_step_id[agent_id],
                 agent_id=agent_id,
                 parameters=tuple(sorted(params.items())),
                 depends_on=tuple(dep_steps),
+                parameter_bindings=tuple(prim_bindings) if is_primary else (),
+                dependency_types=tuple(prim_dep_types) if is_primary else (),
             ))
         steps_by_subquery[route.sub_query_id] = list(local_step_id.values())
 
@@ -223,6 +295,6 @@ def assemble_plan(
 
 
 __all__ = [
-    "PlanStep", "RoutePlan", "RouteOutcome", "RouteResult",
+    "ParameterBinding", "PlanStep", "RoutePlan", "RouteOutcome", "RouteResult",
     "SubQueryRoute", "assemble_plan",
 ]
