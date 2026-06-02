@@ -16,6 +16,7 @@ for their wave. The loop ends when every step has a result.
 """
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -43,6 +44,85 @@ from oneops.session.store import SessionEventStore
 
 _log = get_logger("oneops.executor.nodes")
 _tracer = get_tracer("oneops.executor.nodes")
+
+
+# ── runtime step generation (dynamic fan-out) safety budget ───────────────
+# A handler may discover at runtime that it must spawn follow-up work it could
+# not know at plan time (e.g. a KG traversal returns N affected CIs, each
+# needing its own read). It returns `generated_steps` from its result; the
+# executor appends them to the plan channel and `dispatch_wave` picks them up
+# in a later wave. The depth + width budgets keep generation from running away
+# — a self-spawning handler can never loop forever or fan out without bound.
+#
+# These are runaway *safety backstops*, not decision logic — and they are NOT
+# hardcoded. The platform-wide defaults come from env (operator-tunable per
+# deployment), and any single step can override them by carrying `_gen_max_depth`
+# / `_gen_max_width` (agents-as-data: a UC that legitimately needs a wider
+# fan-out sets its own budget without a code change). Overrides propagate down
+# the generated subtree so the whole chain honours the configured budget.
+DEFAULT_MAX_GENERATION_DEPTH = int(os.getenv("ONEOPS_MAX_GENERATION_DEPTH", "3"))
+DEFAULT_MAX_GENERATED_PER_STEP = int(os.getenv("ONEOPS_MAX_GENERATED_PER_STEP", "8"))
+
+
+def _normalise_generated_steps(
+    parent_step: dict[str, Any], raw_steps: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], str]:
+    """Validate + namespace runtime-generated steps from a handler result.
+
+    Returns `(steps, note)`: `steps` is the (possibly empty) list to append to
+    the plan channel; `note` is a human-readable reason whenever anything was
+    refused (depth/width budget, missing agent_id) — surfaced on the parent
+    result and in the trace, never a silent drop (thumb rule #11).
+
+    The effective budget is resolved dynamically: a per-step override
+    (`_gen_max_depth` / `_gen_max_width`, set by the agent/handler) takes
+    precedence over the env-configured platform default — nothing is hardcoded.
+    Each generated step gets a globally-unique id namespaced under its parent
+    (`<parent>.g<i>`), defaults `depends_on` to the parent (so generated work
+    runs *after* the step that asked for it), carries `_gen_depth` for the next
+    round's depth check, and inherits the budget overrides so the whole subtree
+    stays within the same configured limits.
+    """
+    parent_id = parent_step.get("step_id", "step")
+    depth = int(parent_step.get("_gen_depth", 0) or 0)
+    max_depth = int(parent_step.get("_gen_max_depth")
+                    or DEFAULT_MAX_GENERATION_DEPTH)
+    max_width = int(parent_step.get("_gen_max_width")
+                    or DEFAULT_MAX_GENERATED_PER_STEP)
+
+    if depth >= max_depth:
+        return [], (f"generation depth limit ({max_depth}) reached at "
+                    f"'{parent_id}' — {len(raw_steps)} follow-up step(s) not spawned")
+
+    note = ""
+    capped = raw_steps[:max_width]
+    if len(raw_steps) > max_width:
+        note = (f"generation width limit ({max_width}) at '{parent_id}' "
+                f"— {len(raw_steps) - max_width} step(s) dropped")
+
+    # Carry budget overrides down the subtree (only when explicitly set, so the
+    # env default still applies when no override was given).
+    inherited: dict[str, Any] = {}
+    if parent_step.get("_gen_max_depth") is not None:
+        inherited["_gen_max_depth"] = parent_step["_gen_max_depth"]
+    if parent_step.get("_gen_max_width") is not None:
+        inherited["_gen_max_width"] = parent_step["_gen_max_width"]
+
+    out: list[dict[str, Any]] = []
+    for i, raw in enumerate(capped):
+        agent_id = (raw or {}).get("agent_id")
+        if not agent_id:
+            note = (note + "; " if note else "") + "a generated step had no agent_id"
+            continue
+        out.append({
+            "step_id": f"{parent_id}.g{i}",
+            "agent_id": agent_id,
+            "parameters": dict((raw or {}).get("parameters") or {}),
+            "depends_on": list((raw or {}).get("depends_on") or [parent_id]),
+            "_gen_depth": depth + 1,
+            **inherited,
+        })
+    return out, note
 
 
 def _envelope(state: dict[str, Any]) -> dict[str, Any]:
@@ -589,7 +669,45 @@ class ExecutorNodes:
             span.set_attribute("executor.step_status", result.get("status", ""))
             span.set_attribute("executor.latency_ms", latency_ms)
             histogram("ai.agent.latency_ms", value=latency_ms, agent_id=agent_id)
-            return {"step_results": [result]}
+
+            # ── runtime-generated steps (dynamic fan-out) ────────────────
+            # A handler signals follow-up work it discovered at runtime by
+            # returning `generated_steps` on its result. We validate +
+            # namespace them and append to the `plan` channel; `dispatch_wave`
+            # re-reads the plan each superstep, so they run in a later wave —
+            # no graph recompile, no topology change. Budget-guarded so a
+            # self-spawning handler can never run away (depth + width caps).
+            raw_generated = (result.pop("generated_steps", None)
+                             if isinstance(result, dict) else None)
+            update: dict[str, Any] = {"step_results": [result]}
+            if raw_generated:
+                new_steps, note = _normalise_generated_steps(step, raw_generated)
+                # ── anti-hallucination guard ─────────────────────────────
+                # Generated steps may be produced by a handler's LLM decision,
+                # so they cannot be trusted blindly. A step may ONLY name an
+                # agent that has an active registry record (closed-vocabulary
+                # check); a hallucinated / made-up agent_id is refused here and
+                # surfaced — never executed, never silent (thumb rule #11).
+                # Each surviving step still re-enters run_step, so it is
+                # re-gated by policy + RBAC + hooks like any planned step —
+                # generation can never escalate privilege or skip a control.
+                valid: list[dict[str, Any]] = []
+                for s in new_steps:
+                    if self._registry.agents.get_optional(s["agent_id"]) is None:
+                        note = ((note + "; " if note else "")
+                                + f"refused generated step naming unknown "
+                                  f"agent '{s['agent_id']}'")
+                        continue
+                    valid.append(s)
+                if valid:
+                    span.set_attribute("executor.generated_steps", len(valid))
+                    update["plan"] = valid
+                if note:
+                    span.add_event("executor.generation_capped", {"reason": note})
+                    _log.warning("executor.generation_capped",
+                                 parent=step.get("step_id"), reason=note)
+                    result["generation_note"] = note
+            return update
 
     # ── aggregate ────────────────────────────────────────────────────────
 

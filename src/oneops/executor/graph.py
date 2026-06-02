@@ -20,6 +20,7 @@ env-gated and not exercised where there is no database.
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from langgraph.checkpoint.memory import InMemorySaver
@@ -161,8 +162,11 @@ async def run_turn(
         envelope.get("session_id") or envelope.get("request_id") or "default")
     cfg["configurable"] = configurable
     # The wave loop (wave ⇄ run_step) consumes several supersteps per wave;
-    # lift the default recursion limit so multi-wave plans complete.
-    cfg.setdefault("recursion_limit", 60)
+    # lift the default recursion limit so multi-wave plans complete. This is the
+    # framework-level backstop for deep runtime step generation — operator-tunable
+    # via env (not hardcoded) so large multi-wave plans get headroom without code.
+    cfg.setdefault("recursion_limit",
+                   int(os.getenv("ONEOPS_EXECUTOR_RECURSION_LIMIT", "60")))
 
     # Root span for the whole turn — every node/tool/LLM span created during
     # `ainvoke` nests under it (context propagation), so one user request is

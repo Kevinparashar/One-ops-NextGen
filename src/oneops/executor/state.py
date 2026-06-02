@@ -34,6 +34,38 @@ def merge_step_results(
     return list(by_id.values())
 
 
+def merge_plan(
+    left: list[dict[str, Any]] | None,
+    right: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Reducer for `plan` — union by step_id, first definition wins, order kept.
+
+    The router writes the initial plan once. A `run_step` may then *append*
+    runtime-generated steps (dynamic fan-out — e.g. a KG traversal that returns
+    N affected CIs, each needing its own read): every parallel `Send` returns
+    `plan: [new_step, ...]` and LangGraph folds them in here, exactly like
+    `merge_step_results` does for results. Two properties make this safe:
+
+      * **First-wins** — a step_id already in the plan keeps its original
+        definition, so a re-appended id (or a replayed checkpoint) never
+        rewrites a planned step. Generated steps carry fresh, namespaced ids.
+      * **Order preserved** — original steps first, generated steps in append
+        order. `aggregate` builds its render order from this list, so stable
+        ordering matters.
+
+    `dispatch_wave` re-reads `plan` every superstep, so appended steps run in a
+    later wave with no graph recompile and no topology change.
+    """
+    by_id: dict[str, dict[str, Any]] = {}
+    for source in (left or [], right or []):
+        for step in source:
+            sid = step.get("step_id")
+            key = sid if sid is not None else f"__anon_{len(by_id)}"
+            if key not in by_id:          # first-wins: never rewrite a planned step
+                by_id[key] = step
+    return list(by_id.values())
+
+
 class ExecutorState(TypedDict, total=False):
     """The graph's source of truth. All fields JSON-serialisable for checkpointing."""
 
@@ -79,7 +111,9 @@ class ExecutorState(TypedDict, total=False):
     # note (good IDs alongside a bad one). Never left silent (thumb rule #11).
     entity_clarification: str
     # Serialised plan steps: {step_id, agent_id, parameters: dict, depends_on: list}.
-    plan: list[dict[str, Any]]
+    # Append-reducer (`merge_plan`): the router seeds it once, and a `run_step`
+    # may append runtime-generated steps — Send-safe, first-wins, order kept.
+    plan: Annotated[list[dict[str, Any]], merge_plan]
     unrouted: list[str]           # sub-query texts that did not route (partial)
     route_diagnostics: list[str]
 
@@ -123,4 +157,4 @@ def serialise_plan(plan_steps: Any) -> list[dict[str, Any]]:
     ]
 
 
-__all__ = ["ExecutorState", "merge_step_results", "serialise_plan"]
+__all__ = ["ExecutorState", "merge_step_results", "merge_plan", "serialise_plan"]

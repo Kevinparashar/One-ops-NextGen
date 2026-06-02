@@ -112,6 +112,104 @@ async def test_dependent_steps_both_run(tmp_path):
     assert {r["agent_id"] for r in out["step_results"]} == {"uc_a", "uc_b"}
 
 
+# ── runtime step generation (dynamic fan-out) ─────────────────────────────
+
+
+async def test_runtime_generated_step_runs_in_a_later_wave(tmp_path):
+    """A handler discovers at runtime it must spawn follow-up work: it returns
+    `generated_steps`, the executor appends them to the plan channel, and
+    dispatch_wave runs them in a later wave — no recompile, no topology change."""
+    reg = _registry(tmp_path, [_agent("uc_seed"), _agent("uc_child")])
+    router = _StubRouter(RouteResult.routed(_plan(("step_1", "uc_seed", ())), ["d"]))
+
+    class _Generating:
+        async def run(self, step, request):
+            r = make_result(step, status="success", output="ok")
+            if step["agent_id"] == "uc_seed":
+                r["generated_steps"] = [{"agent_id": "uc_child", "parameters": {}}]
+            return r
+
+    graph = build_executor_graph(router, reg, step_executor=_Generating())
+    out = await run_turn(graph, _envelope())
+    assert out["final_status"] == "executed"
+    agents = {r["agent_id"] for r in out["step_results"]}
+    assert agents == {"uc_seed", "uc_child"}            # child spawned at runtime
+    child = next(r for r in out["step_results"] if r["agent_id"] == "uc_child")
+    assert child["step_id"] == "step_1.g0"              # namespaced under parent
+
+
+async def test_runtime_generation_is_depth_bounded(tmp_path):
+    """A handler that always asks to spawn another copy of itself must not loop
+    forever — the depth budget stops it, and the stop is surfaced (not silent)."""
+    from oneops.executor.nodes import DEFAULT_MAX_GENERATION_DEPTH
+
+    reg = _registry(tmp_path, [_agent("uc_loop")])
+    router = _StubRouter(RouteResult.routed(_plan(("step_1", "uc_loop", ())), ["d"]))
+
+    class _AlwaysGenerates:
+        async def run(self, step, request):
+            r = make_result(step, status="success", output="ok")
+            r["generated_steps"] = [{"agent_id": "uc_loop", "parameters": {}}]
+            return r
+
+    graph = build_executor_graph(router, reg, step_executor=_AlwaysGenerates())
+    out = await run_turn(graph, _envelope())
+    assert out["final_status"] == "executed"
+    # 1 seed + DEFAULT_MAX_GENERATION_DEPTH generated steps — bounded, finite.
+    assert len(out["step_results"]) == DEFAULT_MAX_GENERATION_DEPTH + 1
+    # the step that hit the limit carries a non-silent note (thumb rule #11).
+    assert any(r.get("generation_note") for r in out["step_results"])
+
+
+async def test_per_step_budget_override_widens_fan_out(tmp_path):
+    """The budget is not hardcoded: a step carrying `_gen_max_depth` overrides
+    the platform default — proving per-agent (agents-as-data) tunability."""
+    reg = _registry(tmp_path, [_agent("uc_loop")])
+    # Seed a plan step that sets its own (tighter) depth budget of 1.
+    router = _StubRouter(RouteResult.routed(
+        RoutePlan(steps=(PlanStep(step_id="step_1", agent_id="uc_loop"),)), ["d"]))
+
+    class _AlwaysGenerates:
+        async def run(self, step, request):
+            r = make_result(step, status="success", output="ok")
+            r["generated_steps"] = [{"agent_id": "uc_loop", "parameters": {}}]
+            return r
+
+    graph = build_executor_graph(router, reg, step_executor=_AlwaysGenerates())
+    envelope = _envelope()
+    # Inject the per-step override on the fast-path plan so it reaches dispatch.
+    envelope["entry_mode"] = "fast_path"
+    envelope["route_outcome"] = "routed"
+    envelope["plan"] = [{"step_id": "step_1", "agent_id": "uc_loop",
+                         "parameters": {}, "depends_on": [], "_gen_max_depth": 1}]
+    out = await run_turn(graph, envelope)
+    assert out["final_status"] == "executed"
+    # depth budget 1 → 1 seed + 1 generated = 2 steps only.
+    assert len(out["step_results"]) == 2
+
+
+async def test_hallucinated_generated_agent_is_refused_not_executed(tmp_path):
+    """Anti-hallucination: a generated step naming an agent with no registry
+    record is refused and surfaced — never executed (closed-vocabulary guard)."""
+    reg = _registry(tmp_path, [_agent("uc_seed")])      # note: no "uc_ghost"
+    router = _StubRouter(RouteResult.routed(_plan(("step_1", "uc_seed", ())), ["d"]))
+
+    class _GeneratesGhost:
+        async def run(self, step, request):
+            r = make_result(step, status="success", output="ok")
+            if step["agent_id"] == "uc_seed":
+                r["generated_steps"] = [{"agent_id": "uc_ghost", "parameters": {}}]
+            return r
+
+    graph = build_executor_graph(router, reg, step_executor=_GeneratesGhost())
+    out = await run_turn(graph, _envelope())
+    assert out["final_status"] == "executed"
+    # only the seed ran; the hallucinated ghost agent never became a step.
+    assert {r["agent_id"] for r in out["step_results"]} == {"uc_seed"}
+    seed = out["step_results"][0]
+    assert "unknown agent 'uc_ghost'" in (seed.get("generation_note") or "")
+
+
 # ── non-routed → boundary ────────────────────────────────────────────────
 
 
