@@ -24,9 +24,14 @@ Changelog
   v6 — 2026-06-01 — UC-1 summary format change (compact narrative + dated
                     bullets, key_details list hidden). Invalidates warm
                     turn-cache entries that hold the old paragraph shape.
+  v7 — 2026-06-02 — Data-flow binding: produced-value compound queries now
+                    decompose+bind+execute (previously inlined or blocked), and
+                    a binding to an undeclared producer field drops at plan time
+                    → some turns change outcome. Invalidate pre-fix cached turns
+                    so the new execution path is not masked by a stale entry.
 """
 from __future__ import annotations
 
-PIPELINE_CACHE_VERSION = "v6"
+PIPELINE_CACHE_VERSION = "v7"
 
 __all__ = ["PIPELINE_CACHE_VERSION"]
