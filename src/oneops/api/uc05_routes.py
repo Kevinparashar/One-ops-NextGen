@@ -232,6 +232,36 @@ def set_decide_dispatcher(fn: DecideDispatcher | None) -> None:
     _decide_dispatcher = fn
 
 
+@router.post("/propose/stream")
+async def propose_stream(payload: ProposeRequest, request: Request):
+    """Live-streaming twin of /propose — emits the shared agent/tool activity
+    events, then the normal `Proposal` as `final.payload` so the triage card
+    renders unchanged with the live panel on top."""
+    import uuid
+
+    from fastapi.responses import StreamingResponse
+
+    from oneops.api.streaming import event_stream, publish_tool
+    from oneops.executor.step_runner import _tool_action
+
+    request_id = "req_" + uuid.uuid4().hex[:18]
+    reg = getattr(request.app.state, "registry", None)
+    tool = reg.tools.get_optional("check_duplicate_candidates") if reg else None
+    action = _tool_action(tool) if tool else ""
+    store = get_ticket_store()
+
+    async def run_final():
+        prop = await publish_tool(
+            request_id, agent_id="uc05_triage",
+            tool_id="check_duplicate_candidates", action=action,
+            run=lambda: propose(payload, request, store=store))
+        return prop.model_dump(mode="json")
+
+    return StreamingResponse(
+        event_stream(request_id, run_final),
+        media_type="application/x-ndjson")
+
+
 @router.post("/propose", response_model=Proposal)
 async def propose(
     payload: ProposeRequest,

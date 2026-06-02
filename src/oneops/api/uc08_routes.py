@@ -419,6 +419,31 @@ async def create_sr(
 # ── POST /api/uc08/match ───────────────────────────────────────────────
 
 
+@router.post("/match/stream")
+async def match_catalog_stream(payload: MatchRequest, request: Request):
+    """Live-streaming twin of /match — emits the shared agent/tool activity
+    events, then the normal `MatchResponse` as `final.payload` so the
+    fulfillment wizard renders its match result unchanged, panel on top."""
+    import uuid
+
+    from fastapi.responses import StreamingResponse
+
+    from oneops.api.streaming import event_stream, publish_tool
+
+    request_id = "req_" + uuid.uuid4().hex[:18]
+
+    async def run_final():
+        resp = await publish_tool(
+            request_id, agent_id="uc08_fulfillment",
+            tool_id="match_catalog", action="",
+            run=lambda: match_catalog(payload, request))
+        return resp.model_dump(mode="json")
+
+    return StreamingResponse(
+        event_stream(request_id, run_final),
+        media_type="application/x-ndjson")
+
+
 @router.post("/match", response_model=MatchResponse)
 async def match_catalog(
     payload: MatchRequest,

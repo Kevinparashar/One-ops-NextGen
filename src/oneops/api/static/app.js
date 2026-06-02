@@ -985,6 +985,94 @@
     }
   }
 
+  // Exposed for the bespoke UC button UIs (uc02/uc05/uc08 *.js) so they show
+  // the SAME live agent/tool panel. Renders the panel into `mount`, streams
+  // NDJSON from `url`, and returns the final payload (the UC's own response)
+  // for the caller to render its existing results view beneath the panel.
+  window.oneopsLiveStream = async function ({ url, body, headers, mount }) {
+    const head = document.createElement("div");
+    head.className = "live-head";
+    head.textContent = "Working on it…";
+    const list = document.createElement("ul");
+    list.className = "live-activity";
+    mount.appendChild(head);
+    mount.appendChild(list);
+
+    const routingRow = document.createElement("li");
+    routingRow.className = "live-row running";
+    routingRow.innerHTML =
+      '<span class="live-spin">🧭</span> <span class="live-action">' +
+      "Understanding your request &amp; selecting agents…</span>";
+    list.appendChild(routingRow);
+    let routingCleared = false;
+
+    const agentName = (id) => String(id || "")
+      .replace(/^uc\d+_/, "").replace(/_/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
+    const rows = {};
+    const keyOf = (ev) => ev.step_id || (ev.agent_id + "::" + ev.tool_id);
+    const onEvent = (ev) => {
+      if (ev.type === "tool_start") {
+        if (!routingCleared) { routingRow.remove(); routingCleared = true; }
+        const li = document.createElement("li");
+        li.className = "live-row running";
+        li.innerHTML =
+          '<div class="live-line1"><span class="live-spin">⏳</span> <b>' +
+          agentName(ev.agent_id) + " agent</b> is running " +
+          '<span class="live-tool">' + (ev.tool_id || "tool") + "</span></div>" +
+          (ev.action ? '<div class="live-action">↳ ' + ev.action + "…</div>" : "");
+        list.appendChild(li);
+        rows[keyOf(ev)] = li;
+      } else if (ev.type === "tool_done") {
+        const li = rows[keyOf(ev)];
+        const ok = ev.status === "success";
+        if (li) {
+          li.className = "live-row " + (ok ? "done" : "failed");
+          li.innerHTML =
+            '<div class="live-line1">' + (ok ? "✓" : "✗") + " <b>" +
+            agentName(ev.agent_id) + " agent</b> · " +
+            '<span class="live-tool">' + ev.tool_id + "</span>" +
+            ' <span class="live-lat">' +
+            (ev.latency_ms != null ? ev.latency_ms + " ms" : "") + "</span></div>";
+        }
+      }
+    };
+
+    let finalPayload = null;
+    try {
+      const res = await fetch(url, {
+        method: "POST", headers: headers || {}, body: JSON.stringify(body),
+      });
+      if (!res.ok || !res.body) {
+        head.textContent = "Request failed (" + res.status + ")";
+        return null;
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const ln = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!ln) continue;
+          let ev;
+          try { ev = JSON.parse(ln); } catch (_) { continue; }
+          if (ev.type === "final") finalPayload = ev.payload;
+          else onEvent(ev);
+        }
+      }
+    } catch (err) {
+      head.textContent = "Error: " + err;
+      return null;
+    }
+    head.textContent = "Done";
+    return finalPayload;
+  };
+
   $("#chat-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const input = $("#chat-input");

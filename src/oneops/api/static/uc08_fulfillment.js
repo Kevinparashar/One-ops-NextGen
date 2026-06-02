@@ -154,21 +154,32 @@
     btn.disabled = true;
     btn.textContent = "⏳ Finding match…";
     try {
+      // Live agent/tool panel (shared with chat), then the match result.
       // Use the raw text as both title + description — /match doesn't
       // require a persisted SR. Mark state.sr as null so the next-step
       // render knows this is a preview (no Proceed button).
-      const match = await api("/api/uc08/match", {
+      body.innerHTML = "";
+      const match = await window.oneopsLiveStream({
+        url: "/api/uc08/match/stream",
         body: {
           sr_title: text.slice(0, 120),
           sr_description: text,
           top_k: 4,
         },
+        headers: headers(), mount: body,
       });
+      if (!match || match.error || match.final_status === "failed") {
+        err.textContent = (match && match.error) || "match failed";
+        err.classList.remove("hidden");
+        btn.disabled = false;
+        btn.textContent = "🔍 Find match";
+        return;
+      }
       state.sr = null;          // preview mode — no SR yet
       state.match = match;
       state.previewText = text; // keep so we can promote-to-SR later
       state.step = "match";
-      render();
+      render();                 // replaces body with the match result view
     } catch (e) {
       err.textContent = `${e.message || e}`;
       err.classList.remove("hidden");
