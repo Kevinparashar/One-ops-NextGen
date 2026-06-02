@@ -16,7 +16,7 @@ All three deterministic tools share the same shape:
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from oneops.observability import get_logger
@@ -246,6 +246,31 @@ def _get_summarize_fn() -> SummarizeFn | None:
     return _summarize_fn
 
 
+_RESERVED_SUMMARY_KEYS = frozenset({
+    "outcome", "ticket_id", "service_id", "message", "summary",
+    "cache_hit", "cache_age_s",
+})
+
+
+def _record_bindable_fields(record: dict[str, Any] | None) -> dict[str, Any]:
+    """The record's OWN scalar fields, surfaced as the summary's bindable output
+    so a downstream step can consume any of them BY NAME (data-flow binding).
+
+    Fully dynamic — NO hardcoded field catalog: it reflects whatever fields the
+    (already RBAC/classification-filtered) record carries right now. Add, rename,
+    or delete a field in the data/schema and the bindable surface follows
+    automatically. A binding to a field that no longer exists simply omits at
+    runtime (planner bindings are optional), so field churn never breaks a turn.
+    """
+    out: dict[str, Any] = {}
+    for k, v in (record or {}).items():
+        if k in _RESERVED_SUMMARY_KEYS:
+            continue
+        if isinstance(v, (str, int, float, bool)) and str(v).strip():
+            out[k] = v
+    return out
+
+
 @dataclass(frozen=True)
 class SummarizeResult:
     outcome: str          # "summarized" | "not_found" | "invalid_request" | "llm_unavailable"
@@ -253,14 +278,23 @@ class SummarizeResult:
     service_id: str
     message: str
     summary: dict[str, Any] | None = None
+    # The record's own scalar fields (dynamic), spread at the top level of the
+    # output so a downstream step's data-flow binding can resolve any of them by
+    # name. Empty unless populated from the source record.
+    bindable_fields: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        # `bindable` is a single, namespaced container for the record's dynamic
+        # fields — kept OUT of the top level so the summary's output contract is
+        # unchanged for existing consumers (they read outcome/summary/message).
+        # The data-flow resolver looks here for a downstream binding's field.
         return {
             "outcome": self.outcome,
             "ticket_id": self.ticket_id,
             "service_id": self.service_id,
             "message": self.message,
             "summary": self.summary,
+            "bindable": dict(self.bindable_fields),
         }
 
 
@@ -539,6 +573,10 @@ async def summarize_entity(
             + (" (from cache)." if cache_meta and cache_meta.get("hit") else ".")
         ),
         summary=summary,
+        # Dynamic bindable surface = the visible record's own fields (already
+        # RBAC/classification-filtered). Lets a downstream data-flow binding
+        # consume any field this record carries; no hardcoded names.
+        bindable_fields=_record_bindable_fields(visible),
     ).to_dict()
     if cache_meta is not None:
         out["cache_hit"] = bool(cache_meta.get("hit"))

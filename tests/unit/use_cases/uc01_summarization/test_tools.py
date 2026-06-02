@@ -24,7 +24,8 @@ from oneops.use_cases.uc01_summarization.tools import (
 )
 
 _SUB_KEYS = {"outcome", "ticket_id", "service_id", "kind", "message", "items"}
-_SUMMARY_KEYS = {"outcome", "ticket_id", "service_id", "message", "summary"}
+_SUMMARY_KEYS = {"outcome", "ticket_id", "service_id", "message", "summary",
+                 "bindable"}
 
 
 @pytest.fixture

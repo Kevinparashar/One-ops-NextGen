@@ -120,11 +120,14 @@ def test_subquery_binding_maps_to_primary_step(tmp_path):
     ], reg)
     by_agent = {s.agent_id: s for s in plan.steps}
     a, b = by_agent["uc_a"], by_agent["uc_b"]
-    # The binding lands on uc_b, sourced from uc_a's terminal step, hard dep.
+    # The binding lands on uc_b, sourced from uc_a's terminal step. Planner
+    # bindings are ENRICHMENT: optional (required=False) + soft dependency, so a
+    # missing/failed upstream degrades to the inline query, never blocks.
     assert len(b.parameter_bindings) == 1
     pb = b.parameter_bindings[0]
     assert (pb.from_step, pb.from_field, pb.to_param) == (a.step_id, "root_cause", "query")
-    assert (a.step_id, "hard") in b.dependency_types
+    assert pb.required is False                # enrichment, never blocks
+    assert (a.step_id, "soft") in b.dependency_types
     assert a.step_id in b.depends_on          # ordering edge guaranteed
     assert a.parameter_bindings == ()          # source step carries none
 
@@ -221,18 +224,24 @@ def test_binding_to_declared_field_survives(tmp_path):
     assert consumer.parameter_bindings[0].from_field == "summary"
 
 
-def test_binding_to_undeclared_field_is_dropped(tmp_path):
+def test_binding_to_field_not_in_static_surface_is_kept_for_runtime(tmp_path):
+    """DYNAMIC-FIELD SAFE: producer fields change at runtime, so a binding whose
+    field isn't in the producer's *static* declared surface is NOT dropped at
+    plan time — it's kept (optional), and the RUNTIME resolver decides against
+    the producer's ACTUAL output (resolve if present, omit gracefully if not).
+    A static plan-time drop would wrongly kill fields that exist at runtime."""
     reg = _producer_registry(tmp_path)
     plan = assemble_plan([
         _route("sq1", ["uc_producer"]),
         _bound_route("sq2", ["uc_consumer"], depends_on_sq=("sq1",),
-                     bindings=[("sq1", "root_cause", "query")]),  # NOT declared → drop
+                     bindings=[("sq1", "root_cause", "query")]),  # not in static surface
     ], reg)
     consumer = next(s for s in plan.steps if s.agent_id == "uc_consumer")
-    assert consumer.parameter_bindings == ()       # dropped at plan-time, not blocked
-    # ordering edge to the producer is still present (fallback to ordering-only)
+    assert len(consumer.parameter_bindings) == 1            # KEPT, not dropped
+    pb = consumer.parameter_bindings[0]
+    assert pb.from_field == "root_cause" and pb.required is False  # optional → runtime-safe
     producer = next(s for s in plan.steps if s.agent_id == "uc_producer")
-    assert producer.step_id in consumer.depends_on
+    assert producer.step_id in consumer.depends_on          # ordering edge present
 
 
 def test_undeclared_producer_skips_validation(tmp_path):

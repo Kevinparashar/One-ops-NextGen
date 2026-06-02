@@ -198,7 +198,13 @@ def _resolve_bindings(
                 return {}, "blocked", f"upstream step '{from_step}' {why}"
             continue                          # hard but optional binding → omit
 
-        val = dotted_get(prev.get("output"), from_field)
+        # Resolve the field against the producer's output: try the top level
+        # first, then the `bindable` namespace (where producers expose their
+        # record's dynamic fields). Flat from_field names work either way.
+        output = prev.get("output")
+        val = dotted_get(output, from_field)
+        if val is None and isinstance(output, dict):
+            val = dotted_get(output.get("bindable"), from_field)
         if val is None:
             if required:
                 return ({}, "blocked",

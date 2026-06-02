@@ -281,24 +281,34 @@ def assemble_plan(
                 _log.warning("router.binding_dropped_unknown_source",
                              route=route.sub_query_id, from_sq=from_sq)
                 continue
-            # Output-field contract: a binding may only target a field the
-            # producer DECLARES it emits. If the producer declared its output
-            # surface and `from_field` isn't in it, the planner guessed a field
-            # that doesn't exist — drop the binding at plan time (loud) so it
-            # falls back to ordering-only, instead of resolving to a runtime
-            # block. Undeclared producers (empty set) skip this check.
+            # Output-field contract — DYNAMIC-FIELD SAFE. Producer fields are
+            # dynamic (create/update/delete/rename at any time), so we do NOT
+            # hard-drop an enrichment binding against a static declared list:
+            # planner bindings are optional (`required=False`), so the RUNTIME
+            # resolver decides against the producer's ACTUAL output — resolve if
+            # the field exists now, omit gracefully if it was renamed/removed.
+            # A static plan-time gate would wrongly drop fields that exist at
+            # runtime. We only consult the declared surface as a soft signal
+            # (logged) — never a drop — keeping the binding alive for the
+            # dynamic runtime check.
             declared = _producer_output_fields(
                 registry, terminal_agent_by_subquery.get(from_sq, ""))
             if declared and from_field not in declared:
-                _log.warning("router.binding_dropped_undeclared_field",
-                             route=route.sub_query_id, from_sq=from_sq,
-                             from_field=from_field, declared=sorted(declared))
-                continue
+                _log.info("router.binding_field_not_in_declared_surface",
+                          route=route.sub_query_id, from_sq=from_sq,
+                          from_field=from_field, note="kept; runtime resolves dynamically")
             from_step = up_steps[-1]
+            # Planner-emitted bindings are ENRICHMENT, not hard requirements:
+            # the dependent sub-query already carries the inlined entity in its
+            # text (Inlining rule), so a missing/unresolved value must degrade to
+            # that inline query, never block. `required=False` makes the executor
+            # omit-and-proceed instead of emitting a `blocked` step.
             prim_bindings.append(ParameterBinding(
                 from_step=from_step, from_field=from_field,
-                to_param=to_param, required=True))
-            prim_dep_types.append((from_step, "hard"))
+                to_param=to_param, required=False))
+            # Soft ordering: the bound value is best-effort; a failed/blocked
+            # upstream must not block this step (it still has its inline query).
+            prim_dep_types.append((from_step, "soft"))
             prim_extra_deps.append(from_step)
 
         for agent_id in needed:
