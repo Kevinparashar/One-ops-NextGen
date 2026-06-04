@@ -25,7 +25,9 @@ from typing import Any
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import RetryPolicy
 
+from oneops.errors import UpstreamError
 from oneops.executor.boundary import BoundaryResponder, DeterministicBoundaryResponder
 from oneops.executor.hooks import HookRegistry, default_hook_registry
 from oneops.executor.nodes import ExecutorNodes, dispatch_wave, route_branch
@@ -86,11 +88,19 @@ def build_executor_graph(
         time_filter_extractor=time_filter_extractor,
     )
 
+    # Per-node retry for the LLM-bearing DECISION nodes only. Both are
+    # read-only/idempotent (classify + plan — no writes), so re-running on a
+    # transient upstream blip is safe. Scoped to `UpstreamError` (LLM
+    # upstream/timeout/rate-limit, cache, NATS) so logic errors are NOT retried,
+    # and gateway-exhausted `LLMGatewayError` (which already had its own internal
+    # retries) is not retried again. Defaults: backoff 0.5s ×2, jitter on.
+    _llm_node_retry = RetryPolicy(max_attempts=3, retry_on=UpstreamError)
+
     g: StateGraph = StateGraph(ExecutorState)
     g.add_node("load_session", nodes.load_session)
     g.add_node("update_focus", nodes.update_focus)
-    g.add_node("control_gate", nodes.control_gate)
-    g.add_node("route", nodes.route)
+    g.add_node("control_gate", nodes.control_gate, retry_policy=_llm_node_retry)
+    g.add_node("route", nodes.route, retry_policy=_llm_node_retry)
     g.add_node("wave", nodes.wave)
     g.add_node("run_step", nodes.run_step)
     g.add_node("aggregate", nodes.aggregate)

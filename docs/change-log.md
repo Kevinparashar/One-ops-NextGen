@@ -170,4 +170,22 @@
   inner; env overrides flow through; worker uses settings + explicit-arg wins);
   ruff + mypy clean.
 
+## 2026-06-04 · LangGraph review #5 — per-node RetryPolicy on LLM decision nodes
+
+- **What**: Added `RetryPolicy(max_attempts=3, retry_on=UpstreamError)` to the two
+  LLM-bearing DECISION nodes — `route` and `control_gate` — via `add_node(...,
+  retry_policy=...)` (the typed kwarg; `retry=` works at runtime but fails mypy).
+- **Why scoped this way**: both nodes are read-only/idempotent (classify + plan, no
+  writes), so re-running on a transient blip is safe. `retry_on=UpstreamError` retries
+  only transient infra faults (LLM upstream/timeout/rate-limit, cache, NATS); logic
+  errors fail fast (no wasted retries), and gateway-exhausted `LLMGatewayError` is NOT
+  retried again (the gateway already did its own internal retries — no amplification).
+  The action-capable `run_step` node deliberately gets NO retry (avoid double-executing
+  writes).
+- **Files**: `src/oneops/executor/graph.py`,
+  `tests/unit/executor/test_node_retry_policy.py` (new).
+- **Validation**: smoke 5/5; 5/5 retry tests (UpstreamError retried→succeeds; ValueError
+  + ConfigError NOT retried; attempts capped then re-raised; real graph wires retry on
+  route+control_gate and NOT on run_step); ruff + mypy clean. Satisfies rule §2.8.
+
 <!-- Append new entries below this line as batches land. -->

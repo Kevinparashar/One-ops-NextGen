@@ -25,7 +25,7 @@ Overall: idiomatic + in the right direction; reducers/checkpointer-guard/thread_
 - **#2 (moot for prod, see R-12)** interrupt() placement after before-hooks.
 - **#3 (P2)** runtime step-gen via plan-channel mutation → should be dynamic `Send`/subgraph (coupled to #1).
 - **#4 (P3)** streaming via side event-sink, not `astream(stream_mode="custom")`.
-- **#5 (P1)** no per-node `RetryPolicy` on LLM nodes (`route`,`control_gate`) — one-liners.
+- **#5 (P1)** ✅ RESOLVED 2026-06-04 — `RetryPolicy(max_attempts=3, retry_on=UpstreamError)` on `route`+`control_gate` (idempotent); `run_step` deliberately excluded. Test-locked.
 Keep-list (do NOT change): reducers (state.py:18-66), checkpointer shared-DB guard (graph.py:201-254), thread_id resume wiring, `ToolNode` deliberately unused.
 
 ## Manual verification required
