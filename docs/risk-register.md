@@ -58,6 +58,8 @@ at `observability/__init__.py:229`; 1 = the R-16 interface param). **0 orphaned 
 0 removable dead functions** beyond `record_approval_decision` (removed). Conclusion:
 no additional removable intra-file dead code.
 
+| R-17 | **uc08 action-tool handler_refs are aspirational (Phase-6), not resolvable.** The 7 uc08 action tools (create_directory_account, provision_email_mailbox, grant_vpn_access, assign_software_license, add_to_groups, escalate_sla_breach, notify_milestone) have `handler_ref` → `oneops.use_cases.uc08_fulfillment.tools:<name>`, but those functions are NOT in tools.py (its docstring marks them Phase-6). They run via the UC-8 **adapter** (`inprocess.py`), not the registry HandlerResolver. Harmless today (registry integrity validates tool_refs/agent-ids but does NOT import handler_refs at boot). | Low | Open (Phase-6 wiring) | FIXED 2026-06-04 the worst case: the 2 shared tools pointed at a *non-existent module* `oneops.tools.shared` → repointed to the conventional module (consistent with the other 5). Remaining: when Phase-6 lands, add the tools.py wrapper functions (delegating to the adapter) so all 7 handler_refs resolve, OR document the adapter as the canonical dispatch and drop the unused handler_refs. |
+
 ## Manual verification required
 
 - ✅ DONE (2026-06-04): `.env` / `.env.shared-stack.bak` were NEVER committed in

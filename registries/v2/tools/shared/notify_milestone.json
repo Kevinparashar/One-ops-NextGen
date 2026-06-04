@@ -16,7 +16,7 @@
       "created_at": "2026-05-31T08:30:00.000000+00:00",
       "description": "Send a milestone notification to the requester. Pluggable channel (email/Slack/in-app) chosen per tenant policy. Used by every UC that needs user-facing progress messages \u2014 UC-8 milestones, UC-5 escalations, future UCs. Idempotent on (tenant_id, ritm_id, milestone_id).",
       "execution_type": "action",
-      "handler_ref": "oneops.tools.shared.notify_milestone:notify_milestone",
+      "handler_ref": "oneops.use_cases.uc08_fulfillment.tools:notify_milestone",
       "id": "notify_milestone",
       "idempotent": true,
       "owner": "team-itsm",
