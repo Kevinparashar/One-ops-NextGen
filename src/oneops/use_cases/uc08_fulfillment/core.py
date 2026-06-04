@@ -39,6 +39,7 @@ from oneops.use_cases.uc08_fulfillment.contracts import (
 from oneops.use_cases.uc08_fulfillment.db import ConnectionProvider
 from oneops.use_cases.uc08_fulfillment.errors import (
     DuplicateRequestError,
+    InvalidTemplateError,
 )
 
 _log = structlog.get_logger("oneops.uc08.core")
@@ -74,6 +75,13 @@ def _sanitise_variables(variables: dict) -> dict:
     }
 
 
+# Defence-in-depth bound on catalog-template nesting. Templates are admin-authored
+# config (itsm.catalog_item), not user input, and real ones are shallow; this
+# converts a pathologically deep template from an ungraceful RecursionError into a
+# clear InvalidTemplateError (config bug → 422). Generous so no real template trips.
+_MAX_TEMPLATE_DEPTH = 16
+
+
 def _substitute_input_template(
     input_template: dict | None, variables: dict,
 ) -> dict:
@@ -82,18 +90,26 @@ def _substitute_input_template(
 
     Production-grade contract:
       • Only leaf string values are substituted; nested dicts/lists
-        are walked recursively.
+        are walked recursively (bounded by `_MAX_TEMPLATE_DEPTH`).
       • A missing variable leaves the placeholder string unchanged
         (the adapter's signature validation will catch unset required
         fields — fail-loud rather than silent default).
       • Non-string values pass through untouched.
+      • A template nested beyond `_MAX_TEMPLATE_DEPTH` raises
+        `InvalidTemplateError` (malformed config) rather than recursing
+        unbounded.
     """
     if not input_template:
         return {}
 
     safe_vars = _sanitise_variables(variables)
 
-    def _walk(v):
+    def _walk(v, depth: int = 1):
+        if depth > _MAX_TEMPLATE_DEPTH:
+            raise InvalidTemplateError(
+                f"catalog template nested beyond max depth "
+                f"{_MAX_TEMPLATE_DEPTH}"
+            )
         if isinstance(v, str):
             # Format-string substitution only for safe-key `{var}` values.
             # KeyError on missing → leave placeholder; ValueError on
@@ -105,9 +121,9 @@ def _substitute_input_template(
             except (KeyError, IndexError, ValueError):
                 return v
         if isinstance(v, dict):
-            return {k: _walk(x) for k, x in v.items()}
+            return {k: _walk(x, depth + 1) for k, x in v.items()}
         if isinstance(v, list):
-            return [_walk(x) for x in v]
+            return [_walk(x, depth + 1) for x in v]
         return v
 
     return {k: _walk(v) for k, v in input_template.items()}
