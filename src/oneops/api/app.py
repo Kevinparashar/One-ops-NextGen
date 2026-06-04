@@ -259,15 +259,39 @@ _FAST_PATH_PHRASING: dict[str, Any] = {
 }
 
 
-def _humanise_fast_path_request(uc_id: str, inputs: dict[str, Any]) -> str:
+def _uc_display_name(uc_id: str, registry: Any = None) -> str:
+    """Human-friendly use-case name that NEVER exposes the ``ucNN_`` wire prefix.
+
+    Single source of truth is the registry agent's ``name`` (minus a trailing
+    " Agent"), so display labels stay consistent with the catalogue. Falls back
+    to deriving the name from the uc_id when the registry/agent is unavailable —
+    e.g. ``uc02_similar_tickets`` -> "Similar Tickets". The ``uc_id`` itself is a
+    stable contract (routes/registry ids) and is left untouched; this only
+    affects what a human reads.
+    """
+    if registry is not None:
+        agent = registry.agents.get_optional(uc_id)
+        name = (getattr(agent, "name", "") or "").strip()
+        if name.endswith(" Agent"):
+            name = name[: -len(" Agent")].strip()
+        if name:
+            return name
+    parts = (uc_id or "").split("_")
+    tail = " ".join(parts[1:]) if len(parts) > 1 else (uc_id or "")
+    return tail.title() if tail else "request"
+
+
+def _humanise_fast_path_request(uc_id: str, inputs: dict[str, Any],
+                                registry: Any = None) -> str:
     """Build the user-facing message stored in the session log when a turn
     enters via the fast-path button. Falls back to a generic shape for any
-    UC that hasn't declared phrasing yet."""
+    UC that hasn't declared phrasing yet — using the descriptive use-case name
+    (never the raw ``ucNN_`` id)."""
     phraser = _FAST_PATH_PHRASING.get(uc_id)
     if phraser is not None:
         return phraser(inputs)
     first_value = next(iter((inputs or {}).values()), "")
-    label = uc_id.replace("_", " ").title() if uc_id else "request"
+    label = _uc_display_name(uc_id, registry) if uc_id else "request"
     return f"Run {label}: {first_value}".rstrip(": ")
 
 
@@ -742,7 +766,8 @@ async def _lifespan(app: FastAPI):
                 import asyncpg
                 pg_url = os.getenv("POSTGRES_URL")
                 if not pg_url:
-                    raise RuntimeError("POSTGRES_URL not set for UC-5 runner")
+                    raise RuntimeError(
+                        "POSTGRES_URL not set for Triage (UC-5) runner")
                 return await asyncpg.connect(pg_url)
 
             uc05_runner = build_runner(
@@ -861,7 +886,8 @@ async def _lifespan(app: FastAPI):
             import asyncpg
             pg_url = os.getenv("POSTGRES_URL")
             if not pg_url:
-                raise RuntimeError("POSTGRES_URL not set for UC-2 runner")
+                raise RuntimeError(
+                    "POSTGRES_URL not set for Similar Tickets (UC-2) runner")
             return await asyncpg.connect(pg_url)
 
         # Read the discriminator gateway/model wired earlier in lifespan so
@@ -1333,6 +1359,7 @@ def build_app() -> FastAPI:
                 detail=f"use case {uc_id!r} does not expose a fast-path entry")
         return {
             "uc_id": uc_id,
+            "display_name": _uc_display_name(uc_id, app.state.registry),
             "primary_tool_id": spec.primary_tool_id,
             "input_fields": [
                 {"name": f.name, "type": f.type, "required": f.required,
@@ -1868,7 +1895,8 @@ def build_app() -> FastAPI:
             # asked when they pressed the button. This is what appears in
             # the conversation log and on reload, so it must read naturally
             # ("Summarize INC0001001"), never as debug junk.
-            "message": _humanise_fast_path_request(uc_id, inputs),
+            "message": _humanise_fast_path_request(
+                uc_id, inputs, app.state.registry),
             # Pre-built plan + explicit fast-path stamp — see executor.graph
             # entry-branch contract.
             "plan": plan_state,
@@ -1958,7 +1986,8 @@ def build_app() -> FastAPI:
         envelope: dict[str, Any] = {
             "request_id": request_id, "tenant_id": tenant_id,
             "session_id": session_id, "user_id": user_id, "role": role,
-            "message": _humanise_fast_path_request(uc_id, inputs),
+            "message": _humanise_fast_path_request(
+                uc_id, inputs, app.state.registry),
             "plan": plan_state, "route_outcome": "routed",
             "entry_mode": "fast_path",
         }

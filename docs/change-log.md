@@ -60,4 +60,31 @@
 - **Result**: P0-1 resolved. Note: `ci-fast` now ~1:42 (real coverage); if too slow
   per-commit, add `pytest-xdist` (deliberate dep decision — see risk-register R-5).
 
+## 2026-06-04 · Rename Option A — descriptive use-case names (display only)
+
+- **What**: Made every human-facing surface show the descriptive use-case name
+  instead of the `ucNN_` wire id. The wire id (routes, NATS subjects, env vars,
+  module names, registry ids, `uc_id` values) is a stable contract and is
+  UNCHANGED — only what a person reads changed.
+- **Scope finding**: names were already mostly descriptive (registry agent names +
+  rich descriptions; frontend derived labels). Three real gaps fixed:
+  - **A-1**: the fast-path session message built its label as
+    `uc_id.replace("_"," ").title()` → "Run **Uc01** Summarization: …" (wire id
+    shown to the user). Now uses the descriptive name → "Run Summarization: …".
+  - **A-2**: new `_uc_display_name(uc_id, registry)` helper — single source of
+    truth is the registry agent `name` (minus " Agent"), with a uc_id-derivation
+    fallback. `/api/fast/{uc_id}/spec` now returns `display_name` (additive,
+    non-breaking); frontend `ucLabel(spec)` consumes it across all 4 label sites
+    (incl. the status line that printed the raw `uc01_summarization`).
+  - **A-3**: two operator log strings reworded *additively* — "Triage (UC-5)
+    runner" / "Similar Tickets (UC-2) runner" — the `UC-N` token is kept inside
+    the string so any log-based alerting still matches.
+- **Files**: `src/oneops/api/app.py`, `src/oneops/api/static/app.js`,
+  `tests/unit/api/test_uc_display_name.py` (new, 10 tests).
+- **Validation**: 10 new tests pass (incl. a contract test asserting `uc_id`
+  unchanged + `display_name` present); ruff + mypy clean; `make ci-fast` green —
+  **1520 passed / 81 deselected in 167s**.
+- **Result**: Option A complete. No contract changed (asserted by test). The deep
+  rename (module/route/subject/env) remains Option B — not taken.
+
 <!-- Append new entries below this line as batches land. -->

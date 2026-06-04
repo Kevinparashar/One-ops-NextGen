@@ -850,6 +850,13 @@
     return tail ? tail.replace(/^(\w)/, (m) => m.toUpperCase()) : ucId;
   }
 
+  // Display label for a use case. Prefers the registry-sourced `display_name`
+  // returned by /api/fast/{uc_id}/spec (single source of truth); falls back to
+  // deriving it from the uc_id. Never shows the raw `ucNN_` wire id to a user.
+  function ucLabel(spec) {
+    return (spec && spec.display_name) || humaniseUcId(spec && spec.uc_id);
+  }
+
   // ── chat door ────────────────────────────────────────────────────────
 
   // Shared live-streaming turn driver — used by BOTH the chat door and the
@@ -1160,7 +1167,7 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "action-btn";
-        btn.innerHTML = `<span class="icon">●</span>${humaniseUcId(spec.uc_id)}`;
+        btn.innerHTML = `<span class="icon">●</span>${ucLabel(spec)}`;
         btn.addEventListener("click", () => openFastPathModal(spec, {}));
         fastPathActions.appendChild(btn);
       });
@@ -1174,7 +1181,7 @@
     const modal = $("#fast-path-modal");
     const title = $("#fp-title");
     const form = $("#fp-form");
-    title.textContent = "Run " + humaniseUcId(spec.uc_id);
+    title.textContent = "Run " + ucLabel(spec);
     form.innerHTML = "";
 
     // Only show fields the user must supply. Fields with auto-derived
@@ -1226,7 +1233,7 @@
     // first input value is the entity id (`ticket_id`, `article_id`, …);
     // the verb comes from the UC label.
     const firstValue = Object.values(inputsValues)[0] || "";
-    const userText = `${humaniseUcId(spec.uc_id)} "${firstValue}"`;
+    const userText = `${ucLabel(spec)} "${firstValue}"`;
     addUserBubble({ door: "fast_path", text: userText });
     // Live streaming door — same panel as chat, so the button shows its
     // agents + tools working in real time too.
@@ -1234,7 +1241,7 @@
       url: `/api/fast/${encodeURIComponent(spec.uc_id)}/stream`,
       body: { inputs: inputsValues, session_id: sessionId },
       door: "fast_path",
-      statusLabel: `Running ${spec.uc_id}…`,
+      statusLabel: `Running ${ucLabel(spec)}…`,
     });
   }
 
