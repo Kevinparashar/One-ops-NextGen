@@ -3,6 +3,39 @@
 > One entry per reviewable change. Format: date · batch · what · why · files ·
 > validation · result. Behavior-preserving unless explicitly noted.
 
+## 2026-06-04 · UC-5 B-refactor Phase 2a — registry tool records + binding (additive)
+
+- **What**: Declared UC-5's three triage tools as registry records
+  (`registries/v2/tools/uc05_triage/{check_duplicate_candidates,recommend_assignment,prioritize_entity}.json`),
+  bound them in the `uc05_triage` agent's `tool_refs`, and wired the Phase-1
+  handler injectors (`set_uc05_gateway`/`set_uc05_connection_provider`/`set_uc05_ticket_store`)
+  at app boot alongside the existing runner. Each tool declares its bindable
+  `output_fields` (check emits `candidates`+`suggested_category`/`subcategory`;
+  recommend consumes `candidates`; prioritize consumes the category hints) — the
+  data-flow-binding contract the executor plan will use in Phase 2b.
+- **Why**: Makes UC-5's tools registry-declared and dispatchable by the MAIN
+  executor like every other UC (agents-as-data). Step 2 of moving UC-5 off its
+  bespoke runner/graph onto the standard execution path.
+- **Files**: 3 new tool records; `registries/v2/agents/uc05_triage.json`
+  (tool_refs); `src/oneops/api/app.py` (boot injector wiring).
+- **Validation**: registry integrity loads (28 active tools, uc05 3 bound, all
+  handler_refs resolve via HandlerResolver); ruff + mypy clean; app imports;
+  uc05 unit 309/309; registry unit 80/80; smoke 5/5.
+- **Result**: ADDITIVE — old runner still serves `/api/uc05/propose`; no behavior
+  change. Next: Phase 2b routes `/api/uc05/propose` through the main executor with
+  Send fan-out + data-flow binding (check → [assign ∥ prio] → assemble Proposal).
+
+## 2026-06-04 · UC-5 B-refactor Phase 1 — standard registry handlers (additive)
+
+- **What**: Added `src/oneops/use_cases/uc05_triage/handlers.py` — three
+  platform-standard `async (arguments, context) -> dict` handlers wrapping UC-5's
+  3 tools, with module-injected deps (mirrors `set_summarize_llm`). 7 new handler
+  unit tests.
+- **Why**: Foundation for executor dispatch of UC-5 tools (agents-as-data).
+- **Validation**: 7/7 handler tests; uc05 309/309 (additive); smoke 5/5; ruff+mypy
+  clean; CI gate green.
+- **Result**: Committed `5284e2a`. ADDITIVE — bespoke engine untouched.
+
 ## 2026-06-04 · Phase 1 — Baseline + audit (no code change)
 
 - **What**: Read-only repo-wide scan; produced `codebase-understanding.md`,

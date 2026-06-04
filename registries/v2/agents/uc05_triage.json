@@ -71,7 +71,20 @@
       ],
       "routing_shape": "single_agent",
       "status": "active",
-      "tool_refs": [],
+      "tool_refs": [
+        {
+          "tool_id": "check_duplicate_candidates",
+          "version": 1
+        },
+        {
+          "tool_id": "recommend_assignment",
+          "version": 1
+        },
+        {
+          "tool_id": "prioritize_entity",
+          "version": 1
+        }
+      ],
       "updated_at": "2026-05-29T16:30:00.000000+00:00",
       "version": 1
     }

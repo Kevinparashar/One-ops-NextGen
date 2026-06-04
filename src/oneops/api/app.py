@@ -819,6 +819,25 @@ async def _lifespan(app: FastAPI):
             _uc05_set_runner(uc05_runner)
             _log.info("oneops.api.uc05_runner_attached")
 
+            # B-refactor: wire the standard registry-dispatched UC-5 handlers
+            # (uc05_triage.handlers) with the same deps as the bespoke runner.
+            # Additive — the executor path uses these; the runner above still
+            # serves /api/uc05/propose until Phase 3 retires it. No behavior
+            # change today; this makes the registry tools dispatchable.
+            from oneops.use_cases.uc05_triage.handlers import (
+                set_uc05_connection_provider as _uc05_set_cp,
+            )
+            from oneops.use_cases.uc05_triage.handlers import (
+                set_uc05_gateway as _uc05_set_gw,
+            )
+            from oneops.use_cases.uc05_triage.handlers import (
+                set_uc05_ticket_store as _uc05_set_store,
+            )
+            _uc05_set_gw(gateway)
+            _uc05_set_cp(_uc05_conn_provider)
+            _uc05_set_store(_uc05_get_store())
+            _log.info("oneops.api.uc05_handlers_wired")
+
             # Start NATS triage agent — listens on oneops.uc05.triage.{propose,decide}
             if invoker_mode == "nats":
                 try:

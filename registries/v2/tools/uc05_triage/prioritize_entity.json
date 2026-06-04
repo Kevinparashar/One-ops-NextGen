@@ -1,0 +1,65 @@
+{
+  "active_version": 1,
+  "id": "prioritize_entity",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "role_in",
+        "values": ["__uc05_api_only_never_matches__"]
+      },
+      "created_at": "2026-06-04T00:00:00.000000+00:00",
+      "description": "Triage step 3: derive impact, urgency, and priority for an open incident or request via the Motadata 4x4 matrix, inferring impact/urgency from ticket and SLA signals (LLM-assisted) when not explicit. Accepts the suggested category/subcategory from check_duplicate_candidates (data-flow bound). Read-only — recommends, never writes.",
+      "execution_type": "read",
+      "handler_ref": "oneops.use_cases.uc05_triage.handlers:prioritize",
+      "id": "prioritize_entity",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "data_classification": "internal",
+          "description": "Service module of the ticket: incident | request.",
+          "name": "service_id",
+          "required": true,
+          "type": "str"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Canonical work-record id being triaged (e.g. INC0001001).",
+          "name": "ticket_id",
+          "required": true,
+          "type": "str"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Optional suggested category (data-flow bound from check_duplicate_candidates).",
+          "name": "suggested_category",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Optional suggested subcategory (incident only; data-flow bound from check_duplicate_candidates).",
+          "name": "suggested_subcategory",
+          "required": false,
+          "type": "str"
+        }
+      ],
+      "requires_scopes": [
+        "read:ticket"
+      ],
+      "output_fields": [
+        "impact",
+        "urgency",
+        "priority",
+        "basis"
+      ],
+      "status": "active",
+      "timeout_ms": 30000,
+      "updated_at": "2026-06-04T00:00:00.000000+00:00",
+      "version": 1
+    }
+  }
+}
