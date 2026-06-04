@@ -2089,14 +2089,22 @@ async def _run(
             latency_ms=int((time.monotonic() - t0) * 1000),
         )
     except OneOpsError as exc:
-        raise HTTPException(status_code=500,
-                            detail=f"engine failure: {exc}") from exc
+        # Log the real error internally; return an opaque message + request id so
+        # the client/support can correlate without leaking internals (P0-3).
+        req_id = envelope.get("request_id", "")
+        _log.warning("oneops.api.turn_failed", door=door,
+                     request_id=req_id, error_code=getattr(exc, "code", ""),
+                     error=str(exc)[:200])
+        raise HTTPException(
+            status_code=500,
+            detail=f"engine failure (request_id={req_id})") from exc
     except Exception as exc:                  # noqa: BLE001 — boundary
+        req_id = envelope.get("request_id", "")
         _log.warning("oneops.api.turn_failed",
-                     door=door, error=str(exc)[:200])
-        raise HTTPException(status_code=500,
-                            detail=f"engine failure: {type(exc).__name__}") \
-            from exc
+                     door=door, request_id=req_id, error=str(exc)[:200])
+        raise HTTPException(
+            status_code=500,
+            detail=f"engine failure (request_id={req_id})") from exc
     return TurnResponse(
         door=door,
         final_status=out.get("final_status") or "",

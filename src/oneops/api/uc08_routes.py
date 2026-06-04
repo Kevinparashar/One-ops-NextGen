@@ -287,7 +287,11 @@ async def create_sr(
     except TextExtractError as exc:
         _metric_inc("ai.uc08.create_sr.failed.total", 1,
                     tenant_id=tenant_id, reason="text_extract_failure")
-        raise HTTPException(502, detail=f"text-extract failure: {exc}")
+        # Log the real cause internally; return an opaque message to the client
+        # (no internal exception text leaks past the API boundary — P0-3).
+        _log.warning("uc08.create_sr.text_extract_failed",
+                     tenant_id=tenant_id, error=str(exc)[:200])
+        raise HTTPException(502, detail="text extraction failed") from exc
 
     # ── 1b. LLM-as-judge — validate the extraction (does not reject) ───
     # Runs concurrently with the INSERT below. Verdict is surfaced in
@@ -487,7 +491,9 @@ async def match_catalog(
         except CatalogSearchError as exc:
             _metric_inc("ai.uc08.match.failed.total", 1,
                         tenant_id=tenant_id, reason="search_error")
-            raise HTTPException(502, detail=f"search failure: {exc}")
+            _log.warning("uc08.match.search_failed",
+                         tenant_id=tenant_id, error=str(exc)[:200])
+            raise HTTPException(502, detail="catalog search failed") from exc
 
         candidates = [
             MatchCandidate(
@@ -534,7 +540,9 @@ async def match_catalog(
                 except CatalogSearchError as exc:
                     _metric_inc("ai.uc08.match.failed.total", 1,
                                 tenant_id=tenant_id, reason="rerank_error")
-                    raise HTTPException(502, detail=f"rerank failure: {exc}")
+                    _log.warning("uc08.match.rerank_failed",
+                                 tenant_id=tenant_id, error=str(exc)[:200])
+                    raise HTTPException(502, detail="catalog rerank failed") from exc
                 verdict = (
                     "RERANK_CHOSEN" if rr.verdict == "CHOSEN"
                     else rr.verdict

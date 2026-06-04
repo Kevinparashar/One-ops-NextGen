@@ -87,4 +87,31 @@
 - **Result**: Option A complete. No contract changed (asserted by test). The deep
   rename (module/route/subject/env) remains Option B — not taken.
 
+## 2026-06-04 · Batch B — security P0s (exception-leak fix; AUTHZ finding corrected)
+
+- **B-1 (P0-2) — NO CHANGE, audit corrected.** The finding ("`AUTHZ_JWT_SECRET`
+  fails with `None`") was inaccurate: `authz/tokens.py:_secret()` already fails fast
+  with a clear `ConfigError`, and `mint/verify_service_token` aren't wired into any
+  live path yet (only `tests/unit/authz/test_tokens.py`). Fixing correct code would
+  be churn. Future item (R-3): a boot-time presence check once service tokens are
+  wired into the NATS path. Documented, not changed (per "don't fix what isn't broken").
+- **B-2 (P0-3) — DONE.** Internal exception text was leaking to HTTP clients at four
+  sites. Each now **logs the real cause internally** (`str(exc)[:200]`, structlog)
+  and returns an **opaque `detail`**; the engine path adds `request_id=` so support
+  can correlate; `raise ... from exc` added for chain preservation. HTTP status codes
+  (502/500) preserved — clients may key on them.
+  - `api/app.py` — `OneOpsError` + generic branches: opaque "engine failure
+    (request_id=…)".
+  - `api/uc08_routes.py:290/490/537` — "text extraction failed" / "catalog search
+    failed" / "catalog rerank failed".
+  - Reviewed + KEPT: `uc02_routes.py:183` `detail=str(e)` on a `ResolveError` — a
+    400 user-facing validation message, not an internal leak (making it opaque would
+    hurt UX). Noted in audit.
+- **Files**: `src/oneops/api/app.py`, `src/oneops/api/uc08_routes.py`,
+  `tests/unit/api/test_error_no_leak.py` (new, 2 devil's-advocate tests).
+- **Validation**: new tests force a `OneOpsError` and a `RuntimeError` through
+  `/api/chat` and assert the 500 body is opaque (no secret/DSN/class-name) but
+  carries `request_id` — 2 pass; ruff + mypy clean; `make ci-fast` green.
+- **Result**: P0-3 resolved (R-4 closed); P0-2 reframed (R-3). No contract changed.
+
 <!-- Append new entries below this line as batches land. -->
