@@ -188,4 +188,33 @@
   + ConfigError NOT retried; attempts capped then re-raised; real graph wires retry on
   route+control_gate and NOT on run_step); ruff + mypy clean. Satisfies rule §2.8.
 
+## 2026-06-04 · Scheduler refactor #1 — Phase 0 (golden tests) + Phase 1 (recursion safety)
+
+REAL CODE (not docs). The scope doc (docs/scheduler-refactor-scope.md) is the plan;
+this is the first execution slice — the low-risk, high-value part.
+
+- **Phase 1 (code fix, the only real PROD risk in finding #1)**: `recursion_limit` was
+  a static env default (60); a deep dependency chain or deep runtime generation could
+  silently exceed it and abort a turn opaquely. Added `_safe_recursion_limit()` in
+  `executor/graph.py` that FLOORS the configured limit at a budget provably sufficient
+  for the configured generation depth (`_FIXED_SUPERSTEP_OVERHEAD + 2×(initial-plan
+  allowance + generation_depth)`); never shrinks a larger operator value; logs
+  `executor.recursion_limit_floored` when it raises. Also: a real `GraphRecursionError`
+  is now caught → logged as `executor.recursion_limit_exceeded` + span-tagged
+  (diagnosable, not an opaque "engine failure"). Behaviour unchanged at the default.
+- **Phase 0 (golden/characterization tests — the refactor oracle)**: the existing 27
+  executor tests already lock parallel/dependent/generation/binding/interrupt behavior;
+  added the missing cases — a **diamond DAG** (A→B,C→D fan-out→fan-in convergence; the
+  case a naive "fan out once" refactor would break) and an **unsatisfiable-dependency**
+  characterization (completes with `final_status='blocked'`, no fabricated success, no
+  hang). Plus 5 hermetic Phase-1 safety tests (below-floor→floored to exact formula;
+  at/above preserved; floor tracks generation depth; default 60 safe at depth 3).
+- **Files**: `src/oneops/executor/graph.py`,
+  `tests/unit/executor/test_recursion_limit_safety.py` (new),
+  `tests/unit/executor/test_graph.py` (+2 golden tests).
+- **Validation**: smoke 5/5; 39 passed (Phase-1 + Phase-0 + full executor regression);
+  ruff + mypy clean. No behavior change at defaults; zero contract change.
+- **Remaining (deferred, owner-gated)**: Phase 2 (remove the no-op `wave` node / move
+  scheduling onto the run_step edge) and Phase 3 (subgraph rewrite) — see scope doc §5/§9.
+
 <!-- Append new entries below this line as batches land. -->

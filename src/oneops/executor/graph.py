@@ -24,6 +24,7 @@ import os
 from typing import Any
 
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
@@ -157,6 +158,40 @@ def build_executor_graph(
     return compiled
 
 
+# ── recursion-limit safety (LangGraph review #1, Phase 1) ────────────────────
+# The wave⇄run_step loop spends ~2 supersteps per wave, plus a fixed prologue/
+# epilogue (load_session, update_focus, control_gate, route, aggregate, boundary,
+# persist + START/END margin). The number of waves = the plan's dependency depth
+# PLUS the runtime step-generation depth. A too-low `recursion_limit` would abort a
+# legitimate deep plan mid-turn with an opaque error. We therefore FLOOR the
+# configured limit at a value provably sufficient for the configured generation
+# budget, so a real plan can never silently hit it; if an operator's env value is
+# below that floor we raise to the floor and log it (never silently shrink headroom).
+_SUPERSTEPS_PER_WAVE = 2
+_FIXED_SUPERSTEP_OVERHEAD = 10          # fixed nodes + START/END margin (generous)
+_INITIAL_PLAN_WAVE_ALLOWANCE = 16       # generous depth for the *initial* plan's DAG
+
+
+def _safe_recursion_limit(configured: int) -> int:
+    """Return a recursion limit guaranteed to cover the generation budget.
+
+    Reads the generation-depth budget at call time (env-tunable, default 3) so the
+    floor tracks whatever generation depth is configured. Returns
+    `max(configured, derived_floor)` — never below what a legitimate deep plan needs.
+    """
+    from oneops.executor.nodes import DEFAULT_MAX_GENERATION_DEPTH
+    waves = _INITIAL_PLAN_WAVE_ALLOWANCE + max(0, DEFAULT_MAX_GENERATION_DEPTH)
+    floor = _FIXED_SUPERSTEP_OVERHEAD + _SUPERSTEPS_PER_WAVE * waves
+    if configured < floor:
+        _log.warning("executor.recursion_limit_floored",
+                     configured=configured, floor=floor,
+                     generation_depth=DEFAULT_MAX_GENERATION_DEPTH,
+                     reason="configured limit below the safe floor for the "
+                            "generation budget; raised to floor")
+        return floor
+    return configured
+
+
 async def run_turn(
     graph: Any, envelope: dict[str, Any], *, config: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -175,8 +210,8 @@ async def run_turn(
     # lift the default recursion limit so multi-wave plans complete. This is the
     # framework-level backstop for deep runtime step generation — operator-tunable
     # via env (not hardcoded) so large multi-wave plans get headroom without code.
-    cfg.setdefault("recursion_limit",
-                   int(os.getenv("ONEOPS_EXECUTOR_RECURSION_LIMIT", "60")))
+    cfg.setdefault("recursion_limit", _safe_recursion_limit(
+        int(os.getenv("ONEOPS_EXECUTOR_RECURSION_LIMIT", "60"))))
 
     # Root span for the whole turn — every node/tool/LLM span created during
     # `ainvoke` nests under it (context propagation), so one user request is
@@ -197,7 +232,18 @@ async def run_turn(
             "oneops.message_len": safe_text_len(message),
         },
     ) as span:
-        result = await graph.ainvoke(envelope, config=cfg)
+        try:
+            result = await graph.ainvoke(envelope, config=cfg)
+        except GraphRecursionError:
+            # Make this diagnosable rather than an opaque "engine failure": the
+            # plan exceeded the (floored) superstep budget. With the safe floor
+            # above this should be unreachable for legitimate plans — if it fires,
+            # it signals a runaway plan/generation worth investigating.
+            _log.warning("executor.recursion_limit_exceeded",
+                         request_id=envelope.get("request_id", ""),
+                         recursion_limit=cfg.get("recursion_limit"))
+            span.set_attribute("oneops.final_status", "recursion_limit_exceeded")
+            raise
         final_status = str(result.get("final_status") or "unknown")
         span.set_attribute("oneops.final_status", final_status)
         latency_ms = int((_time.monotonic() - t0) * 1000)

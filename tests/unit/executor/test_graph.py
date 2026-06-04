@@ -112,6 +112,49 @@ async def test_dependent_steps_both_run(tmp_path):
     assert {r["agent_id"] for r in out["step_results"]} == {"uc_a", "uc_b"}
 
 
+# ── GOLDEN characterization (scheduler-refactor oracle, review #1 Phase 0) ────
+# These lock scheduler behavior the planned wave-loop refactor must preserve
+# identically. See docs/scheduler-refactor-scope.md §6 invariants.
+
+
+async def test_diamond_dag_converges(tmp_path):
+    """A → (B, C in parallel) → D. The convergent step D waits for BOTH B and C
+    before running; all four execute exactly once. This is the fan-out→fan-in
+    case a naive 'fan out once from route' refactor would break."""
+    reg = _registry(tmp_path, [_agent("uc_a"), _agent("uc_b"),
+                               _agent("uc_c"), _agent("uc_d")])
+    router = _StubRouter(RouteResult.routed(_plan(
+        ("step_a", "uc_a", ()),
+        ("step_b", "uc_b", ("step_a",)),
+        ("step_c", "uc_c", ("step_a",)),
+        ("step_d", "uc_d", ("step_b", "step_c")),
+    ), ["d"]))
+    graph = build_executor_graph(router, reg)
+    out = await run_turn(graph, _envelope())
+    assert out["final_status"] == "executed"
+    results = out["step_results"]
+    # each step ran exactly once (no duplicate from the re-reading wave loop)
+    assert [r["step_id"] for r in results].count("step_d") == 1
+    assert {r["agent_id"] for r in results} == {"uc_a", "uc_b", "uc_c", "uc_d"}
+
+
+async def test_unsatisfiable_dependency_surfaces_not_hangs(tmp_path):
+    """A step depending on a step that is never in the plan must NOT hang the
+    loop. Characterized actual behavior: the turn completes with
+    final_status='blocked' and NO fabricated step result (the unrunnable step is
+    surfaced via status, never reported as a success). The refactor must keep
+    this — no infinite wave, no silent drop, no phantom success."""
+    reg = _registry(tmp_path, [_agent("uc_a")])
+    router = _StubRouter(RouteResult.routed(_plan(
+        ("step_1", "uc_a", ("ghost_step",)),   # depends on a step that doesn't exist
+    ), ["d"]))
+    graph = build_executor_graph(router, reg)
+    out = await run_turn(graph, _envelope())
+    assert out["final_status"] == "blocked"          # surfaced, not silent
+    # no step is reported as a success (the unrunnable step is not fabricated)
+    assert all(r.get("status") != "success" for r in out["step_results"])
+
+
 # ── runtime step generation (dynamic fan-out) ─────────────────────────────
 
 
