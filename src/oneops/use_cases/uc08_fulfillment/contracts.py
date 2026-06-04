@@ -105,8 +105,10 @@ class ApprovalType(StrEnum):
 
 class ApprovalState(StrEnum):
     """Approval gate lifecycle. Mirrors itsm.approval.state CHECK
-    constraint exactly. `pending` blocks the LangGraph workflow via
-    `interrupt()`; any terminal state resumes it."""
+    constraint exactly. `pending` is a DB-state gate: the fulfillment executor
+    persists an itsm.approval row and transitions the task to `blocked`; a
+    terminal decision unblocks dependent tasks. (This is NOT a LangGraph
+    `interrupt()` — UC-8 runs its own executor; see executor.py.)"""
 
     PENDING = "pending"
     APPROVED = "approved"
@@ -357,10 +359,16 @@ class FulfillmentPlan(BaseModel):
 class Approval(BaseModel):
     """One approval gate. Persisted as one row in itsm.approval.
 
-    When created with state=PENDING, UC-8 calls LangGraph `interrupt()`
-    with the approval_id. The graph pauses. When the gate transitions
-    to APPROVED or REJECTED, the resume API call (`POST /api/uc08/approve`)
-    feeds the decision back into the graph state and the workflow continues.
+    Created with state=PENDING by the fulfillment executor when a task uses
+    tool_id='request_human_approval' (executor.py); the task transitions to
+    `blocked` and `langgraph_interrupt_id` is None. Approval is DB-state, NOT
+    a LangGraph interrupt.
+
+    NOTE (as of 2026-06-04): there is currently NO production endpoint that
+    consumes a decision to unblock the task — `record_approval_decision`
+    (db.py) is defined but not yet wired to any route. The resume path is a
+    KNOWN GAP, not a shipped feature. (An earlier docstring here described a
+    `POST /api/uc08/approve` + LangGraph-resume flow that does not exist.)
     """
 
     model_config = ConfigDict(extra="forbid")

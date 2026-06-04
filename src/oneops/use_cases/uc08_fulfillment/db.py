@@ -527,6 +527,15 @@ async def record_approval_decision(
     version: int,
     conn: asyncpg.Connection,
 ) -> int | None:
+    """Apply an approve/reject decision to an itsm.approval row (optimistic-
+    locked on `version`).
+
+    ⚠️ NOT WIRED (as of 2026-06-04): no production route or worker calls this —
+    there is no `POST /api/uc08/approve` endpoint. The approval→unblock resume
+    path is a KNOWN GAP. This function is the intended building block for it,
+    kept so the resume path can be wired without re-deriving the SQL. Do not
+    assume approvals are consumed in production until a caller exists.
+    """
     new_state = "approved" if decision == "approved" else "rejected"
     return await conn.fetchval(
         """
