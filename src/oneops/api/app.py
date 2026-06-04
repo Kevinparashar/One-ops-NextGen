@@ -1664,9 +1664,17 @@ def build_app() -> FastAPI:
                     payload = (resp.model_dump()
                                if hasattr(resp, "model_dump") else dict(resp))
                 except Exception as exc:                   # noqa: BLE001
+                    # Log the real cause internally; the client gets an opaque
+                    # message + request_id (no internal exception text leaks on
+                    # the streaming path either — P0-3 / Batch C-3).
+                    _log.warning("oneops.api.stream_turn_failed",
+                                 door=door, request_id=rid,
+                                 error=str(exc)[:200])
                     payload = {
                         "door": door, "final_status": "failed",
-                        "final_response": f"stream error: {exc}",
+                        "final_response": (
+                            "The assistant ran into an error. Please try "
+                            f"again. (request_id={rid})"),
                         "step_results": [], "session_id": sid,
                         "request_id": rid, "trace_id": None, "latency_ms": 0}
                 with suppress(Exception):

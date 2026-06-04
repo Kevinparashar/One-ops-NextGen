@@ -16,6 +16,18 @@
 | R-9 | **Smoke + devils CI stages are placeholders.** | Medium | Open (Phase 6c) | Implement `scripts/smoke_routing.py`, `scripts/devils_play.py`. |
 | R-10 | **No Dockerfile / k8s** — docker-compose only. | Low (current phase) | Accepted | Add at deployment time. |
 
+| R-11 | **Test-infra hang**: multiple app-building test modules sharing a process can hang on TestClient streaming-lifespan teardown. | Low (tests only) | Open | Smoke uses a module-scoped app to avoid it; the C-3 stream endpoint test was made hermetic. Proper fix: a shared session-scoped app fixture for api/ tests. |
+| R-12 | **Executor `interrupt()` HIL is dead in production** — no `Command(resume)` in src/, per-request thread_id, in-memory checkpointer. UC approval is separate (UC-8 DB-blocked, UC-5 propose/decide). Stale docstrings claim a non-existent `/api/uc08/approve`. | Medium (correctness/clarity) | Open | (a) Correct stale docstrings (uc08 contracts.py:360-363, __init__.py). (b) Decide: wire interrupt properly (stable thread_id + resume endpoint + PG checkpointer) OR remove dead interrupt + `record_approval_decision`. From LangGraph review #6 + #2. |
+
+## LangGraph review (2026-06-04) — findings tracked
+Overall: idiomatic + in the right direction; reducers/checkpointer-guard/thread_id are strong. Open items:
+- **#1 (high, P2)** `wave ⇄ run_step` is a hand-rolled scheduler (no-op `wave` node + back-edge re-derives runnable set every superstep → forces `recursion_limit=60`). Idiomatic: single fan-out from `route` for parallel plans, or a subgraph per dependency level. High leverage, high blast radius — dedicated effort.
+- **#2 (moot for prod, see R-12)** interrupt() placement after before-hooks.
+- **#3 (P2)** runtime step-gen via plan-channel mutation → should be dynamic `Send`/subgraph (coupled to #1).
+- **#4 (P3)** streaming via side event-sink, not `astream(stream_mode="custom")`.
+- **#5 (P1)** no per-node `RetryPolicy` on LLM nodes (`route`,`control_gate`) — one-liners.
+Keep-list (do NOT change): reducers (state.py:18-66), checkpointer shared-DB guard (graph.py:201-254), thread_id resume wiring, `ToolNode` deliberately unused.
+
 ## Manual verification required
 
 - ✅ DONE (2026-06-04): `.env` / `.env.shared-stack.bak` were NEVER committed in

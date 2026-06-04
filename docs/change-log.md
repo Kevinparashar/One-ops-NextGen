@@ -114,4 +114,44 @@
   carries `request_id` — 2 pass; ruff + mypy clean; `make ci-fast` green.
 - **Result**: P0-3 resolved (R-4 closed); P0-2 reframed (R-3). No contract changed.
 
+## 2026-06-04 · Batch C-3 — streaming error paths: log internally, stay opaque (P1-2/P0-3)
+
+- **What**: The streaming error paths were the analog of the Batch-B HTTP leak.
+  Fixed both: `event_stream` (streaming.py) already logged but **leaked `str(exc)`
+  to the client** in the final `error` field → now opaque (`stream failed
+  (request_id=…)`). `_stream_turn` (app.py) **neither logged nor was opaque**
+  (`f"stream error: {exc}"`) → now logs the cause internally + returns an opaque
+  `final_response` with `request_id`. `publish_tool`'s re-raise was already correct
+  (untouched).
+- **Files**: `src/oneops/api/streaming.py`, `src/oneops/api/app.py`,
+  `tests/unit/api/test_stream_error_no_leak.py` (new).
+- **Test note (honest)**: the hermetic `event_stream` test fully covers the
+  streaming.py fix. The chat-door `_stream_turn` is a closure whose only test path
+  is a full TestClient streaming lifespan — which **hangs when multiple app-building
+  modules share a process** (test-infra issue, not a product bug; tracked R-11). So
+  the app.py change is covered-by-pattern (identical to the tested helper + the
+  tested Batch-B non-stream handler), not by a direct endpoint test. Documented, not
+  hidden.
+- **Validation**: cross-module combo that previously hung now passes (8/8, EXIT 0);
+  ruff + mypy clean. Pre-commit full-gate is the regression.
+
+## 2026-06-04 · Review finding #6 — executor HIL interrupt() is NOT production-wired
+
+- **What (investigation, no code change yet)**: A read-only agent confirmed the
+  executor's `interrupt()` (nodes.py:750) is **test-only / dead in production**:
+  no `Command(resume=...)` exists in `src/` (only tests); `thread_id` is a fresh
+  `request_id` per request (app.py:421,2056,2099) so a paused thread can never be
+  resumed; default checkpointer is in-memory (app.py:635). The real write-action
+  UCs use their OWN approval: UC-8 = DB `approval`/`blocked` state with
+  `langgraph_interrupt_id=None` (executor.py:270-290), **no `/approve` endpoint**,
+  dead `record_approval_decision` (db.py:523, zero callers); UC-5 = `/propose`+
+  `/decide` (graph.py:15, "NO interrupt()").
+- **Implication**: production approval works (via the UCs), but the executor
+  interrupt path is dead code with **stale docstrings** (uc08 contracts.py:360-363,
+  __init__.py) claiming a LangGraph-interrupt + `/api/uc08/approve` flow that does
+  not exist. Review finding #2 (interrupt placement) is therefore **moot for prod**.
+- **Follow-ups (low-risk, tracked R-12)**: correct the stale docstrings; later decide
+  to either wire the interrupt properly (stable thread_id + resume endpoint + PG
+  checkpointer) or remove the dead interrupt/`record_approval_decision`.
+
 <!-- Append new entries below this line as batches land. -->

@@ -55,10 +55,13 @@ async def event_stream(request_id: str, run_final: Callable[[], Awaitable[dict[s
             try:
                 payload = task.result()
             except Exception as exc:                       # noqa: BLE001
+                # Root cause is logged internally; the client payload stays
+                # opaque (+ request_id for correlation) — no internal exception
+                # text crosses the streaming boundary (P0-3 / Batch C-3).
                 _log.warning("oneops.api.streaming.run_final_failed",
                              request_id=request_id, error=str(exc)[:200])
                 payload = {"final_status": "failed",
-                           "error": str(exc)[:300]}
+                           "error": f"stream failed (request_id={request_id})"}
             yield _line({"type": "final", "payload": payload})
             break
     finally:
