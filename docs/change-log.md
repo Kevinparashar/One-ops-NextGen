@@ -3,6 +3,34 @@
 > One entry per reviewable change. Format: date · batch · what · why · files ·
 > validation · result. Behavior-preserving unless explicitly noted.
 
+## 2026-06-04 · UC-5 B-refactor Phase 2b-i — generic executor multi-tool extensions
+
+- **What**: Two additive, backward-compatible executor behaviours that let one
+  agent run a multi-step, multi-tool plan on the MAIN executor:
+  1. **Explicit tool selection** (`step_runner._select_tool`): a plan step may
+     name `tool_id`; the runner uses exactly that tool when it is bound to the
+     agent (fails loud if not), instead of the parameter-shape `_pick_tool`
+     heuristic. Needed because UC-5's `check` and `prioritize` share the same
+     required-param shape (service_id+ticket_id) — the heuristic can't tell them
+     apart. Absent `tool_id` ⇒ `_pick_tool` (chat path unchanged).
+  2. **Per-tool action gate** (`nodes._step_is_action`): when a step names a
+     `tool_id`, the approval `interrupt()` gates on THAT TOOL's `execution_type`,
+     not the agent tier. An action-tier agent may own read tools (propose) and
+     action tools (apply); only action tools require approval — so UC-5's
+     read-only propose steps don't wrongly interrupt. No `tool_id` ⇒ agent tier
+     (chat path unchanged).
+- **Why**: UC-agnostic foundation for B (UC-5 runs like every other UC on the
+  one executor). Both gates are inert for existing chat plans (the router never
+  stamps `tool_id`).
+- **Files**: `src/oneops/executor/step_runner.py`, `src/oneops/executor/nodes.py`;
+  new `tests/unit/executor/test_explicit_tool_and_action_gate.py` (5 tests).
+- **Validation**: 5 new tests pass; executor+toolrunner regression 192/192
+  (existing interrupt golden tests intact — proves backward compat); ruff+mypy
+  clean.
+- **Result**: ADDITIVE. Next: Phase 2b-ii — UC-5 triage plan builder + assemble
+  tool/handler (read previous_results → Proposal via the existing
+  assemble_proposal()).
+
 ## 2026-06-04 · UC-5 B-refactor Phase 2a — registry tool records + binding (additive)
 
 - **What**: Declared UC-5's three triage tools as registry records

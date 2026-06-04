@@ -137,6 +137,33 @@ class HandlerStepExecutor:
 
     # ── tool selection ───────────────────────────────────────────────────
 
+    def _select_tool(
+        self, agent: Any, step: dict[str, Any], step_params: dict[str, Any],
+    ) -> tuple[str, Any]:
+        """Pick the tool for a step, honouring an explicit `step["tool_id"]`.
+
+        Multi-tool plans (e.g. UC-5 triage: check → assign ∥ prio → assemble)
+        name the exact tool each step runs — necessary because several tools on
+        one agent can share a required-parameter shape (check and prioritize
+        both need service_id+ticket_id), which `_pick_tool`'s shape heuristic
+        cannot disambiguate. An explicit tool_id is the planner's commitment.
+
+        Rules (data-driven, no UC-specific code):
+          * `step["tool_id"]` present AND bound to the agent (`tool_refs`) →
+            use it (the planner chose it).
+          * present but NOT bound to the agent → return it with tool=None so
+            the caller fails LOUD (never silently run a different tool).
+          * absent → defer to `_pick_tool` (the chat path; zero behaviour
+            change — the router never stamps a tool_id).
+        """
+        explicit = str(step.get("tool_id") or "").strip()
+        if explicit:
+            allowed = {t.tool_id for t in (getattr(agent, "tool_refs", []) or [])}
+            if explicit in allowed:
+                return (explicit, self._registry.tools.get_optional(explicit))
+            return (explicit, None)        # surfaced loud by the caller
+        return self._pick_tool(agent, step_params)
+
     def _pick_tool(
         self, agent: Any, step_params: dict[str, Any],
     ) -> tuple[str, Any]:
@@ -293,7 +320,7 @@ class HandlerStepExecutor:
         # only falls back to it when no tool's required params are
         # satisfied.
         step_params: dict[str, Any] = dict(step.get("parameters") or {})
-        tool_id, tool = self._pick_tool(agent, step_params)
+        tool_id, tool = self._select_tool(agent, step, step_params)
         if tool is None:
             return make_result(
                 step, status="failed",
