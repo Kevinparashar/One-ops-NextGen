@@ -11,7 +11,7 @@
 | R-4 | **Client-facing exception text leak** (`{exc}` in HTTP detail). | Medium (security) | **RESOLVED 2026-06-04 (Batch B)** | 4 sites now log internally + return opaque `detail` (+ request_id) with `from exc`; status codes preserved. `uc02:183` reviewed + kept (400 validation message, not a leak). Devil's-advocate test `test_error_no_leak.py` locks it. |
 | R-5 | **CI unit-coverage gap** — gate ran ~1% of unit tests (19/1591). | Medium | **RESOLVED 2026-06-04 (Batch A1)** | Gate now runs the full 1510-test hermetic unit lane (`-m unit` + auto-marker), green in ~102s. Follow-up: `ci-fast` is ~1:42; if too slow per-commit, add `pytest-xdist` for parallelism (deliberate dependency decision — not taken unilaterally). |
 | R-6 | **No NATS idempotency** — re-delivery can double-execute writes (UC-5/8). | Medium | Open (Phase 4c) | Dedup by `request_id`. |
-| R-7 | **Hard-coded timeouts** — no operator knob. | Medium | Open (Phase 4a) | Env-parameterize with current values as defaults. |
+| R-7 | **Hard-coded timeouts** — no operator knob. | Medium | **RESOLVED 2026-06-04 (Batch C-6)** | Typed Settings fields (`turn_timeout_seconds`/`turn_nats_outer_timeout_seconds`/`graph_worker_timeout_seconds`); defaults = old literals (zero behavior change); env-overridable. Test-locked. |
 | R-8 | **Pre-existing test flakes** (time_filter, session_continuity, uc08; integration perf-load). | Low | Accepted/known | Track; do not attribute to new changes. Stabilize opportunistically. |
 | R-9 | **Smoke + devils CI stages are placeholders.** | Medium | Open (Phase 6c) | Implement `scripts/smoke_routing.py`, `scripts/devils_play.py`. |
 | R-10 | **No Dockerfile / k8s** — docker-compose only. | Low (current phase) | Accepted | Add at deployment time. |

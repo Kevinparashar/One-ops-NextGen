@@ -154,4 +154,20 @@
   to either wire the interrupt properly (stable thread_id + resume endpoint + PG
   checkpointer) or remove the dead interrupt/`record_approval_decision`.
 
+## 2026-06-04 · Batch C-6 — turn timeouts env-tunable (P1-1)
+
+- **What**: The hard-coded turn-timeout literals (in-process `run_turn` 60s; NATS
+  inner 60s / outer 65s; `GraphWorker` 90s) are now typed `Settings` fields
+  (`turn_timeout_seconds`, `turn_nats_outer_timeout_seconds`,
+  `graph_worker_timeout_seconds`) read at the call sites — NOT new `os.getenv`
+  scatter (extends the existing typed config, per audit P2-1).
+- **Defaults equal the old literals → zero behavior change** unless an operator sets
+  `TURN_TIMEOUT_SECONDS` / `TURN_NATS_OUTER_TIMEOUT_SECONDS` /
+  `GRAPH_WORKER_TIMEOUT_SECONDS`. GraphWorker keeps an explicit-arg override.
+- **Files**: `src/oneops/config.py`, `src/oneops/api/app.py`,
+  `src/oneops/workers/graph_worker.py`, `tests/unit/test_turn_timeout_settings.py` (new).
+- **Validation**: smoke 5/5; 6/6 timeout tests (defaults match old literals; outer ≥
+  inner; env overrides flow through; worker uses settings + explicit-arg wins);
+  ruff + mypy clean.
+
 <!-- Append new entries below this line as batches land. -->

@@ -89,6 +89,14 @@ class Settings(BaseSettings):
     langsmith_api_key: SecretStr | None = None
     langsmith_project: str = "oneops-dev"
 
+    # ── Executor / turn timeouts ─────────────────────────────────────
+    # Defaults equal the previously hard-coded literals, so behaviour is
+    # unchanged unless an operator overrides via env. The NATS *outer* timeout
+    # must stay >= the inner (turn) timeout so the round-trip can complete.
+    turn_timeout_seconds: float = 60.0            # in-process run_turn + nats inner
+    turn_nats_outer_timeout_seconds: float = 65.0  # outer wrap around the NATS round-trip
+    graph_worker_timeout_seconds: float = 90.0    # GraphWorker run_turn budget
+
     # ── Feature flags ────────────────────────────────────────────────
     bridge_invariant_strict: bool = Field(default=False)
     enable_llm_replay: bool = False

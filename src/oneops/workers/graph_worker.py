@@ -30,6 +30,7 @@ import time
 from typing import Any
 
 from oneops.adapters.nats_client import get_nats_client
+from oneops.config import get_settings
 from oneops.executor.graph import run_turn
 from oneops.observability import get_logger, get_tracer
 
@@ -43,9 +44,13 @@ QUEUE_GROUP = "oneops-graph"
 class GraphWorker:
     """Owns one compiled StateGraph + a NATS subscription."""
 
-    def __init__(self, graph: Any, *, default_timeout_s: float = 90.0) -> None:
+    def __init__(self, graph: Any, *, default_timeout_s: float | None = None) -> None:
         self._graph = graph
-        self._timeout_s = default_timeout_s
+        # Env-tunable via GRAPH_WORKER_TIMEOUT_SECONDS (default 90.0); an explicit
+        # caller-supplied value still wins. Behaviour unchanged at the default.
+        self._timeout_s = (
+            default_timeout_s if default_timeout_s is not None
+            else get_settings().graph_worker_timeout_seconds)
         self._subscription = None
 
     async def start(self) -> None:

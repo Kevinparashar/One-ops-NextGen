@@ -32,6 +32,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
+from oneops.config import get_settings
 from oneops.errors import NATSUnavailableError, OneOpsError
 from oneops.executor.graph import build_executor_graph, run_turn
 from oneops.executor.memory import NoopTrimmer, TokenBudgetTrimmer
@@ -2070,6 +2071,7 @@ async def _run(
                 "oneops.invoker_mode": mode,
             },
         ) as span:
+            _s = get_settings()
             if mode == "nats":
                 from oneops.api.nats_invoker import nats_invoke
                 # The worker computes latency_ms / trace_id of its own
@@ -2077,7 +2079,8 @@ async def _run(
                 # `oneops.api.turn` so the end-to-end span captures the
                 # NATS round-trip too.
                 reply = await asyncio.wait_for(
-                    nats_invoke(envelope, timeout_s=60.0), timeout=65.0)
+                    nats_invoke(envelope, timeout_s=_s.turn_timeout_seconds),
+                    timeout=_s.turn_nats_outer_timeout_seconds)
                 trace_id = (reply.get("trace_id")
                             or (format(span.get_span_context().trace_id, "032x")
                                 if span.get_span_context().trace_id else None))
@@ -2097,7 +2100,7 @@ async def _run(
             out = await asyncio.wait_for(
                 run_turn(graph, envelope,
                          config={"configurable": {"thread_id": thread_id}}),
-                timeout=60.0,
+                timeout=_s.turn_timeout_seconds,
             )
             trace_id = format(span.get_span_context().trace_id, "032x") \
                 if span.get_span_context().trace_id else None
