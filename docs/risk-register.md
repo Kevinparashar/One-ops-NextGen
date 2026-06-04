@@ -48,6 +48,16 @@ Label: "Directionally good but needs hardening." Confirmed our fixes are now cor
   collapsed a redundant double `InMemorySaver` construction.
 - **C1 (interrupt dead-in-prod):** reconfirmed (= R-12). Owner decision, dormant.
 
+| R-16 | **Code smell (not dead code): `target_labels` param ignored.** `_resolve_linked_field_read` (`uc01_summarization/tools.py:591`) takes a keyword-only `target_labels: list[str]` that live callers pass but the body never reads. Possible latent bug (intended filtering not applied) — vulture flags it 100% but it's an interface param, NOT removable dead code. | Low | Open (review, do not delete) | Investigate whether the linked-field-read should filter by `target_labels`; either use it or drop it from signature + call sites. Flagged during the 2026-06-04 intra-.py dead-code sweep. |
+
+## Intra-`.py` dead-code status (2026-06-04 sweep)
+ruff `F` rules are enabled and the gate is green → **zero unused imports / unused local
+assignments in `src/`** (enforced every commit). vulture @≥80% yields only 3 hits, all
+**false positives** (2 = required structlog processor signature `logger`/`method_name`
+at `observability/__init__.py:229`; 1 = the R-16 interface param). **0 orphaned modules,
+0 removable dead functions** beyond `record_approval_decision` (removed). Conclusion:
+no additional removable intra-file dead code.
+
 ## Manual verification required
 
 - ✅ DONE (2026-06-04): `.env` / `.env.shared-stack.bak` were NEVER committed in

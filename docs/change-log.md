@@ -241,4 +241,25 @@ the fresh review surfaced:
   versions satisfy the new pins. No behavior change (docs + pin + test-kwarg + cleanup).
 - **Confirmed open (owner decision):** C1 interrupt() dead-in-prod (= R-12, dormant).
 
+## 2026-06-04 · Dead-code removal — 5 orphaned registries + 1 dead function
+
+Evidence-first (dynamic-reference-aware re-audit), conservative removal of provably
+unused items. The audit corrected two would-be mistakes from the prior pass —
+`role-permission-registry.json` (loaded by path in authz/rbac.py:27) and
+`service-schema.json` (17 path-loads) are LIVE and were KEPT.
+
+- **Removed (zero runtime references; live registry loads only `registries/v2`):**
+  `registries/agent-catalog-registry.json`, `agent-tool-mapping.json`,
+  `router-alias-registry.json`, `service-registry.json`, flat `tool-registry.json`.
+- **Removed dead function:** `record_approval_decision` (`uc08_fulfillment/db.py`) —
+  zero callers, owner-documented NOT-WIRED; siblings `insert_approval`/`get_approval`
+  (used by executor.py) kept. Updated the contracts.py docstring accordingly.
+- **Doc fixes:** CLAUDE.md registry section now points at `registries/v2` as canonical
+  and lists which flat files remain (and why); DEAD-CODE-AUDIT.md records the removals.
+- **Deferred (MEDIUM, NOT removed — need owner confirmation):** `agent-registry.json`
+  + `capability-registry.json` (consumed by `tools/seed_uc_capabilities.py`); the
+  `ops_v1/` + `docker-compose.v1.yml` `.v1` stack; `.env.shared-stack.bak`.
+- **Validation:** registry loads (5 agents) post-removal; uc08.db imports without the
+  dead fn; ruff + mypy clean; smoke 5/5; full unit gate green. No behavior change.
+
 <!-- Append new entries below this line as batches land. -->

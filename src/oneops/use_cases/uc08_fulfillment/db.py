@@ -520,41 +520,6 @@ async def insert_approval(
     return approval_id
 
 
-async def record_approval_decision(
-    *, tenant_id: str, approval_id: str,
-    decision: str, decided_by: str,
-    decision_comment: str | None,
-    version: int,
-    conn: asyncpg.Connection,
-) -> int | None:
-    """Apply an approve/reject decision to an itsm.approval row (optimistic-
-    locked on `version`).
-
-    ⚠️ NOT WIRED (as of 2026-06-04): no production route or worker calls this —
-    there is no `POST /api/uc08/approve` endpoint. The approval→unblock resume
-    path is a KNOWN GAP. This function is the intended building block for it,
-    kept so the resume path can be wired without re-deriving the SQL. Do not
-    assume approvals are consumed in production until a caller exists.
-    """
-    new_state = "approved" if decision == "approved" else "rejected"
-    return await conn.fetchval(
-        """
-        UPDATE itsm.approval
-           SET state             = $3,
-               decision          = $3,
-               decided_by        = $4,
-               decision_comment  = $5,
-               decided_at        = now(),
-               version           = version + 1
-         WHERE tenant_id = $1 AND approval_id = $2
-           AND state = 'pending' AND version = $6
-        RETURNING version
-        """,
-        tenant_id, approval_id, new_state, decided_by,
-        decision_comment, version,
-    )
-
-
 async def get_approval(
     *, tenant_id: str, approval_id: str, conn: asyncpg.Connection,
 ) -> dict[str, Any] | None:
@@ -613,7 +578,6 @@ __all__ = [
     "get_ritm",
     # approval persistence
     "insert_approval",
-    "record_approval_decision",
     "get_approval",
     # run completion
     "finalise_run",
