@@ -31,10 +31,13 @@ TEST_TENANT = "T001"
 OTHER_TENANT = "T002"
 NO_TENANT = "T_NEVER_EXISTED"
 
-pytestmark = pytest.mark.skipif(
-    not os.getenv("POSTGRES_URL"),
-    reason="POSTGRES_URL not set",
-)
+pytestmark = [
+    pytest.mark.integration,  # lives in tests/unit/ but needs a live DB; runs in the integration lane (P0-1)
+    pytest.mark.skipif(
+        not os.getenv("POSTGRES_URL"),
+        reason="POSTGRES_URL not set",
+    ),
+]
 
 
 # ── Shared fixtures ────────────────────────────────────────────────────────

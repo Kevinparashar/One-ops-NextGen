@@ -52,6 +52,12 @@ def test_session_history_starts_empty_for_new_session(client):
     assert r.json()["events"] == []
 
 
+# Integration-class: these three run the FULL chat pipeline, which calls the live
+# LLM gateway — they hang offline (no stub), so they are not unit tests. Marked
+# `integration` to run in the integration lane (live LLM / OpenAI routing). Future
+# improvement: stub the gateway and return them to the unit lane. See P0-1 in
+# docs/production-readiness-audit.md.
+@pytest.mark.integration
 def test_two_chat_turns_on_one_session_id_persist_both(client):
     session_id = _unique_session_id("sess_e2e_test_durable")
     # Turn 1
@@ -82,6 +88,7 @@ def test_two_chat_turns_on_one_session_id_persist_both(client):
     assert user_msgs[1]["content"] == "follow up question"
 
 
+@pytest.mark.integration
 def test_history_is_tenant_isolated(client):
     session_id = _unique_session_id("sess_e2e_tenant_iso")
     # Tenant A writes a turn
@@ -98,6 +105,7 @@ def test_history_is_tenant_isolated(client):
 # ── fast-path turns also persist to the same session ───────────────────
 
 
+@pytest.mark.integration
 def test_fast_path_turn_persists_into_session_too(client):
     session_id = _unique_session_id("sess_e2e_fastpath")
     r = client.post(

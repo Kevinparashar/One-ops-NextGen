@@ -16,8 +16,8 @@
 # STAGES (in order):
 #   1. ruff      lint (src + tests)
 #   2. mypy      type check (src)
-#   3. unit      pytest -m unit tests/unit/
-#   4. integ     pytest -m integration tests/integration/ (skipped in --fast)
+#   3. unit      pytest -m unit tests/unit/ (full hermetic suite via auto-marker)
+#   4. integ     pytest -m integration tests/ (tree-wide; skipped in --fast)
 #   5. smoke     scripts/smoke_routing.py — routing baseline (81/84)
 #   6. devils    scripts/devils_play.py — 11-probe adversarial
 #
@@ -107,7 +107,7 @@ if [ "$FAST_MODE" = true ]; then
     printf "\n%b--- STAGE: pytest -m integration ---%b\n" "$C_DIM" "$C_RST"
     printf "%b⚠ skipped — --fast mode%b\n" "$C_DIM" "$C_RST"
 elif [ -x "$PYTEST" ]; then
-    run_stage "pytest -m integration" "$PYTEST" -m integration tests/integration -q
+    run_stage "pytest -m integration" "$PYTEST" -m integration tests -q
 else
     defer_stage "pytest -m integration" "pytest not installed in $VENV (run: make setup)"
 fi

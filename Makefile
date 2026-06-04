@@ -31,7 +31,7 @@ test-unit:
 	$(PYTEST) -v -m unit tests/unit
 
 test-integration:
-	$(PYTEST) -v -m integration tests/integration
+	$(PYTEST) -v -m integration tests
 
 test-cov:
 	$(PYTEST) --cov --cov-report=term-missing -v

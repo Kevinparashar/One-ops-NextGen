@@ -49,7 +49,7 @@ class _StubCache:
 def _extract(content: str, message: str, *, cache=None) -> Any:
     gw = _StubGateway(content)
     ex = TimeFilterExtractor(gateway=gw, cache=cache)
-    return asyncio.get_event_loop().run_until_complete(
+    return asyncio.run(
         ex.extract(message=message, tenant_id="T001", user_id="u_demo")
     )
 
@@ -155,10 +155,10 @@ def test_schema_violation_returns_none():
 def test_empty_message_skips_llm():
     gw = _StubGateway("never called")
     ex = TimeFilterExtractor(gateway=gw)
-    asyncio.get_event_loop().run_until_complete(
+    asyncio.run(
         ex.extract(message="", tenant_id="T001"))
     assert gw.last_request is None
-    asyncio.get_event_loop().run_until_complete(
+    asyncio.run(
         ex.extract(message="   ", tenant_id="T001"))
     assert gw.last_request is None
 
@@ -181,7 +181,7 @@ def test_present_filter_is_cached_and_reused():
     # produce the same filter from cache.
     gw = _StubGateway("")
     ex = TimeFilterExtractor(gateway=gw, cache=cache)
-    tf2 = asyncio.get_event_loop().run_until_complete(
+    tf2 = asyncio.run(
         ex.extract(message="tickets from last week", tenant_id="T001"))
     assert tf2 is not None
     assert tf2.relative_days == 7
@@ -205,6 +205,6 @@ def test_gateway_error_returns_none():
             raise RuntimeError("LLM is on fire")
 
     ex = TimeFilterExtractor(gateway=_Boom())
-    tf = asyncio.get_event_loop().run_until_complete(
+    tf = asyncio.run(
         ex.extract(message="tickets from last week", tenant_id="T001"))
     assert tf is None  # never blows up the caller
