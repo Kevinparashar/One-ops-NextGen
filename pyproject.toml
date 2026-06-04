@@ -58,10 +58,12 @@ dev = [
     "vulture>=2.14",       # static dead-code analyzer (audit-only; not used at runtime)
 ]
 
-[project.scripts]
-oneops-graph = "oneops.entry.graph_service:main"
-oneops-uc1 = "oneops.entry.uc_service:run_uc1"
-oneops-uc3 = "oneops.entry.uc_service:run_uc3"
+# NOTE: console-script entrypoints were removed (2026-06-04). They pointed at
+# `oneops.entry.*` modules that do not exist in src/ — installing the package
+# exposed three broken commands. The service is started via the FastAPI app
+# factory (uvicorn `oneops.api.app:create_app --factory`) and workers via the
+# WORKER_ROLE env switch; see RUNBOOK.md. Re-add a [project.scripts] block here
+# only when a real entrypoint module exists.
 
 [tool.setuptools.packages.find]
 where = ["src"]
