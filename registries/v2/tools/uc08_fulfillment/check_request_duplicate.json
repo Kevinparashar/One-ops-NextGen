@@ -1,0 +1,51 @@
+{
+  "active_version": 1,
+  "id": "check_request_duplicate",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "fulfillment_read"
+        ]
+      },
+      "created_at": "2026-05-31T08:30:00.000000+00:00",
+      "description": "Read-only check: is there already an open RITM for the same (requested_for, catalog_item_id)? Returns existing_ritm_id when a duplicate is found (8.7). UC-8 blocks the new request with a link to the existing one. Backed by an indexed Postgres query \u2014 no LLM call.",
+      "execution_type": "read",
+      "handler_ref": "oneops.use_cases.uc08_fulfillment.tools:check_request_duplicate",
+      "id": "check_request_duplicate",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "name": "requested_for_user_id",
+          "type": "str",
+          "required": true,
+          "description": "User id we're checking duplicates for.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "catalog_item_id",
+          "type": "str",
+          "required": true,
+          "description": "Catalog item id we're checking against.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "lookback_days",
+          "type": "int",
+          "required": false,
+          "description": "How far back to search (default 30).",
+          "data_classification": "internal"
+        }
+      ],
+      "policy_refs": [],
+      "status": "active",
+      "updated_at": "2026-05-31T08:30:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

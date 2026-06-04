@@ -16,7 +16,7 @@
       "operation_types": [
         "read"
       ],
-      "description": "Produces structured natural-language summaries of ITSM records (incidents, requests, problems, changes) plus asset and CMDB CI contexts when applicable. Routing often aligns with conversational phrases such as 'summarize this ticket'; the canonical agent is selected by the planner using ticket id prefixes, UI context, and registry-grounded rules. For each (agent_id, service_id) pair, the executor's allowlisted tools and their invocation order are defined in agent-tool-mapping.json—typically: optional AI cache read, core ticket fields, timeline, cross-links, attachment metadata (names and ids only), synthesis, then cache write. Every tool in this agent's surface is read-only toward ITSM: they fetch data and manage an AI-side summary cache; they do not mutate ticket bodies or workflow state.",
+      "description": "Produces structured natural-language summaries of ITSM records (incidents, requests, problems, changes) plus asset and CMDB CI contexts when applicable. Routing often aligns with conversational phrases such as 'summarize this ticket'; the canonical agent is selected by the planner using ticket id prefixes, UI context, and registry-grounded rules. For each (agent_id, service_id) pair, the executor's allowlisted tools and their invocation order are defined in agent-tool-mapping.json\u2014typically: optional AI cache read, core ticket fields, timeline, cross-links, attachment metadata (names and ids only), synthesis, then cache write. Every tool in this agent's surface is read-only toward ITSM: they fetch data and manage an AI-side summary cache; they do not mutate ticket bodies or workflow state.",
       "required_parameters": [
         "tenant_id"
       ],
@@ -87,7 +87,7 @@
           }
         },
         {
-          "query": "Demo (no feature agent): user says summarize — planner should select summarization_agent, service_id incident, executor tool order per agent-tool-mapping",
+          "query": "Demo (no feature agent): user says summarize \u2014 planner should select summarization_agent, service_id incident, executor tool order per agent-tool-mapping",
           "inputs": {
             "ticket_id": "INC001",
             "tenant_id": "T001",
@@ -121,18 +121,16 @@
       }
     },
     {
-      "agent_id": "similar_tickets_agent",
+      "agent_id": "uc02_similar_tickets",
       "capability_id": "similar_entity",
       "supported_services": [
         "incident",
-        "request",
-        "problem",
-        "change"
+        "request"
       ],
       "operation_types": [
         "read"
       ],
-      "description": "Surfaces semantically and metadata-aligned peer tickets for pattern discovery, duplicate awareness, and resolution reuse across incidents, requests, problems, and changes. Work is driven by the allowlisted find_similar_entities tool family (scoped by service_id in parameters). Typical inputs include ticket_id, tenant_id, and service_id; optional filters such as time window, status preference, similarity thresholds, and scope flags are defined on the tool entries in tool-registry.json. Results must respect tenant isolation and visibility—callers should not see candidates they cannot access in the source system.",
+      "description": "Surfaces semantically and metadata-aligned peer tickets for pattern discovery, duplicate awareness, and resolution reuse across incidents, requests, problems, and changes. Work is driven by the allowlisted find_similar_entities tool family (scoped by service_id in parameters). Typical inputs include ticket_id, tenant_id, and service_id; optional filters such as time window, status preference, similarity thresholds, and scope flags are defined on the tool entries in tool-registry.json. Results must respect tenant isolation and visibility\u2014callers should not see candidates they cannot access in the source system.",
       "required_parameters": [
         "ticket_id",
         "tenant_id",
@@ -150,7 +148,7 @@
         "role"
       ],
       "parameter_descriptions": {
-        "ticket_id": "Source ticket ID for similarity (INC/REQ/PRB/CHG…)",
+        "ticket_id": "Source ticket ID for similarity (INC/REQ/PRB/CHG\u2026)",
         "tenant_id": "Tenant scope; results never cross tenants (UC-2.4)",
         "service_id": "ITSM module for parameterized tool; must match plan step.service_id",
         "max_results": "Max similar records to return (default: implementation-defined, cap in service)",
@@ -244,11 +242,11 @@
       "parameter_descriptions": {
         "tenant_id": "Tenant scope; KB data and ACLs are tenant-scoped (UC-3)",
         "query": "Natural-language question for search_kb (UC-3 chat path)",
-        "ticket_id": "Ticket ID for search_kb_by_ticket — title/description/category as context (UC-3 UI button)",
+        "ticket_id": "Ticket ID for search_kb_by_ticket \u2014 title/description/category as context (UC-3 UI button)",
         "kb_id": "KB article id for get_kb_article (same as tool-registry; replaces legacy kb_id name)",
         "top_k": "Max search hits to return (maps to tool-registry top_k)",
         "language": "BCP-47 locale; prefer articles in this language, fallback in service (UC-3.7)",
-        "audience": "end_user | technician | any — filters technician-only articles for end users (UC-3.6)",
+        "audience": "end_user | technician | any \u2014 filters technician-only articles for end users (UC-3.6)",
         "published_only": "If true (default when omitted in implementation), exclude draft (UC-3.4)",
         "exclude_archived": "If true (default), exclude archived articles from search",
         "category_filter": "Restrict search to a KB category when set",
@@ -323,7 +321,7 @@
       "operation_types": [
         "read"
       ],
-      "description": "Infers end-user sentiment (e.g. frustration, satisfaction, neutrality) from ticket narrative and, when provided, conversation thread context—suited to agent-facing badges, escalation hints, and quality analytics. Scope is incidents and requests only (read path). Execution centers on analyze_entity_sentiment; inputs routinely include ticket_id, tenant_id, and service_id. Optional controls include analysis_scope (ticket-wide vs single comment vs full thread trajectory), comment identifiers or text for triggered analysis, caps on customer comments for long threads, locale or language hints, and whether to include non-customer-authored content.",
+      "description": "Infers end-user sentiment (e.g. frustration, satisfaction, neutrality) from ticket narrative and, when provided, conversation thread context\u2014suited to agent-facing badges, escalation hints, and quality analytics. Scope is incidents and requests only (read path). Execution centers on analyze_entity_sentiment; inputs routinely include ticket_id, tenant_id, and service_id. Optional controls include analysis_scope (ticket-wide vs single comment vs full thread trajectory), comment identifiers or text for triggered analysis, caps on customer comments for long threads, locale or language hints, and whether to include non-customer-authored content.",
       "required_parameters": [
         "ticket_id",
         "tenant_id",
@@ -340,7 +338,7 @@
         "role"
       ],
       "parameter_descriptions": {
-        "ticket_id": "Ticket ID (INC/REQ…)",
+        "ticket_id": "Ticket ID (INC/REQ\u2026)",
         "tenant_id": "Tenant scope",
         "service_id": "incident|request; must match plan step.service_id and tool supported_service_ids",
         "analysis_scope": "ticket_summary | latest_customer_comment | full_thread_trajectory (UC-4)",
@@ -348,7 +346,7 @@
         "comment_text": "Inline customer text when analyzing without persisting fetch",
         "max_customer_comments": "Cap customer comments for trajectory on high-volume tickets (UC-4.8)",
         "language": "BCP-47 hint; analyze in source language, labels may normalize to English (UC-4.7)",
-        "include_non_customer": "If true, include agent notes (default false — skip work notes UC-4.4)",
+        "include_non_customer": "If true, include agent notes (default false \u2014 skip work notes UC-4.4)",
         "user_id": "Caller id for RBAC",
         "role": "Caller role for RBAC"
       },
@@ -419,7 +417,7 @@
         "read",
         "action"
       ],
-      "description": "Automates classification, priority assessment, near-duplicate detection against recent work, and assignment recommendations for incidents and requests. The ordered tool set (classify_entity, prioritize_entity, check_duplicate_candidates, assign_entity) and per-service rows live in agent-tool-mapping.json. Supports both advisory mode—returning recommendations without persisting—and explicit application of assignment when policy and user consent allow. service_id must be incident or request; mixed read and action operation types reflect pre-check tools before mutating assignment state.",
+      "description": "Automates classification, priority assessment, near-duplicate detection against recent work, and assignment recommendations for incidents and requests. The ordered tool set (classify_entity, prioritize_entity, check_duplicate_candidates, assign_entity) and per-service rows live in agent-tool-mapping.json. Supports both advisory mode\u2014returning recommendations without persisting\u2014and explicit application of assignment when policy and user consent allow. service_id must be incident or request; mixed read and action operation types reflect pre-check tools before mutating assignment state.",
       "required_parameters": [
         "ticket_id",
         "tenant_id",
@@ -718,7 +716,7 @@
           }
         },
         {
-          "query": "Submit after preview — make it P2",
+          "query": "Submit after preview \u2014 make it P2",
           "inputs": {
             "title": "VPN connection failed",
             "description": "User cannot connect to VPN after password reset",
@@ -938,7 +936,7 @@
           }
         },
         {
-          "query": "Onboard John Smith March 15 — plan only",
+          "query": "Onboard John Smith March 15 \u2014 plan only",
           "inputs": {
             "request_id_ref": "REQ-ONB-NEW",
             "catalog_item_id": "CAT_ONBOARDING",

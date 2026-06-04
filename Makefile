@@ -1,4 +1,4 @@
-.PHONY: setup install up down test test-unit test-integration lint fmt typecheck clean proto proto-check
+.PHONY: setup install up down test test-unit test-integration lint fmt typecheck clean proto proto-check ci ci-fast pmg-verify
 
 PYTHON ?= python3.12
 VENV ?= .venv
@@ -49,6 +49,20 @@ typecheck:
 clean:
 	rm -rf $(VENV) .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
+# CI gate — local replacement for GitHub Actions. See docs/day1-execution-plan.md Phase 6.
+# Stages: ruff → mypy → unit → integration → smoke → devil's-play. Fail-fast.
+ci:
+	bash scripts/ci.sh
+
+# Fast CI gate — used by the pre-commit hook. Skips the integration suite.
+ci-fast:
+	bash scripts/ci.sh --fast
+
+# PMG verifier — walks every Day-1 phase, checks evidence artefacts exist,
+# writes ops/pmg-evidence/REPORT.md. See docs/day1-execution-plan.md "Master verification".
+pmg-verify:
+	bash ops/pmg-evidence/verify-all.sh
 
 # Regenerate protobuf bindings from proto/ (ADR-0001).
 proto:

@@ -1,0 +1,56 @@
+{
+  "active_version": 1,
+  "id": "uc02_similar_tickets",
+  "versions": {
+    "1": {
+      "abac_tags": {
+        "audience": [
+          "service_desk_agent",
+          "technician_l1",
+          "technician_l2",
+          "triage_desk",
+          "manager",
+          "admin",
+          "end_user",
+          "requester"
+        ],
+        "data_classification": "confidential",
+        "service": ["incident", "request"],
+        "tier": "read"
+      },
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "role_in",
+        "values": ["service_desk_agent", "technician_l1", "technician_l2", "triage_desk", "manager", "admin", "end_user", "requester"]
+      },
+      "compound_of": [],
+      "created_at": "2026-05-30T14:30:00.000000+00:00",
+      "depends_on": [],
+      "description": "Read-only similarity over incident and request embeddings. Surfaces semantically and metadata-aligned peer tickets for pattern discovery, duplicate awareness, and resolution reuse. Reachable from the chat router for queries like 'are there similar tickets to INC0001234?' AND from the operator button at /api/uc02/similar-tickets. Both entry points dispatch to the same find_similar() core via the registered tool find_similar_entities. Tenant isolation is enforced as a SQL pre-filter on ai.embeddings_<service>.tenant_id and itsm.<service>.tenant_id; RBAC predicates omit candidates the caller cannot view (UC-2.7) so cross-tenant or out-of-permission rows never appear.",
+      "determinism_level": "high",
+      "excludes": [],
+      "hooks": {
+        "after_invocation": [],
+        "before_invocation": ["builtin:authz_recheck"]
+      },
+      "id": "uc02_similar_tickets",
+      "intent_family": "similar_read",
+      "journey": null,
+      "owner": "team-itsm",
+      "policy_refs": [
+        "policy_pii_redact",
+        "policy_tenant_scope"
+      ],
+      "routing_shape": "single_agent",
+      "status": "active",
+      "tool_refs": [
+        {"tool_id": "find_similar_entities", "version": 1}
+      ],
+      "consumes_time_filter": true,
+      "updated_at": "2026-05-30T14:30:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

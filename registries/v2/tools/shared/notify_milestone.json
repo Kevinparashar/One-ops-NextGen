@@ -1,0 +1,66 @@
+{
+  "active_version": 1,
+  "id": "notify_milestone",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "fulfillment_orchestrate",
+          "notify"
+        ]
+      },
+      "created_at": "2026-05-31T08:30:00.000000+00:00",
+      "description": "Send a milestone notification to the requester. Pluggable channel (email/Slack/in-app) chosen per tenant policy. Used by every UC that needs user-facing progress messages \u2014 UC-8 milestones, UC-5 escalations, future UCs. Idempotent on (tenant_id, ritm_id, milestone_id).",
+      "execution_type": "action",
+      "handler_ref": "oneops.tools.shared.notify_milestone:notify_milestone",
+      "id": "notify_milestone",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "name": "recipient_user_id",
+          "type": "str",
+          "required": true,
+          "description": "User id to notify.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "message",
+          "type": "str",
+          "required": true,
+          "description": "Human-readable message body.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "ritm_id",
+          "type": "str",
+          "required": false,
+          "description": "Related RITM id, when applicable.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "milestone_id",
+          "type": "str",
+          "required": false,
+          "description": "Stable id for idempotency.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "level",
+          "type": "str",
+          "required": false,
+          "description": "info | warn | error (default info).",
+          "data_classification": "internal"
+        }
+      ],
+      "policy_refs": [],
+      "status": "active",
+      "updated_at": "2026-05-31T08:30:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

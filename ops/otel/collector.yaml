@@ -1,7 +1,7 @@
 # OTel Collector config for POC copy 5.
 #
 # Role: receive OTLP from the app, fan out:
-#   - traces  → Tempo (oneops-tempo:4318)
+#   - traces  → Tempo (nextgen-tempo:4318)
 #   - metrics → Prometheus scrape endpoint (exposed on :8889)
 #
 # This closes gap G5: the app emits ai.llm.tokens.cached.total,
@@ -27,7 +27,7 @@ processors:
 exporters:
   # Traces → Tempo (container-internal name).
   otlphttp/tempo:
-    endpoint: http://oneops-tempo:4318
+    endpoint: http://nextgen-tempo:4318
   # Metrics → Prometheus scrape endpoint on :8889.
   prometheus:
     endpoint: 0.0.0.0:8889

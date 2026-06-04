@@ -3,7 +3,7 @@
 # Reachable at: http://localhost:4000
 #
 # ⚠ DO NOT add `database_url` / `store_model_in_db: true` until LiteLLM has
-# its OWN database (separate Supabase project, or the local `oneops-postgres`
+# its OWN database (separate Supabase project, or the local `nextgen-postgres`
 # container in docker-compose). When LiteLLM's Prisma migration runs against
 # a shared schema, it DROPS tables it doesn't recognize as part of "resetting"
 # the schema. This destroyed the app's incidents/assets/changes/cmdb_cis/etc

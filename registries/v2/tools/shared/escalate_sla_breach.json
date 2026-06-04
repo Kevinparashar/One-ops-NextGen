@@ -1,0 +1,59 @@
+{
+  "active_version": 1,
+  "id": "escalate_sla_breach",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "fulfillment_orchestrate",
+          "sla_management"
+        ]
+      },
+      "created_at": "2026-05-31T08:30:00.000000+00:00",
+      "description": "SLA breach escalation. At 80% SLA: notify the assignment group lead. At 100%: notify the requester + manager. Cross-UC: used by UC-8 task SLAs, UC-5 triage SLAs, and any future UC with an SLA clock. Idempotent on (tenant_id, target_id, breach_percent).",
+      "execution_type": "action",
+      "handler_ref": "oneops.tools.shared.escalate_sla_breach:escalate_sla_breach",
+      "id": "escalate_sla_breach",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "name": "target_type",
+          "type": "str",
+          "required": true,
+          "description": "What's breaching: request_item | task | approval.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "target_id",
+          "type": "str",
+          "required": true,
+          "description": "Id of the breaching record.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "breach_percent",
+          "type": "int",
+          "required": true,
+          "description": "80 or 100.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "assignment_group",
+          "type": "str",
+          "required": true,
+          "description": "Group whose lead to notify on 80%.",
+          "data_classification": "internal"
+        }
+      ],
+      "policy_refs": [],
+      "status": "active",
+      "updated_at": "2026-05-31T08:30:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

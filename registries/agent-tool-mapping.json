@@ -82,24 +82,32 @@
       ]
     },
     {
-      "agent_id": "similar_tickets_agent",
+      "agent_id": "uc02_similar_tickets",
       "service_id": "incident",
-      "tool_ids": ["find_similar_entities"]
+      "tool_ids": [
+        "find_similar_entities"
+      ]
     },
     {
-      "agent_id": "similar_tickets_agent",
+      "agent_id": "uc02_similar_tickets",
       "service_id": "request",
-      "tool_ids": ["find_similar_entities"]
+      "tool_ids": [
+        "find_similar_entities"
+      ]
     },
     {
-      "agent_id": "similar_tickets_agent",
+      "agent_id": "uc02_similar_tickets",
       "service_id": "problem",
-      "tool_ids": ["find_similar_entities"]
+      "tool_ids": [
+        "find_similar_entities"
+      ]
     },
     {
-      "agent_id": "similar_tickets_agent",
+      "agent_id": "uc02_similar_tickets",
       "service_id": "change",
-      "tool_ids": ["find_similar_entities"]
+      "tool_ids": [
+        "find_similar_entities"
+      ]
     },
     {
       "agent_id": "kb_lookup_agent",
@@ -113,31 +121,33 @@
     {
       "agent_id": "sentiment_agent",
       "service_id": "incident",
-      "tool_ids": ["analyze_entity_sentiment"]
+      "tool_ids": [
+        "analyze_entity_sentiment"
+      ]
     },
     {
       "agent_id": "sentiment_agent",
       "service_id": "request",
-      "tool_ids": ["analyze_entity_sentiment"]
+      "tool_ids": [
+        "analyze_entity_sentiment"
+      ]
     },
     {
       "agent_id": "triage_agent",
       "service_id": "incident",
       "tool_ids": [
-        "classify_entity",
-        "prioritize_entity",
         "check_duplicate_candidates",
-        "assign_entity"
+        "recommend_assignment",
+        "prioritize_entity"
       ]
     },
     {
       "agent_id": "triage_agent",
       "service_id": "request",
       "tool_ids": [
-        "classify_entity",
-        "prioritize_entity",
         "check_duplicate_candidates",
-        "assign_entity"
+        "recommend_assignment",
+        "prioritize_entity"
       ]
     },
     {
@@ -185,12 +195,18 @@
     {
       "agent_id": "resolution_agent",
       "service_id": "incident",
-      "tool_ids": ["suggest_resolution", "record_feedback"]
+      "tool_ids": [
+        "suggest_resolution",
+        "record_feedback"
+      ]
     },
     {
       "agent_id": "resolution_agent",
       "service_id": "request",
-      "tool_ids": ["suggest_resolution", "record_feedback"]
+      "tool_ids": [
+        "suggest_resolution",
+        "record_feedback"
+      ]
     },
     {
       "agent_id": "fulfillment_agent",

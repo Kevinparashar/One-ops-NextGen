@@ -1,0 +1,58 @@
+{
+  "active_version": 1,
+  "id": "provision_email_mailbox",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "fulfillment_execute"
+        ]
+      },
+      "created_at": "2026-05-31T08:30:00.000000+00:00",
+      "description": "Mock Exchange/O365 mailbox provisioning. Returns mailbox_id + primary_smtp. Idempotent on (tenant_id, requested_for).",
+      "execution_type": "action",
+      "handler_ref": "oneops.use_cases.uc08_fulfillment.tools:provision_email_mailbox",
+      "id": "provision_email_mailbox",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "name": "ritm_id",
+          "type": "str",
+          "required": true,
+          "description": "RITM the task belongs to.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "description": "Task id for idempotency.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "user_full_name",
+          "type": "str",
+          "required": true,
+          "description": "User the mailbox is for.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "primary_smtp",
+          "type": "str",
+          "required": true,
+          "description": "Desired primary SMTP address.",
+          "data_classification": "internal"
+        }
+      ],
+      "policy_refs": [],
+      "status": "active",
+      "updated_at": "2026-05-31T08:30:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

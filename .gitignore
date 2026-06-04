@@ -11,5 +11,7 @@ build/
 dist/
 .env
 .envrc
+.env.shared-stack.bak
+*.bak
 *.log
 .DS_Store

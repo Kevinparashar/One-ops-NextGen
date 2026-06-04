@@ -1,0 +1,51 @@
+{
+  "active_version": 1,
+  "id": "uc05_triage",
+  "versions": {
+    "1": {
+      "abac_tags": {
+        "audience": [
+          "service_desk_agent",
+          "technician_l1",
+          "technician_l2",
+          "triage_desk",
+          "manager",
+          "admin"
+        ],
+        "data_classification": "confidential",
+        "service": ["incident", "request"],
+        "tier": "action"
+      },
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "role_in",
+        "values": ["__uc05_api_only_never_matches__"]
+      },
+      "compound_of": [],
+      "created_at": "2026-05-29T16:30:00.000000+00:00",
+      "depends_on": [],
+      "description": "API-only triage agent. Fills the seven UC-5-owned fields on an open incident or the four UC-5-owned fields on an open service request: category, subcategory (incident only), impact (incident only), urgency (incident only), priority, assignment_group, assigned_to. Bound to the operator-driven /api/uc05/{queue-summary,queue,propose,decide} surface and the NATS subjects oneops.uc05.triage.{propose,decide,applied}; not reachable from the conversational router (no chat intent maps to it).",
+      "determinism_level": "medium",
+      "excludes": [],
+      "hooks": {
+        "after_invocation": [],
+        "before_invocation": ["builtin:authz_recheck"]
+      },
+      "id": "uc05_triage",
+      "intent_family": "triage_write",
+      "journey": null,
+      "owner": "team-itsm",
+      "policy_refs": [
+        "policy_pii_redact",
+        "policy_tenant_scope"
+      ],
+      "routing_shape": "single_agent",
+      "status": "active",
+      "tool_refs": [],
+      "updated_at": "2026-05-29T16:30:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

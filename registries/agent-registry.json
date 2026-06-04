@@ -23,7 +23,7 @@
       "uc_id": "uc01_summarization"
     },
     {
-      "agent_id": "similar_tickets_agent",
+      "agent_id": "uc02_similar_tickets",
       "name": "Similar Tickets Agent",
       "capability_id": "similar_entity",
       "supported_services": [

@@ -1,0 +1,160 @@
+name: oneops-v1nextgen-v1
+
+# Oneops-NextGen port allocation — shifted off POC-5-MW-1, Poc-MW-SS, AI-oneops V1
+# to allow all three stacks to run concurrently.
+#
+# Host port map (NextGen) — cleaned 2026-05-29 PM (removed dead ports):
+#   Dragonfly        6680   (Redis-cli from host)
+#   NATS client      4623   (app NATSClient connects here)
+#   Postgres         5735   (psql from host)
+#   Tempo UI         3401   (Grafana data source — also browsable)
+#   OTel OTLP HTTP   4620   (app pushes traces+metrics here)
+#   Prometheus       9391   (metric queries from host / Grafana)
+#   Grafana          3041   (browser UI — http://localhost:3041)
+#   LiteLLM          4301   (single LLM egress endpoint)
+#   App (uvicorn)    8765   (UC-5 API + frontend)
+#
+# Internal-only ports (no host mapping — used over docker network only):
+#   tempo:4318               (collector → Tempo OTLP HTTP)
+#   otel:4317                (gRPC receiver — not used; app uses HTTP)
+#   otel:8889                (Prometheus → collector scrape)
+#   nats:8623                (NATS monitor — healthcheck + exporter polls here)
+#   nats-exporter:7777       (Prometheus → NATS bus metrics scrape)
+
+services:
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    container_name: v1nextgen-dragonfly
+    ports: ["6690:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    ulimits:
+      memlock: -1
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: v1nextgen-nats
+    command: ["-js", "-m", "8623", "-V", "-DV"]
+    ports:
+      - "4634:4222"   # client (only host-exposed port; 8623 monitor is container-internal for healthcheck)
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8623/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:0.17.3
+    container_name: v1nextgen-nats-exporter
+    command:
+      - "-varz"
+      - "-connz"
+      - "-subz"
+      - "-routez"
+      - "-jsz=all"
+      - "http://v1nextgen-nats:8623"
+    depends_on:
+      - nats
+    # Port 7777 stays container-internal — Prometheus reaches it over the docker network.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:7777/metrics"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: v1nextgen-postgres
+    environment:
+      POSTGRES_USER: oneops
+      POSTGRES_PASSWORD: oneops
+      POSTGRES_DB: oneops
+    ports: ["5745:5432"]
+    volumes:
+      - v1nextgen-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oneops"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  tempo:
+    image: grafana/tempo:2.5.0
+    container_name: v1nextgen-tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "3411:3200"   # Tempo query API (Grafana + host)
+      # OTLP HTTP (4318) is container-internal — collector reaches it via docker net
+    volumes:
+      - ./ops/otel/tempo.yaml:/etc/tempo.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3200/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.109.0
+    container_name: v1nextgen-otel-collector
+    command: ["--config=/etc/collector.yaml"]
+    ports:
+      - "4630:4318"   # OTLP HTTP (only host-exposed port; gRPC + Prom-scrape are container-internal)
+    volumes:
+      - ./ops_v1/collector.yaml:/etc/collector.yaml:ro
+    depends_on:
+      - tempo
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: v1nextgen-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-admin-api"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9491:9090"
+    volumes:
+      - ./ops_v1/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - otel-collector
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: v1nextgen-grafana
+    ports:
+      - "3051:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: oneops
+      GF_SECURITY_ADMIN_PASSWORD: oneops
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor"
+    volumes:
+      - ./ops_v1/grafana-provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/etc/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - tempo
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-v1.52.0-stable
+    container_name: v1nextgen-litellm
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports: ["4311:4000"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LITELLM_MASTER_KEY: sk-1234
+      # ⚠ DO NOT pass DATABASE_URL until LiteLLM has its OWN database.
+      # See ADR-0004 + 2026-05-16 incident.
+      DISABLE_SCHEMA_UPDATE: "True"
+      STORE_MODEL_IN_DB: "False"
+    volumes:
+      - ./ops/litellm/config.yaml:/app/config.yaml:ro
+    depends_on:
+      - dragonfly
+
+volumes:
+  v1nextgen-pg-data:

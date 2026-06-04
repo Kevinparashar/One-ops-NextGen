@@ -1,0 +1,31 @@
+    |
+293 | @pytest.mark.parametrize("args,ctx", [
+    |                          ^^^^^^^^^^
+294 |     ({"service_id": "incident"}, {"tenant_id": "tenant-a"}),
+295 |     ({"ticket_id": "INC0048213"}, {"tenant_id": "tenant-a"}),
+    |
+help: Use a `tuple` for the first argument
+
+Found 377 errors.
+[*] 231 fixable with the `--fix` option (73 hidden fixes can be enabled with the `--unsafe-fixes` option).
+--- baseline summary ---
+ 2	S608    	[ ] hardcoded-sql-expression
+ 2	SIM102  	[ ] collapsible-if
+ 2	SIM117  	[-] multiple-with-statements
+ 1	ASYNC109	[ ] async-function-with-timeout
+ 1	ASYNC230	[ ] blocking-open-call-in-async-function
+ 1	B017    	[ ] assert-raises-exception
+ 1	E401    	[*] multiple-imports-on-one-line
+ 1	E731    	[ ] lambda-assignment
+ 1	F541    	[*] f-string-missing-placeholders
+ 1	S101    	[ ] assert
+ 1	S310    	[ ] suspicious-url-open-usage
+ 1	S311    	[ ] suspicious-non-cryptographic-random-usage
+ 1	S324    	[ ] hashlib-insecure-hash-function
+ 1	SIM103  	[ ] needless-bool
+ 1	SIM905  	[*] split-static-string
+ 1	UP009   	[*] utf8-encoding-declaration
+ 1	UP032   	[*] f-string
+ 1	UP046   	[ ] non-pep695-generic-class
+Found 377 errors.
+[*] 231 fixable with the `--fix` option (73 hidden fixes can be enabled with the `--unsafe-fixes` option).

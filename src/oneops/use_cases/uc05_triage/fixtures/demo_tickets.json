@@ -1,5 +1,5 @@
 {
-  "_doc": "UC-5 demo fixtures — 8 original incidents + 50 new = 58 incidents; 3 original requests + 50 new = 53 requests. New tickets (DEMO_INC_009+ and DEMO_SR_004+) are in 'new' state with category/priority/group left null so UC-5 triage proposes them. Production paths use itsm.incident / itsm.request in Postgres; this file is read by JsonFixtureStore for tests + demo only.",
+  "_doc": "UC-5 demo fixtures \u2014 8 original incidents + 50 new = 58 incidents; 3 original requests + 50 new = 53 requests. New tickets (DEMO_INC_009+ and DEMO_SR_004+) are in 'new' state with category/priority/group left null so UC-5 triage proposes them. Production paths use itsm.incident / itsm.request in Postgres; this file is read by JsonFixtureStore for tests + demo only.",
   "tenant_id": "T001",
   "incidents": [
     {
@@ -66,85 +66,101 @@
       "incident_id": "INC0000004",
       "title": "Postgres replication lag exceeding 5 minutes on reporting replica",
       "description": "wal_sender on primary shows backed-up segments. Reporting queries returning stale rows. No alerts from monitoring. Started during overnight batch.",
-      "status": "new",
+      "status": "assigned",
       "created_at": "2026-05-29T18:15:00+00:00",
       "ci_id": "CI9010076",
-      "category": null,
-      "subcategory": null,
+      "category": "database",
+      "subcategory": "performance",
       "service_name": null,
-      "impact": null,
-      "urgency": null,
-      "priority": null,
-      "assignment_group": null,
-      "assigned_to": null,
-      "updated_at": "2026-05-30T09:06:44.089353+00:00"
+      "impact": "On Business",
+      "urgency": "Urgent",
+      "priority": "Urgent",
+      "assignment_group": "GRP-DBA",
+      "assigned_to": "USR00002",
+      "updated_at": "2026-06-01T07:34:43.660088+00:00",
+      "sla_due": "2026-06-01T08:04:43.660088+00:00",
+      "triaged_at": "2026-06-01T07:34:43.660088+00:00",
+      "triaged_by": "oneops"
     },
     {
       "incident_id": "INC0000005",
       "title": "Azure AD SSO sign-in loop for marketing team",
       "description": "After password reset, users in the marketing OU get redirected back to the login page repeatedly. SAML assertion appears valid in the logs. Affects roughly 20 users.",
-      "status": "new",
+      "status": "assigned",
       "created_at": "2026-05-29T18:20:00+00:00",
       "ci_id": "CI0000008",
-      "category": null,
-      "subcategory": null,
+      "category": "security",
+      "subcategory": "sso",
       "service_name": null,
-      "impact": null,
-      "urgency": null,
-      "priority": null,
-      "assignment_group": null,
-      "assigned_to": null,
-      "updated_at": "2026-05-30T08:43:09.733447+00:00"
+      "impact": "On Users",
+      "urgency": "High",
+      "priority": "Medium",
+      "assignment_group": "GRP-SECOPS",
+      "assigned_to": "USR00011",
+      "updated_at": "2026-06-01T13:20:06.024372+00:00",
+      "sla_due": "2026-06-01T17:20:06.024372+00:00",
+      "triaged_at": "2026-06-01T13:20:06.024372+00:00",
+      "triaged_by": "oneops"
     },
     {
       "incident_id": "INC0000006",
       "title": "Wildcard certificate expiring on intranet portal",
       "description": "*.intra.corp expires in 12 days. Auto-renewal via ACME failed because the DNS challenge record was deleted in last week's cleanup. Need to re-enable.",
-      "status": "new",
+      "status": "assigned",
       "created_at": "2026-05-29T18:25:00+00:00",
       "ci_id": "CI0000008",
-      "category": null,
-      "subcategory": null,
+      "category": "security",
+      "subcategory": "ssl",
       "service_name": null,
-      "impact": null,
-      "urgency": null,
-      "priority": null,
-      "assignment_group": null,
-      "assigned_to": null,
-      "updated_at": "2026-05-29T16:46:47.012654+00:00"
+      "impact": "On Business",
+      "urgency": "Urgent",
+      "priority": "Urgent",
+      "assignment_group": "GRP-SECOPS",
+      "assigned_to": "USR00011",
+      "updated_at": "2026-06-01T15:38:35.085098+00:00",
+      "sla_due": "2026-06-01T16:08:35.085098+00:00",
+      "triaged_at": "2026-06-01T15:38:35.085098+00:00",
+      "triaged_by": "oneops"
     },
     {
       "incident_id": "INC0000007",
       "title": "Database deadlock spike on payroll application",
       "description": "Concurrent payroll updates are causing deadlocks on the SQL server. Finance users blocked from running month-end close.",
-      "status": "new",
+      "status": "assigned",
       "created_at": "2026-05-29T18:30:00+00:00",
-      "ci_id": null,
-      "category": null,
-      "subcategory": null,
+      "ci_id": "CI0000005",
+      "category": "database",
+      "subcategory": "performance",
       "service_name": null,
-      "impact": null,
-      "urgency": null,
-      "priority": null,
-      "assignment_group": null,
-      "assigned_to": null
+      "impact": "On Department",
+      "urgency": "Urgent",
+      "priority": "Urgent",
+      "assignment_group": "GRP-APPS",
+      "assigned_to": "USR00004",
+      "sla_due": "2026-06-02T07:57:23.122869+00:00",
+      "triaged_at": "2026-06-02T07:27:23.122869+00:00",
+      "triaged_by": "oneops",
+      "updated_at": "2026-06-02T07:27:23.122869+00:00"
     },
     {
       "incident_id": "INC0000008",
       "title": "MS Teams meetings drop after 45 minutes",
       "description": "Calls hosted by Sales VP get force-disconnected at the 45-minute mark consistently. Other teams unaffected. Hourly meetings break the customer demo flow.",
-      "status": "new",
+      "status": "assigned",
       "created_at": "2026-05-29T18:35:00+00:00",
-      "ci_id": "CI9010067",
-      "category": null,
-      "subcategory": null,
+      "ci_id": "CI0000001",
+      "category": "network",
+      "subcategory": "connectivity",
       "service_name": null,
-      "impact": null,
-      "urgency": null,
-      "priority": null,
-      "assignment_group": null,
-      "assigned_to": null,
-      "updated_at": "2026-05-29T16:38:54.468896+00:00"
+      "impact": "On Department",
+      "urgency": "High",
+      "priority": "High",
+      "assignment_group": "GRP-NETOPS",
+      "assigned_to": "USR00003",
+      "updated_at": "2026-06-02T15:27:35.645079+00:00",
+      "sla_due": "2026-06-02T17:27:35.645079+00:00",
+      "triaged_at": "2026-06-02T15:27:35.645079+00:00",
+      "triaged_by": "oneops"
     },
     {
       "incident_id": "INC0000009",
@@ -233,7 +249,7 @@
     },
     {
       "incident_id": "INC0000014",
-      "title": "Exchange transport queue backing up — 30k messages pending",
+      "title": "Exchange transport queue backing up \u2014 30k messages pending",
       "description": "Hub transport on EXG-HUB-02 has 30,847 messages in submission queue. Growing at ~100/min. SMTP receive connectors look healthy. Suspected backend mailbox database lock.",
       "status": "new",
       "created_at": "2026-05-30T16:11:37+00:00",
@@ -267,7 +283,7 @@
     },
     {
       "incident_id": "INC0000016",
-      "title": "Postgres primary failover triggered — replica promoted unexpectedly",
+      "title": "Postgres primary failover triggered \u2014 replica promoted unexpectedly",
       "description": "RDS Aurora cluster auto-failed over at 02:14 UTC. Primary is healthy but cluster endpoint now points at old replica. App connections seeing read-only writes failing.",
       "status": "new",
       "created_at": "2026-05-30T14:11:37+00:00",
@@ -284,7 +300,7 @@
     },
     {
       "incident_id": "INC0000017",
-      "title": "MySQL replication broken on reporting cluster — Seconds_Behind_Master = NULL",
+      "title": "MySQL replication broken on reporting cluster \u2014 Seconds_Behind_Master = NULL",
       "description": "Replica IO thread stopped with 'got fatal error 1236 from master'. Binlog gtid mismatch. Last successful sync was 6 hours ago. Reporting dashboards showing stale data.",
       "status": "new",
       "created_at": "2026-05-30T13:11:37+00:00",
@@ -335,7 +351,7 @@
     },
     {
       "incident_id": "INC0000020",
-      "title": "SSO redirect loop on Salesforce — OIDC token rejected",
+      "title": "SSO redirect loop on Salesforce \u2014 OIDC token rejected",
       "description": "Users clicking 'Login with Corp SSO' on Salesforce land back at the IdP. ID token issued but Salesforce returns 'invalid_audience'. JWKS endpoint looks healthy. Started after IdP cert rotation overnight.",
       "status": "new",
       "created_at": "2026-05-30T10:11:37+00:00",
@@ -352,7 +368,7 @@
     },
     {
       "incident_id": "INC0000021",
-      "title": "Password reset emails not reaching some users — Office365 quarantine",
+      "title": "Password reset emails not reaching some users \u2014 Office365 quarantine",
       "description": "Self-service password reset emails from Okta land in O365 quarantine for ~30% of users. Tenant allowlist already includes the Okta sender domain. Anti-phishing policy may be evaluating SPF strict.",
       "status": "new",
       "created_at": "2026-05-30T09:11:37+00:00",
@@ -420,7 +436,7 @@
     },
     {
       "incident_id": "INC0000025",
-      "title": "Adobe Creative Cloud activation failing — license server unreachable",
+      "title": "Adobe Creative Cloud activation failing \u2014 license server unreachable",
       "description": "Design team can't activate Photoshop / Illustrator. Error: 'Could not contact licensing server.' Network and DNS look fine. Adobe status page shows green. Possibly proxy whitelist drift.",
       "status": "new",
       "created_at": "2026-05-30T05:11:37+00:00",
@@ -437,7 +453,7 @@
     },
     {
       "incident_id": "INC0000026",
-      "title": "Microsoft Teams freezing during screen share — Windows 11 only",
+      "title": "Microsoft Teams freezing during screen share \u2014 Windows 11 only",
       "description": "Windows 11 users hit a freeze 1-2 minutes into screen share. Mac and web client unaffected. Latest Teams version installed. GPU acceleration toggle didn't help.",
       "status": "new",
       "created_at": "2026-05-30T04:11:37+00:00",
@@ -471,7 +487,7 @@
     },
     {
       "incident_id": "INC0000028",
-      "title": "Backup job for production fileserver failing — Veeam 'unable to allocate processing resources'",
+      "title": "Backup job for production fileserver failing \u2014 Veeam 'unable to allocate processing resources'",
       "description": "Nightly Veeam job for FS-PROD-01 failing for last 3 nights with 'unable to allocate processing resources.' Other jobs on the same proxy succeed. Disk space looks fine.",
       "status": "new",
       "created_at": "2026-05-30T20:11:37+00:00",
@@ -539,7 +555,7 @@
     },
     {
       "incident_id": "INC0000032",
-      "title": "Malware detected on developer workstation — TrickBot variant",
+      "title": "Malware detected on developer workstation \u2014 TrickBot variant",
       "description": "EDR flagged TrickBot on DEV-LT-0184. Workstation isolated. Need IR investigation: lateral movement, exfiltration check, full re-image. User had admin rights.",
       "status": "new",
       "created_at": "2026-05-30T16:11:37+00:00",
@@ -556,7 +572,7 @@
     },
     {
       "incident_id": "INC0000033",
-      "title": "Suspicious login activity — 50 failed logins from Russia on CEO account",
+      "title": "Suspicious login activity \u2014 50 failed logins from Russia on CEO account",
       "description": "SIEM alert: 50 failed login attempts on CEO account from IPs in RU within 10 minutes. Conditional access blocked them. Need user notification + account lockout review.",
       "status": "new",
       "created_at": "2026-05-30T15:11:37+00:00",
@@ -573,7 +589,7 @@
     },
     {
       "incident_id": "INC0000034",
-      "title": "Salesforce reports timing out — single-record loads OK",
+      "title": "Salesforce reports timing out \u2014 single-record loads OK",
       "description": "Salesforce 'Pipeline 2026' report times out at 5 minutes. Loading a single opportunity is fast. May be Apex governor hit; recent custom field added to the report.",
       "status": "new",
       "created_at": "2026-05-30T14:11:37+00:00",
@@ -590,7 +606,7 @@
     },
     {
       "incident_id": "INC0000035",
-      "title": "SAP HANA query performance degraded — SELECT on FIN_LEDGER 60× slower",
+      "title": "SAP HANA query performance degraded \u2014 SELECT on FIN_LEDGER 60\u00d7 slower",
       "description": "Finance team reporting SAP slow since this morning. SELECT * from /1bcdwb/v_finledger went from 2s to 120s. No schema changes overnight. Memory utilisation looks normal.",
       "status": "new",
       "created_at": "2026-05-30T13:11:37+00:00",
@@ -692,7 +708,7 @@
     },
     {
       "incident_id": "INC0000041",
-      "title": "Power redundancy lost on rack B14 — only A-side PDU active",
+      "title": "Power redundancy lost on rack B14 \u2014 only A-side PDU active",
       "description": "B-side PDU on rack B14 (storage) tripped. Currently single-PDU operation. Need facility electrician to investigate breaker and restore redundancy before maintenance window.",
       "status": "new",
       "created_at": "2026-05-30T07:11:37+00:00",
@@ -709,7 +725,7 @@
     },
     {
       "incident_id": "INC0000042",
-      "title": "AC degraded on one floor — laptops overheating in conference rooms",
+      "title": "AC degraded on one floor \u2014 laptops overheating in conference rooms",
       "description": "Floor 4 conference rooms reporting ambient temp 28C+. Multiple laptop overheating shutoffs during morning standups. Facility team notified.",
       "status": "new",
       "created_at": "2026-05-30T06:11:37+00:00",
@@ -726,7 +742,7 @@
     },
     {
       "incident_id": "INC0000043",
-      "title": "CI/CD pipeline failing — Docker registry pull rate-limited",
+      "title": "CI/CD pipeline failing \u2014 Docker registry pull rate-limited",
       "description": "GitHub Actions builds failing intermittently on 'pulling from docker.io: rate limit exceeded'. Need to migrate to internal mirror or upgrade Docker Hub plan.",
       "status": "new",
       "created_at": "2026-05-30T05:11:37+00:00",
@@ -743,7 +759,7 @@
     },
     {
       "incident_id": "INC0000044",
-      "title": "Terraform Cloud runs queued for 30 minutes — agent pool stuck",
+      "title": "Terraform Cloud runs queued for 30 minutes \u2014 agent pool stuck",
       "description": "Terraform Cloud workspace 'infra-prod' runs queued past 30 min. Agent pool shows 0 of 4 agents busy. Possibly agent service crashed on the EC2 hosts.",
       "status": "new",
       "created_at": "2026-05-30T04:11:37+00:00",
@@ -760,7 +776,7 @@
     },
     {
       "incident_id": "INC0000045",
-      "title": "AWS console MFA failing for org admin — virtual MFA token expired",
+      "title": "AWS console MFA failing for org admin \u2014 virtual MFA token expired",
       "description": "Org admin can't log into AWS console; MFA prompt says 'invalid code'. Virtual MFA seed possibly drifted. Break-glass account needed to re-enrol.",
       "status": "new",
       "created_at": "2026-05-30T21:11:37+00:00",
@@ -829,7 +845,7 @@
     {
       "incident_id": "INC0000049",
       "title": "GitLab webhook delivery failing to internal Jenkins",
-      "description": "Push events from GitLab not triggering Jenkins jobs. Webhook delivery log shows 'connection refused.' Network ACL was modified yesterday — likely culprit.",
+      "description": "Push events from GitLab not triggering Jenkins jobs. Webhook delivery log shows 'connection refused.' Network ACL was modified yesterday \u2014 likely culprit.",
       "status": "new",
       "created_at": "2026-05-30T17:11:37+00:00",
       "ci_id": "CI0000007",
@@ -845,7 +861,7 @@
     },
     {
       "incident_id": "INC0000050",
-      "title": "New laptop image missing certificates — corporate Wi-Fi rejects auth",
+      "title": "New laptop image missing certificates \u2014 corporate Wi-Fi rejects auth",
       "description": "Laptops shipped from this week's Win11 image build can't join corp Wi-Fi. RADIUS rejects with 'unknown client cert.' Image possibly missing the latest CA bundle.",
       "status": "new",
       "created_at": "2026-05-30T16:11:37+00:00",
@@ -862,7 +878,7 @@
     },
     {
       "incident_id": "INC0000051",
-      "title": "Sentry error rate spike — payment service NullPointerException on checkout",
+      "title": "Sentry error rate spike \u2014 payment service NullPointerException on checkout",
       "description": "Sentry alert: payment-svc throwing NPE in OrderProcessor.applyDiscount on 8% of checkouts. Started after deploy of v3.42.1. Rollback in progress.",
       "status": "new",
       "created_at": "2026-05-30T15:11:37+00:00",
@@ -879,7 +895,7 @@
     },
     {
       "incident_id": "INC0000052",
-      "title": "Internal CA expired — TLS warnings across multiple services",
+      "title": "Internal CA expired \u2014 TLS warnings across multiple services",
       "description": "Internal CA (corp-ca-root) expired at 00:00 UTC. All services using internal certs throwing TLS warnings. Need root cert rotation + chain redistribution.",
       "status": "new",
       "created_at": "2026-05-30T14:11:37+00:00",
@@ -947,7 +963,7 @@
     },
     {
       "incident_id": "INC0000056",
-      "title": "CMDB CI relationship graph not loading — Neo4j heap exhausted",
+      "title": "CMDB CI relationship graph not loading \u2014 Neo4j heap exhausted",
       "description": "CMDB UI 'Relationships' tab spinning forever. Neo4j logs show 'GC overhead limit exceeded.' Heap configured 8GB. May need to increase or prune relationship history.",
       "status": "new",
       "created_at": "2026-05-30T10:11:37+00:00",
@@ -1042,7 +1058,7 @@
     },
     {
       "request_id": "REQ0000003",
-      "title": "VPN access for new joiner — Bangalore office",
+      "title": "VPN access for new joiner \u2014 Bangalore office",
       "description": "Standard VPN credentials for new engineering joiner in Bangalore. Start date next Tuesday.",
       "status": "new",
       "created_at": "2026-05-29T18:50:00+00:00",
@@ -1060,7 +1076,7 @@
     },
     {
       "request_id": "REQ0000004",
-      "title": "New joiner kit — Senior Backend Engineer, Bangalore",
+      "title": "New joiner kit \u2014 Senior Backend Engineer, Bangalore",
       "description": "Standard backend engineer kit: MacBook Pro M3 16GB, external monitor 27\", USB-C dock, mechanical keyboard, JetBrains license, GitHub Enterprise access, AWS dev account, Slack invite, VPN credentials. Start date Monday.",
       "status": "new",
       "created_at": "2026-05-30T21:11:37+00:00",
@@ -1096,7 +1112,7 @@
     },
     {
       "request_id": "REQ0000006",
-      "title": "Salesforce CRM license for new sales rep — Western region",
+      "title": "Salesforce CRM license for new sales rep \u2014 Western region",
       "description": "Sales Cloud Enterprise license + Western region territory assignment. Reports to John Doe. Should see his region's accounts only. Start date next week.",
       "status": "new",
       "created_at": "2026-05-30T19:11:37+00:00",
@@ -1168,7 +1184,7 @@
     },
     {
       "request_id": "REQ0000010",
-      "title": "VPN access — Sydney office",
+      "title": "VPN access \u2014 Sydney office",
       "description": "Standard VPN credentials for new joiner in Sydney office. Engineering team. Start date in 2 weeks. Standard split tunnel profile.",
       "status": "new",
       "created_at": "2026-05-30T15:11:37+00:00",
@@ -1204,7 +1220,7 @@
     },
     {
       "request_id": "REQ0000012",
-      "title": "Office 365 license upgrade — E3 → E5",
+      "title": "Office 365 license upgrade \u2014 E3 \u2192 E5",
       "description": "Marketing lead Sarah K needs E5 license upgrade for advanced threat protection and Power BI Pro included. Budget code approved.",
       "status": "new",
       "created_at": "2026-05-30T13:11:37+00:00",
@@ -1222,7 +1238,7 @@
     },
     {
       "request_id": "REQ0000013",
-      "title": "New distribution list — eng-platform-announce",
+      "title": "New distribution list \u2014 eng-platform-announce",
       "description": "New DL eng-platform-announce@corp. Members: all platform team (15 people). Used for low-volume announcements. Owner: Platform Eng Lead.",
       "status": "new",
       "created_at": "2026-05-30T12:11:37+00:00",
@@ -1240,7 +1256,7 @@
     },
     {
       "request_id": "REQ0000014",
-      "title": "AD group membership — add 5 users to GRP-PROD-DEPLOY",
+      "title": "AD group membership \u2014 add 5 users to GRP-PROD-DEPLOY",
       "description": "Add the 5 listed engineers (full names in description) to GRP-PROD-DEPLOY for prod deployment access. Manager approval attached.",
       "status": "new",
       "created_at": "2026-05-30T11:11:37+00:00",
@@ -1276,7 +1292,7 @@
     },
     {
       "request_id": "REQ0000016",
-      "title": "Replace cracked laptop screen — MacBook Pro",
+      "title": "Replace cracked laptop screen \u2014 MacBook Pro",
       "description": "Cracked screen on MBP M2 (serial CWWXXXXXX) belonging to David L. AppleCare not active. Replacement quote and turnaround needed.",
       "status": "new",
       "created_at": "2026-05-30T09:11:37+00:00",
@@ -1330,7 +1346,7 @@
     },
     {
       "request_id": "REQ0000019",
-      "title": "Standing desk for finance director — RSI accommodation",
+      "title": "Standing desk for finance director \u2014 RSI accommodation",
       "description": "Finance director has RSI; occupational health recommended standing desk. Need procurement + installation in office.",
       "status": "new",
       "created_at": "2026-05-30T06:11:37+00:00",
@@ -1366,7 +1382,7 @@
     },
     {
       "request_id": "REQ0000021",
-      "title": "Notion workspace member upgrade — collaborate plan",
+      "title": "Notion workspace member upgrade \u2014 collaborate plan",
       "description": "Upgrade Notion seat for the design team lead from member to workspace owner so she can manage permissions on the design library.",
       "status": "new",
       "created_at": "2026-05-30T04:11:37+00:00",
@@ -1384,7 +1400,7 @@
     },
     {
       "request_id": "REQ0000022",
-      "title": "Adobe Creative Cloud license — All Apps for new designer",
+      "title": "Adobe Creative Cloud license \u2014 All Apps for new designer",
       "description": "Senior product designer onboarding needs Adobe CC All Apps license. SSO + named user license. Cost code: DESIGN-2026.",
       "status": "new",
       "created_at": "2026-05-30T03:11:37+00:00",
@@ -1402,7 +1418,7 @@
     },
     {
       "request_id": "REQ0000023",
-      "title": "Power BI Pro for finance team — 8 users",
+      "title": "Power BI Pro for finance team \u2014 8 users",
       "description": "Power BI Pro licenses for 8 finance team members so they can publish dashboards. Currently on Power BI Free. Budget approved.",
       "status": "new",
       "created_at": "2026-05-30T02:11:37+00:00",
@@ -1420,7 +1436,7 @@
     },
     {
       "request_id": "REQ0000024",
-      "title": "Increase mailbox quota for legal team — 100GB",
+      "title": "Increase mailbox quota for legal team \u2014 100GB",
       "description": "Legal team mailboxes hitting 50GB cap and bouncing inbound mail. Increase quota to 100GB for the 6 legal team members.",
       "status": "new",
       "created_at": "2026-05-30T01:11:37+00:00",
@@ -1456,7 +1472,7 @@
     },
     {
       "request_id": "REQ0000026",
-      "title": "Calendar resource booking for new conference room — Tokyo Floor 8",
+      "title": "Calendar resource booking for new conference room \u2014 Tokyo Floor 8",
       "description": "New conference room TKY-F8-CONF-A needs to be added to Exchange resource calendar. Capacity 12. AV equipment list attached.",
       "status": "new",
       "created_at": "2026-05-29T23:11:37+00:00",
@@ -1513,7 +1529,7 @@
     },
     {
       "request_id": "REQ0000029",
-      "title": "Firewall rule — allow inbound 443 from CloudFlare to lb-public",
+      "title": "Firewall rule \u2014 allow inbound 443 from CloudFlare to lb-public",
       "description": "Add WAF inbound rule: 443/tcp from CloudFlare published ranges to lb-public 10.0.1.5. Required for the new public marketing portal.",
       "status": "new",
       "created_at": "2026-05-30T20:11:37+00:00",
@@ -1549,7 +1565,7 @@
     },
     {
       "request_id": "REQ0000031",
-      "title": "Procurement — 200 ergonomic mice for office refresh",
+      "title": "Procurement \u2014 200 ergonomic mice for office refresh",
       "description": "Office refresh project needs 200 Logitech MX Master 3S mice for distribution to all in-office staff. Approved by COO.",
       "status": "new",
       "created_at": "2026-05-30T18:11:37+00:00",
@@ -1567,7 +1583,7 @@
     },
     {
       "request_id": "REQ0000032",
-      "title": "Renew 100 Microsoft Visio licenses — expiring next week",
+      "title": "Renew 100 Microsoft Visio licenses \u2014 expiring next week",
       "description": "Visio Plan 2 licenses for 100 architects + engineers expiring in 7 days. Need 1-year renewal before lapse.",
       "status": "new",
       "created_at": "2026-05-30T17:11:37+00:00",
@@ -1585,7 +1601,7 @@
     },
     {
       "request_id": "REQ0000033",
-      "title": "Renew Snyk security scanning subscription — annual",
+      "title": "Renew Snyk security scanning subscription \u2014 annual",
       "description": "Snyk Open Source + Code subscription up for renewal. 80 dev seats. Procurement to engage vendor on multi-year discount.",
       "status": "new",
       "created_at": "2026-05-30T16:11:37+00:00",
@@ -1621,7 +1637,7 @@
     },
     {
       "request_id": "REQ0000035",
-      "title": "Confluence space for new product team — Platform Insights",
+      "title": "Confluence space for new product team \u2014 Platform Insights",
       "description": "New Confluence space 'Platform Insights' for the just-launched Platform Insights team. Owner: PM Alex K. Default permissions: team members edit, all corp read.",
       "status": "new",
       "created_at": "2026-05-30T14:11:37+00:00",
@@ -1657,7 +1673,7 @@
     },
     {
       "request_id": "REQ0000037",
-      "title": "Decommission old Okta application — legacy expense tool",
+      "title": "Decommission old Okta application \u2014 legacy expense tool",
       "description": "Legacy expense tool sunset last quarter; remove from Okta SSO catalog + deprovision all users. Migration to new tool completed.",
       "status": "new",
       "created_at": "2026-05-30T12:11:37+00:00",
@@ -1675,7 +1691,7 @@
     },
     {
       "request_id": "REQ0000038",
-      "title": "Offboard — terminated employee, immediate revocation",
+      "title": "Offboard \u2014 terminated employee, immediate revocation",
       "description": "Employee terminated effective today. Revoke all access immediately: AD account disable, mailbox to manager, laptop wipe pickup, badge revoke, MFA tokens. HR has approved.",
       "status": "new",
       "created_at": "2026-05-30T11:11:37+00:00",
@@ -1693,7 +1709,7 @@
     },
     {
       "request_id": "REQ0000039",
-      "title": "Offboard — voluntary resignation, 2-week notice",
+      "title": "Offboard \u2014 voluntary resignation, 2-week notice",
       "description": "Senior engineer resigning, last day 2 weeks out. Plan offboarding: SSH key revoke, GitHub access change, knowledge transfer Confluence checklist, equipment return arrangements.",
       "status": "new",
       "created_at": "2026-05-30T10:11:37+00:00",
@@ -1711,7 +1727,7 @@
     },
     {
       "request_id": "REQ0000040",
-      "title": "Internal transfer — engineer moving to platform team",
+      "title": "Internal transfer \u2014 engineer moving to platform team",
       "description": "Engineer transferring from product team to platform team next week. Update AD groups, Slack channels, Jira boards, oncall rotations. Manager change to Platform Eng Lead.",
       "status": "new",
       "created_at": "2026-05-30T09:11:37+00:00",
@@ -1801,7 +1817,7 @@
     },
     {
       "request_id": "REQ0000045",
-      "title": "Slack channel archive — completed project channels (qty 12)",
+      "title": "Slack channel archive \u2014 completed project channels (qty 12)",
       "description": "Archive 12 completed project Slack channels (list attached). Members notified. Channel history retained for compliance.",
       "status": "new",
       "created_at": "2026-05-30T04:11:37+00:00",
@@ -1819,7 +1835,7 @@
     },
     {
       "request_id": "REQ0000046",
-      "title": "Zoom large meeting add-on — quarterly all-hands",
+      "title": "Zoom large meeting add-on \u2014 quarterly all-hands",
       "description": "Need Zoom Large Meeting (1000 participants) add-on for the quarterly all-hands next Friday. Single-event only.",
       "status": "new",
       "created_at": "2026-05-30T03:11:37+00:00",
@@ -1837,7 +1853,7 @@
     },
     {
       "request_id": "REQ0000047",
-      "title": "Procure dev laptop image refresh — Ubuntu 24.04 LTS",
+      "title": "Procure dev laptop image refresh \u2014 Ubuntu 24.04 LTS",
       "description": "Refresh dev laptop OS image to Ubuntu 24.04 LTS with corporate baseline (CIS hardening, EDR, Okta SSO, dev tools).",
       "status": "new",
       "created_at": "2026-05-30T02:11:37+00:00",
@@ -1873,7 +1889,7 @@
     },
     {
       "request_id": "REQ0000049",
-      "title": "Domain renewal — corp-archive.com for 5 years",
+      "title": "Domain renewal \u2014 corp-archive.com for 5 years",
       "description": "Renew corp-archive.com domain registration for 5 years via the corporate registrar. Auto-renew on. Reminder set on calendar.",
       "status": "new",
       "created_at": "2026-05-30T00:11:37+00:00",
@@ -1891,7 +1907,7 @@
     },
     {
       "request_id": "REQ0000050",
-      "title": "New static IP for office-FRA branch internet — vendor change",
+      "title": "New static IP for office-FRA branch internet \u2014 vendor change",
       "description": "Frankfurt office switching ISPs. Need new static IPv4 + IPv6 allocated, firewall config updated, DNS records flipped during scheduled cutover window.",
       "status": "new",
       "created_at": "2026-05-29T23:11:37+00:00",
@@ -1909,7 +1925,7 @@
     },
     {
       "request_id": "REQ0000051",
-      "title": "Add SAML metadata for new SaaS — DocSign integration",
+      "title": "Add SAML metadata for new SaaS \u2014 DocSign integration",
       "description": "New SaaS DocSign needs SAML SSO. Upload corp IdP metadata to DocSign + map attributes (email, groups). Initial test users: 5 legal team.",
       "status": "new",
       "created_at": "2026-05-29T22:11:37+00:00",
@@ -1945,7 +1961,7 @@
     },
     {
       "request_id": "REQ0000053",
-      "title": "Procurement — bulk laptop order, 30 units for Q3 hiring",
+      "title": "Procurement \u2014 bulk laptop order, 30 units for Q3 hiring",
       "description": "Bulk laptop order for Q3 hiring: 20 MacBook Pro 14\" M3, 10 Dell XPS 13. Standard corporate image. Lead time ~3 weeks. Cost code APPROVED-Q3-HIRING.",
       "status": "new",
       "created_at": "2026-05-30T20:11:37+00:00",

@@ -1,0 +1,97 @@
+{
+  "active_version": 1,
+  "id": "find_similar_entities",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "similar_read",
+          "duplicate_check"
+        ]
+      },
+      "created_at": "2026-05-30T14:30:00.000000+00:00",
+      "description": "Read-only similarity search for peer tickets. Cosine over ai.embeddings_<service>.embedding (chunk_type='symptom_anchor') with HNSW index, tenant pre-filter, optional scope filters (time_filter,same_category_only, same_service_only, prefer_status, min_similarity_score), then composite re-rank using semantic 0.60 + metadata 0.25 + recency 0.15 (spec UC-2 weights). Optional Stage-5 confirmation against chunk_type='diagnosis_trail' nudges true twins. Flags 'likely_duplicate' (sim>0.90 AND same CI AND status=open) or 'resolution_available' (sim>0.85 AND resolved) per spec. Returns at most max_results entries, descending by similarity. Never crosses tenant boundaries (UC-2.4) and silently omits candidates the caller cannot view (UC-2.7).",
+      "execution_type": "read",
+      "handler_ref": "oneops.use_cases.uc02_similar_tickets.tools:find_similar_entities",
+      "id": "find_similar_entities",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "data_classification": "internal",
+          "description": "Source ticket id (e.g. INC0001234 or REQ0001234).",
+          "name": "ticket_id",
+          "required": true,
+          "type": "str"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Service module: 'incident' or 'request'.",
+          "name": "service_id",
+          "required": true,
+          "type": "str"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Max similar records to return (default 5, cap 20).",
+          "name": "max_results",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Structured time scope. Built by TimeFilterExtractor on the chat path; button callers may pass it directly. Shape: {relative_days: int, label: str} OR {start_date: 'YYYY-MM-DD', end_date: 'YYYY-MM-DD', label: str}. None ⇒ unbounded.",
+          "name": "time_filter",
+          "required": false,
+          "type": "object"
+        },
+        {
+          "data_classification": "internal",
+          "description": "If true, restrict candidates to the same category as source.",
+          "name": "same_category_only",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "data_classification": "internal",
+          "description": "If true, restrict to same affected service line.",
+          "name": "same_service_only",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Bias filter: 'any' | 'open' | 'resolved'.",
+          "name": "prefer_status",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Drop matches below this similarity (0.0-1.0).",
+          "name": "min_similarity_score",
+          "required": false,
+          "type": "float"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Stage 5 diagnosis confirm on top-K (default true).",
+          "name": "diagnosis_confirm",
+          "required": false,
+          "type": "bool"
+        }
+      ],
+      "requires_scopes": [
+        "read:ticket"
+      ],
+      "status": "active",
+      "timeout_ms": 15000,
+      "updated_at": "2026-05-30T14:30:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

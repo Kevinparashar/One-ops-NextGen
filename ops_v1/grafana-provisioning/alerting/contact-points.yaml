@@ -1,0 +1,23 @@
+# Alert delivery destinations (Grafana unified alerting).
+#
+# Local-dev default: alerts land in Grafana's own UI (Alerting → Alerts
+# panel). Add Slack / PagerDuty / email by extending this file with a
+# named receiver and updating notification-policies.yaml to route to it.
+# Keeping the contact-point shape in version control means production
+# deploys flip ONE env var (webhook URL) rather than editing config.
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: oneops-default
+    receivers:
+      - uid: oneops-ui
+        type: webhook
+        # Local-dev sink: posts to Grafana's own /api/health so the
+        # delivery succeeds without external dependency. Alerts remain
+        # visible in Alerting → Alerts panel — that's the operator's
+        # signal. When ready for Slack / PagerDuty, change `url` to the
+        # webhook URL (Grafana hot-reloads provisioning files).
+        settings:
+          url: http://localhost:3001/api/health
+          httpMethod: POST
+        disableResolveMessage: false

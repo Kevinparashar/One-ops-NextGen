@@ -2,20 +2,125 @@
   "registry_name": "service_schema_registry",
   "version": "1.0.0",
   "description": "Per-service operational schema: ticket ID prefixes, alias prefixes, and RBAC ownership configuration. Kept separate from service-registry.json (agent routing) and role-permission-registry.json (role definitions). Adding a new service = add one entry here. No code changes required.",
+  "_uc05_doc": "Top-level UC-5 Triage policy blocks (locked 2026-05-29 per ai-service usecase.md spec). Both blocks are consumed by oneops.use_cases.uc05_triage during proposal assembly and apply.py.",
+  "sla_duration_by_priority": {
+    "_doc": "Maps the Motadata priority (output of the impact-urgency matrix) to the SLA window duration. apply.py reads this on operator Yes click to set sla_due = now() + duration. Values use a compact form parsed by oneops: '8h', '4h', '2h', '30min'. Editable per tenant without code change.",
+    "Low":    "8h",
+    "Medium": "4h",
+    "High":   "2h",
+    "Urgent": "30min"
+  },
+  "triage_confidence_tiers": {
+    "_doc": "Three-tier routing policy per ai-service usecase.md Step 1 confidence rule. overall_confidence_score >= auto_apply_at -> tier 'auto' (would auto-apply; UC-5 still gates via binary Yes/No for safety). >= propose_at -> tier 'propose' (default proposal card). below refuse_below -> tier 'refuse' (TriageRefusal, no proposal made).",
+    "auto_apply_at": 0.90,
+    "propose_at":    0.50,
+    "refuse_below":  0.50
+  },
   "services": [
     {
       "service_id": "incident",
       "id_prefix": "INC",
       "alias_prefixes": [],
       "ownership_enforced": true,
-      "owner_fields": ["reported_by", "caller_id", "assigned_to", "created_by"]
+      "owner_fields": ["reported_by", "caller_id", "assigned_to", "created_by"],
+
+      "_priority_doc": "Motadata ServiceOps Priority Matrix — verbatim from Admin -> Request Management -> Priority Matrix. UC-5's prioritize_entity reads this; the LLM never decides priority alone (rule C10 deterministic + 2.13 agents-as-data). When Motadata's auto-priority feature is enabled, this is the authoritative source.",
+      "_priority_source": "https://docs.motadata.com/serviceops-docs/admin-section/request-management/priority-matrix/",
+      "priority_matrix": {
+        "_axes": {
+          "impact":  ["Low", "On Users", "On Department", "On Business"],
+          "urgency": ["Low", "Medium", "High", "Urgent"]
+        },
+        "matrix": {
+          "Low":           { "Low": "Low",    "Medium": "Low",    "High": "Medium", "Urgent": "Medium" },
+          "On Users":      { "Low": "Low",    "Medium": "Low",    "High": "Medium", "Urgent": "High"   },
+          "On Department": { "Low": "Medium", "Medium": "Medium", "High": "High",   "Urgent": "Urgent" },
+          "On Business":   { "Low": "Medium", "Medium": "High",   "High": "Urgent", "Urgent": "Urgent" }
+        },
+        "_priority_values": ["Low", "Medium", "High", "Urgent"],
+        "_behavior": {
+          "auto_apply_when_enabled": true,
+          "user_override_allowed": true,
+          "default_when_unset": "Low"
+        },
+        "_priority_aliases_doc": "Read-side alias from legacy ServiceNow-style P-prefix vocabulary to the Motadata 4-axis canonical. Used by oneops.use_cases.uc05_triage to normalise any priority value read from existing rows before display or comparison. WRITE side always uses the Motadata canonical (Low/Medium/High/Urgent) — UC-5 never persists a P-prefix value. Unknown aliases fall through to the input value unchanged with basis 'unrecognised_alias' captured in audit.",
+        "priority_aliases": {
+          "P1": "Urgent",
+          "P2": "High",
+          "P3": "Medium",
+          "P4": "Low"
+        }
+      },
+
+      "_retrieval_doc": "Schema-driven retrieval config consumed by UC-5 (and future UC-2). The retrieval engine builds the cosine/FTS SQL from this block — adding/removing a column = JSON edit, not a code change. neighbour_columns lists the columns fetched onto every neighbour row; status_filter and age_filter_days are hard pre-filters (same-tenant + same-service is implied); aggregation_targets are the columns Tool 1 derives majority suggestions for.",
+      "retrieval_schema": {
+        "_change_note": "2026-05-29 PM: aggregation_targets realigned to ai-service usecase.md UC-5 spec. service_name dropped (not in spec). assigned_to + ci_id added (Step 4 agent + Step 5 CI auto-link). Embedding text builder still uses service_name and CI fields as retrieval signal — that is unchanged. 2026-05-30: added embedding_table_v2 + embedding_chunk_type for P3 substrate swap. Reader selects between legacy inline column and new substrate via UC05_EMBEDDING_SOURCE env flag.",
+        "table": "itsm.incident",
+        "id_column": "incident_id",
+        "embedding_column": "embedding",
+        "embedding_table_v2": "ai.embeddings_incident",
+        "embedding_chunk_type": "symptom_anchor",
+        "tsv_column": "search_tsv",
+        "neighbour_columns": [
+          "title", "description", "category", "subcategory",
+          "service_name", "ci_id", "assignment_group", "assigned_to",
+          "status", "created_at"
+        ],
+        "status_filter": ["open", "in_progress", "assigned"],
+        "age_filter_days": 365,
+        "aggregation_targets": ["category", "subcategory", "assigned_to", "ci_id"]
+      }
     },
     {
       "service_id": "request",
       "id_prefix": "REQ",
       "alias_prefixes": ["SR"],
       "ownership_enforced": true,
-      "owner_fields": ["requested_by", "requested_for", "caller_id", "assigned_to", "created_by"]
+      "owner_fields": ["requested_by", "requested_for", "caller_id", "assigned_to", "created_by"],
+
+      "_priority_doc": "Requests reuse the Motadata matrix from incident; impact and urgency are derived per the catalog item and SLA pressure (pattern (a) locked with operator 2026-05-29). UC-5's prioritize_entity for requests reads derive_impact_for_request and derive_urgency_for_request, then looks up the incident.priority_matrix.",
+      "priority_matrix_ref": "incident.priority_matrix",
+      "derive_impact_for_request": {
+        "_doc": "Catalog category -> impact mapping. UC-5 reads this in prioritize_entity for requests.",
+        "by_catalog_category": {
+          "onboarding": "On Department",
+          "access":     "On Users",
+          "hardware":   "On Users",
+          "software":   "On Users",
+          "knowledge":  "Low",
+          "other":      "On Users"
+        },
+        "vip_user_override": "On Business",
+        "default_when_unmatched": "On Users"
+      },
+      "derive_urgency_for_request": {
+        "_doc": "SLA pressure -> urgency mapping. UC-5 reads this in prioritize_entity for requests. SLA pressure is computed as fraction of SLA window remaining.",
+        "by_sla_state": {
+          "healthy":           "Low",
+          "approaching_50pct": "Medium",
+          "approaching_25pct": "High",
+          "breached":          "Urgent"
+        },
+        "default_when_no_sla": "Low"
+      },
+
+      "_retrieval_doc": "Same schema-driven contract as incident — different columns reflect the request shape (no subcategory/service_name; has catalog_item_id). Status filter includes 'approved' which is request-specific. UC-2 will read this same block with a lower threshold.",
+      "retrieval_schema": {
+        "_change_note": "2026-05-29 PM: aggregation_targets realigned to spec. catalog_item_id dropped (not in spec). assigned_to + ci_id added. Embedding text builder still uses catalog_name + catalog_category as retrieval signal — that is unchanged. 2026-05-30: added embedding_table_v2 + embedding_chunk_type for P3 substrate swap.",
+        "table": "itsm.request",
+        "id_column": "request_id",
+        "embedding_column": "embedding",
+        "embedding_table_v2": "ai.embeddings_request",
+        "embedding_chunk_type": "symptom_anchor",
+        "tsv_column": "search_tsv",
+        "neighbour_columns": [
+          "title", "description", "category", "catalog_item_id",
+          "ci_id", "assignment_group", "assigned_to", "status", "created_at"
+        ],
+        "status_filter": ["open", "in_progress", "approved", "assigned"],
+        "age_filter_days": 365,
+        "aggregation_targets": ["category", "assigned_to", "ci_id"]
+      }
     },
     {
       "service_id": "problem",

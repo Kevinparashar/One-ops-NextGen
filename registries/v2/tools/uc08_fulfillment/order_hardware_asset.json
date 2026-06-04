@@ -1,0 +1,65 @@
+{
+  "active_version": 1,
+  "id": "order_hardware_asset",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "fulfillment_execute"
+        ]
+      },
+      "created_at": "2026-05-31T08:30:00.000000+00:00",
+      "description": "Mock procurement order. Creates a PO line item in the procurement system (real prod = ServiceNow Procurement / Coupa). Returns po_id + estimated_delivery. Manual task \u2014 work-item routed to GRP-ASSET; UC-8 awaits completion.",
+      "execution_type": "action",
+      "handler_ref": "oneops.use_cases.uc08_fulfillment.tools:order_hardware_asset",
+      "id": "order_hardware_asset",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "name": "ritm_id",
+          "type": "str",
+          "required": true,
+          "description": "RITM the task belongs to.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": true,
+          "description": "Task id for idempotency.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "asset_type",
+          "type": "str",
+          "required": true,
+          "description": "Asset type (laptop, monitor, dock, etc.).",
+          "data_classification": "internal"
+        },
+        {
+          "name": "model_preferred",
+          "type": "str",
+          "required": true,
+          "description": "Preferred model (e.g. T14).",
+          "data_classification": "internal"
+        },
+        {
+          "name": "deliver_to",
+          "type": "str",
+          "required": true,
+          "description": "Delivery address / desk location.",
+          "data_classification": "internal"
+        }
+      ],
+      "policy_refs": [],
+      "status": "active",
+      "updated_at": "2026-05-31T08:30:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

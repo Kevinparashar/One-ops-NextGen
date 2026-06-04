@@ -7,7 +7,7 @@ datasources:
     type: prometheus
     access: proxy
     uid: prom
-    url: http://oneops-prometheus:9090
+    url: http://nextgen-prometheus:9090
     isDefault: true
     editable: false
     jsonData:
@@ -17,7 +17,7 @@ datasources:
     type: tempo
     access: proxy
     uid: tempo
-    url: http://oneops-tempo:3200
+    url: http://nextgen-tempo:3200
     editable: false
     jsonData:
       tracesToLogs:

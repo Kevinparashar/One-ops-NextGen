@@ -1,6 +1,6 @@
 # PMG evidence report
 
-**Generated:** `2026-05-31T15:46:41Z`
+**Generated:** `2026-06-01T06:42:03Z`
 **Verifier:** `ops/pmg-evidence/verify-all.sh`
 **Result:** ✅ all phases green
 

@@ -1,0 +1,72 @@
+{
+  "active_version": 1,
+  "id": "request_human_approval",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "fulfillment_orchestrate"
+        ]
+      },
+      "created_at": "2026-05-31T08:30:00.000000+00:00",
+      "description": "Create an itsm.approval row + pause the LangGraph workflow via interrupt(). When the decision lands (via POST /api/uc08/approve), the graph resumes. Used for substitution gates (8.3), budget gates, manager approvals, catalog-owner template approvals (8.8).",
+      "execution_type": "action",
+      "handler_ref": "oneops.use_cases.uc08_fulfillment.tools:request_human_approval",
+      "id": "request_human_approval",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "name": "ritm_id",
+          "type": "str",
+          "required": true,
+          "description": "RITM the approval belongs to.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "task_id",
+          "type": "str",
+          "required": false,
+          "description": "Optional: task this approval is scoped to.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "approval_type",
+          "type": "str",
+          "required": true,
+          "description": "substitution | budget | manager | security | catalog_owner.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "reason",
+          "type": "str",
+          "required": true,
+          "description": "Human-readable reason.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "requested_from",
+          "type": "str",
+          "required": true,
+          "description": "User id or role token who must approve.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "payload",
+          "type": "object",
+          "required": false,
+          "description": "Structured proposal (old \u2192 new diff for substitutions, etc.).",
+          "data_classification": "internal"
+        }
+      ],
+      "policy_refs": [],
+      "status": "active",
+      "updated_at": "2026-05-31T08:30:00.000000+00:00",
+      "version": 1
+    }
+  }
+}
