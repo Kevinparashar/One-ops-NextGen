@@ -152,9 +152,9 @@ def build_executor_graph(
     g.add_edge("boundary", "persist")
     g.add_edge("persist", END)
 
-    compiled = g.compile(checkpointer=checkpointer or InMemorySaver())
-    _log.info("executor.graph_compiled",
-              checkpointer=type(checkpointer or InMemorySaver()).__name__)
+    saver = checkpointer or InMemorySaver()
+    compiled = g.compile(checkpointer=saver)
+    _log.info("executor.graph_compiled", checkpointer=type(saver).__name__)
     return compiled
 
 
@@ -197,8 +197,15 @@ async def run_turn(
 ) -> dict[str, Any]:
     """Run one user turn through the compiled graph.
 
-    `thread_id` (LangGraph's checkpoint key) defaults to the session id, so
-    multi-turn conversations and interrupt/resume share one durable thread.
+    `thread_id` (LangGraph's checkpoint key) defaults to the session id HERE, but
+    NOTE: production callers (api/app.py, workers/graph_worker.py) deliberately
+    override it with the per-request id so concurrent turns never collide on one
+    thread. Consequence: in production the checkpointer does NOT carry state
+    across turns — cross-turn memory (incl. focus) comes from the SESSION STORE
+    (load_session/persist), not the checkpointer. Durable interrupt/resume across
+    turns is therefore NOT available on the prod wiring (see the interrupt note in
+    nodes.run_step). The session-scoped default below only carries state across
+    turns when a caller reuses the same thread_id (e.g. tests).
     """
     cfg: dict[str, Any] = dict(config or {})
     configurable = dict(cfg.get("configurable") or {})

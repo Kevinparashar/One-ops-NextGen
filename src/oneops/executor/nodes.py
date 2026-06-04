@@ -462,11 +462,13 @@ class ExecutorNodes:
           3. If neither yields an id → focus stays empty (fresh session
              or off-domain chat).
 
-        The result is persisted by the checkpointer (`AsyncPostgresSaver`)
-        so on the NEXT turn the prior focus is already in state — no
-        re-derivation needed. Downstream consumers (rewriter, router,
-        UC handlers) READ focus from state instead of inferring it from
-        history strings.
+        Within a turn, downstream consumers (rewriter, router, UC handlers)
+        READ focus from state instead of inferring it from history strings.
+        ACROSS turns: production uses a per-request thread_id, so the
+        checkpointer does NOT carry focus to the next turn — `load_session`
+        re-derives it from the persisted session transcript at the start of
+        each turn. (The "already in state via the checkpointer" path only
+        applies when a caller reuses one thread_id, e.g. tests.)
 
         Why this matters: the stale-focus / linked-record-drift /
         assistant-mentioned-id bug class was caused by 3 layers

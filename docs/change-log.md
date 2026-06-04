@@ -217,4 +217,28 @@ this is the first execution slice — the low-risk, high-value part.
 - **Remaining (deferred, owner-gated)**: Phase 2 (remove the no-op `wave` node / move
   scheduling onto the run_step edge) and Phase 3 (subgraph rewrite) — see scope doc §5/§9.
 
+## 2026-06-04 · LangGraph fresh re-review — 3 safe fixes (C2/C8/C9/C11)
+
+Re-ran the senior LangGraph review against the CURRENT code. Verdict unchanged tier
+("directionally good, needs hardening") but it independently confirmed our prior
+fixes are now correct/idiomatic (RetryPolicy scoping, recursion floor, golden tests
+— flagged "do not touch"). Notable: the fresh reviewer judged the wave⇄run_step loop
+✅ IDIOMATIC, contradicting review #1's ❌ anti-pattern verdict — recorded as a
+disagreement (leans toward NOT rewriting the scheduler). Applied the small safe fixes
+the fresh review surfaced:
+- **C2** (docstrings): `run_turn` + `update_focus` docstrings claimed the checkpointer
+  carries state/focus across turns; prod uses a per-request thread_id, so it does NOT —
+  cross-turn memory is the session store. Corrected (doc-only).
+- **C9** (version pin): `langgraph>=0.2.50` (installed 1.2.2, 4 majors apart) →
+  `langgraph>=1.2,<2`; `langgraph-checkpoint-postgres>=2.0.10` → `>=3,<4`. Both match
+  installed; removes the clean-install break risk.
+- **C8** (test): deprecated `retry=` alias → `retry_policy=` (prod already correct).
+- **C11** (cleanup): collapsed a redundant double `InMemorySaver()` construction.
+- **Files**: `pyproject.toml`, `src/oneops/executor/graph.py`,
+  `src/oneops/executor/nodes.py`, `tests/unit/executor/test_node_retry_policy.py`,
+  `docs/risk-register.md`.
+- **Validation**: executor tests 10/10; smoke 5/5; ruff + mypy clean; installed
+  versions satisfy the new pins. No behavior change (docs + pin + test-kwarg + cleanup).
+- **Confirmed open (owner decision):** C1 interrupt() dead-in-prod (= R-12, dormant).
+
 <!-- Append new entries below this line as batches land. -->

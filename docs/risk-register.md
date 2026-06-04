@@ -17,7 +17,7 @@
 | R-10 | **No Dockerfile / k8s** — docker-compose only. | Low (current phase) | Accepted | Add at deployment time. |
 
 | R-11 | **Test-infra hang**: multiple app-building test modules sharing a process can hang on TestClient streaming-lifespan teardown. | Low (tests only) | Open | Smoke uses a module-scoped app to avoid it; the C-3 stream endpoint test was made hermetic. Proper fix: a shared session-scoped app fixture for api/ tests. |
-| R-12 | **Executor `interrupt()` HIL is dead in production** — no `Command(resume)` in src/, per-request thread_id, in-memory checkpointer. UC approval is separate (UC-8 DB-blocked, UC-5 propose/decide). | Medium (correctness/clarity) | **(a) DONE 2026-06-04** / (b) open | (a) ✅ Stale docstrings corrected (uc08 `contracts.py` ApprovalState + Approval, `__init__.py` module doc + layout, `db.py` `record_approval_decision` flagged NOT-WIRED). (b) Still open (owner decision): wire the approval→unblock resume path (`record_approval_decision` + an endpoint) OR remove the dead executor `interrupt()`. From LangGraph review #6 + #2. |
+| R-12 | **Executor `interrupt()` HIL is dead in production** — no `Command(resume)` in src/, per-request thread_id, in-memory checkpointer. UC approval is separate (UC-8 DB-blocked, UC-5 propose/decide). | Medium (correctness/clarity) | **(a) DONE 2026-06-04** / (b) open | (a) ✅ Stale docstrings corrected (uc08 `contracts.py` ApprovalState + Approval, `__init__.py` module doc + layout, `db.py` `record_approval_decision` flagged NOT-WIRED). (b) DOWNGRADED to dormant (reachability checked 2026-06-04): the only ACTIVE agents are uc01/02/03/05/08; the catalog action agents (ticket_action_agent etc.) are INACTIVE/unreachable, and the active action-tier UCs (uc05, uc08) use their OWN approval (UC-8 DB-state, UC-5 propose/decide), NOT the chat executor `interrupt()`. So the executor interrupt path is UNREACHED in prod — not an urgent bug. Owner decision (low priority): when an action agent is ever chat-routed through the executor, wire resume (Command(resume) endpoint + stable thread_id + checkpointer) before relying on it. From LangGraph review #6 + #2. |
 
 ## LangGraph review (2026-06-04) — findings tracked
 Overall: idiomatic + in the right direction; reducers/checkpointer-guard/thread_id are strong. Open items:
@@ -27,6 +27,26 @@ Overall: idiomatic + in the right direction; reducers/checkpointer-guard/thread_
 - **#4 (P3)** streaming via side event-sink, not `astream(stream_mode="custom")`.
 - **#5 (P1)** ✅ RESOLVED 2026-06-04 — `RetryPolicy(max_attempts=3, retry_on=UpstreamError)` on `route`+`control_gate` (idempotent); `run_step` deliberately excluded. Test-locked.
 Keep-list (do NOT change): reducers (state.py:18-66), checkpointer shared-DB guard (graph.py:201-254), thread_id resume wiring, `ToolNode` deliberately unused.
+
+## LangGraph re-review (2026-06-04, fresh against current code) — outcomes
+Label: "Directionally good but needs hardening." Confirmed our fixes are now correct
++ idiomatic (RetryPolicy scoping, recursion floor, golden tests — "do not touch").
+- **NOTABLE DISAGREEMENT (wave loop):** review #1 called the `wave ⇄ run_step` loop a
+  ❌ hand-rolled-scheduler anti-pattern; the fresh review calls it ✅ idiomatic ("the
+  canonical dynamic-dispatch pattern… do NOT touch it"). Two skeptical reviewers,
+  opposite verdicts → it's a judgment call, not a clear defect. Implication: do NOT
+  rush the Phase-2 scheduler rewrite; a human LangGraph expert is the tiebreaker if
+  certainty is needed. (Affects scheduler-refactor-scope.md priority — leans "leave it".)
+- **R-13 (C2) — FIXED 2026-06-04:** checkpointer docstrings claimed cross-turn state
+  carry, but prod uses per-request thread_id → checkpointer carries nothing across
+  turns; cross-turn memory = session store. Docstrings corrected (graph.py run_turn,
+  nodes.py update_focus). Doc-only.
+- **R-14 (C9) — FIXED 2026-06-04:** `langgraph>=0.2.50` pin vs installed 1.2.2 (4 majors
+  apart) → pinned `langgraph>=1.2,<2` + `langgraph-checkpoint-postgres>=3,<4` (both
+  match installed). Removes clean-install break risk.
+- **R-15 (C8/C11) — FIXED 2026-06-04:** test used deprecated `retry=` alias → `retry_policy=`;
+  collapsed a redundant double `InMemorySaver` construction.
+- **C1 (interrupt dead-in-prod):** reconfirmed (= R-12). Owner decision, dormant.
 
 ## Manual verification required
 

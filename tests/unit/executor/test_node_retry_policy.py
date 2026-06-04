@@ -40,7 +40,7 @@ def _graph(exc: Exception, fail_times: int):
         return {"seen": [calls["n"]]}
 
     g: StateGraph = StateGraph(_S)
-    g.add_node("work", work, retry=_FAST)
+    g.add_node("work", work, retry_policy=_FAST)
     g.add_edge(START, "work")
     g.add_edge("work", END)
     return g.compile(), calls
