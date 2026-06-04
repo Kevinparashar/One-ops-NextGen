@@ -19,6 +19,7 @@ stateless services + asyncpg pool + LangGraph's per-thread checkpointer.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 import uuid
@@ -29,7 +30,7 @@ from fastapi import FastAPI, HTTPException, Path, Request, WebSocket, WebSocketD
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from oneops.errors import NATSUnavailableError, OneOpsError
 from oneops.executor.graph import build_executor_graph, run_turn
@@ -314,12 +315,53 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
 
 
+# Bounds on the free-form fast-path `inputs` dict. Real fast-path inputs are a
+# handful of short scalar fields (e.g. {"ticket_id": "INC0001001"}); these caps
+# are deliberately generous so no legitimate request is rejected, while closing
+# the DoS surface of an arbitrarily large / deeply-nested payload reaching the
+# downstream validators, SQL, and embeddings (audit P1-5 / P1-6).
+_MAX_FAST_PATH_INPUT_KEYS = 50
+_MAX_FAST_PATH_INPUT_DEPTH = 6
+_MAX_FAST_PATH_INPUT_BYTES = 64 * 1024
+
+
+def _nesting_depth(value: Any, _depth: int = 1) -> int:
+    """Max container-nesting depth of a JSON-like value (scalars = 0)."""
+    if isinstance(value, dict):
+        children = value.values()
+    elif isinstance(value, (list, tuple)):
+        children = value
+    else:
+        return _depth - 1
+    return max((_nesting_depth(c, _depth + 1) for c in children), default=_depth)
+
+
 class FastPathPostRequest(BaseModel):
     """Caller-supplied structured input for a fast-path UC. The dispatcher
     validates this against the UC's declared `fast_path.input_fields`."""
 
     inputs: dict[str, Any] = Field(default_factory=dict)
     session_id: str | None = None
+
+    @field_validator("inputs")
+    @classmethod
+    def _bound_inputs(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Reject pathologically large/deep payloads with a clean 422 before
+        they reach downstream processing (no behavior change for real inputs)."""
+        if len(value) > _MAX_FAST_PATH_INPUT_KEYS:
+            raise ValueError(
+                f"inputs has too many keys "
+                f"(max {_MAX_FAST_PATH_INPUT_KEYS})")
+        if _nesting_depth(value) > _MAX_FAST_PATH_INPUT_DEPTH:
+            raise ValueError(
+                f"inputs is nested too deeply "
+                f"(max depth {_MAX_FAST_PATH_INPUT_DEPTH})")
+        size = len(json.dumps(value, default=str).encode("utf-8"))
+        if size > _MAX_FAST_PATH_INPUT_BYTES:
+            raise ValueError(
+                f"inputs is too large "
+                f"(max {_MAX_FAST_PATH_INPUT_BYTES} bytes)")
+        return value
 
 
 class TurnResponse(BaseModel):
