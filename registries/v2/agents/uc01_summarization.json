@@ -53,6 +53,35 @@
         "policy_pii_redact",
         "policy_tenant_scope"
       ],
+      "skills": [
+        {
+          "id": "summarize_ticket",
+          "name": "Summarize a ticket",
+          "description": "Produce a natural-language summary of an incident/request/problem/change's OWN fields, status, and timeline. Use when the user wants facts ABOUT the record itself.",
+          "use_when": [
+            "summarize / describe / explain a ticket",
+            "what do we know about / what happened in / current state of a record",
+            "a bare entity id (INC..., CI...) with no other intent"
+          ],
+          "not_when": [
+            "user wants external KB / how-to / docs (that is the knowledge agent)",
+            "user wants to change the record (that is an action agent)"
+          ],
+          "tags": [
+            "summarization",
+            "read",
+            "incident",
+            "request",
+            "problem",
+            "change"
+          ],
+          "examples": [
+            "summarize INC0001001",
+            "what's going on with this ticket",
+            "walk me through PRB0002"
+          ]
+        }
+      ],
       "routing_shape": "single_agent",
       "status": "active",
       "tool_refs": [

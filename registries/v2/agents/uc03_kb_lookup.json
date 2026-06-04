@@ -56,6 +56,35 @@
         "policy_kb_audience",
         "policy_tenant_scope"
       ],
+      "skills": [
+        {
+          "id": "search_knowledge_base",
+          "name": "Search the knowledge base",
+          "description": "Retrieve ranked knowledge articles, how-tos, runbooks, and SOPs that help understand or resolve an issue. Use when the user wants supporting material OUTSIDE the record.",
+          "use_when": [
+            "how do I fix / how was this solved",
+            "any docs / KB / runbook / procedure for X",
+            "what is documented / what guidance exists for X",
+            "topic-only how-to with no entity (e.g. VPN reset steps)"
+          ],
+          "not_when": [
+            "facts ABOUT the record itself (that is the summary agent)",
+            "the value of a field stored ON the record such as root_cause / affected_ci (that is a field-read on the record, not a KB lookup)"
+          ],
+          "tags": [
+            "knowledge",
+            "kb",
+            "retrieval",
+            "read",
+            "how-to"
+          ],
+          "examples": [
+            "how do I reset MFA",
+            "any KB for VPN error 809",
+            "what's the runbook for a stuck job"
+          ]
+        }
+      ],
       "routing_shape": "single_agent",
       "status": "active",
       "tool_refs": [

@@ -290,6 +290,46 @@ class FastPathSpec(BaseModel):
     response_schema_ref: str | None = None
 
 
+class Skill(BaseModel):
+    """A structured, self-describing capability declaration on an agent.
+
+    This is the routing contract for the dynamic, scale-generic router: agents
+    declare WHAT they do and WHEN they should (and should NOT) be chosen, as
+    DATA — so the router can match a query against these cards instead of a
+    hand-tuned taxonomy baked into a prompt. Adding a use case = adding its
+    skill card; the router needs no code/prompt change (agents-as-data).
+
+    Schema synthesizes the converged industry pattern: Anthropic Agent Skills
+    (`name` + `description` that says *what* AND *when*), the A2A AgentCard
+    `skills[]` (id/name/description/tags/examples), and Salesforce Agentforce
+    subagent routing (match the query to name + description). Disambiguation
+    knowledge lives in `use_when`/`not_when` — moved off the router prompt and
+    onto the skill, which is what lets routing generalize toward 1000 UCs.
+
+    ADDITIVE / NOT-YET-WIRED: declaring skills changes no routing behavior
+    today. The retrieval + disambiguation stages consume these cards only once
+    the dynamic router is enabled (flag-gated + eval-gated). See
+    docs/agent-skills-spec.md.
+    """
+
+    model_config = {"frozen": True}
+    id: str = Field(pattern=_ID_PATTERN)
+    name: str = Field(min_length=1, max_length=120)
+    # Must state BOTH what the skill does AND when to use it (Anthropic rule).
+    description: str = Field(min_length=1, max_length=600)
+    # Positive routing signals — intents/phrasings this skill should win.
+    use_when: tuple[str, ...] = ()
+    # Disambiguation-as-data — intents this skill must NOT be chosen for (e.g.
+    # the KB-vs-summary trap). This is knowledge currently hardcoded in the
+    # disambiguation prompt's taxonomy; declaring it here is what moves routing
+    # from prompt-tuned to data-driven.
+    not_when: tuple[str, ...] = ()
+    # Structured retrieval/filter boosts (e.g. "summarization", "read").
+    tags: tuple[str, ...] = ()
+    # Illustrative queries — applied as PRINCIPLE, never a string-match list.
+    examples: tuple[str, ...] = ()
+
+
 class AgentRecord(_VersionedRecord):
     """A use case, fully described as data. One per UC; ~1000 at full scale.
 
@@ -307,6 +347,10 @@ class AgentRecord(_VersionedRecord):
     activation_condition: ActivationCondition
     tool_refs: tuple[ToolRef, ...] = ()
     policy_refs: tuple[str, ...] = ()
+    # Structured, self-describing capability cards for dynamic/data-driven
+    # routing (see Skill). Default empty: existing agents parse unchanged and
+    # routing behavior is untouched until the dynamic router is enabled.
+    skills: tuple[Skill, ...] = ()
     abac_tags: AbacTags
     determinism_level: DeterminismLevel
     hooks: Hooks = Hooks()
@@ -445,6 +489,7 @@ __all__ = [
     "JourneySpec",
     "FastPathInputField",
     "FastPathSpec",
+    "Skill",
     "AgentRecord",
     "ToolParameter",
     "ToolRecord",
