@@ -31,7 +31,7 @@ A quick index of the 13 rules in §2 (read the full text before relying on them)
 6. **[`docs/COMPONENT_SPEC.md`](docs/COMPONENT_SPEC.md)** — the C1–C24 contract every component is built to.
 7. **[`RUNBOOK.md`](RUNBOOK.md)** — operator procedures.
 8. **[`docs/observability/architecture_map.md`](docs/observability/architecture_map.md)** — canonical span tree + metric inventory.
-9. **[`registries/`](registries/)** — data-driven configuration (`agent-catalog`, `tool-registry`, `capability-registry`, `agent-tool-mapping`, `role-permission-registry`, `service-registry`, `service-schema`, `router-alias-registry`).
+9. **[`registries/`](registries/)** — data-driven configuration. The **live registry the service loads is [`registries/v2/`](registries/v2/)** (`registry.loader.load_registry`, default `REGISTRY_ROOT=registries/v2`): per-agent `agents/*.json`, per-tool `tools/*.json`, plus `service-schema.json`, `glossary.json`, `field_policy.json`, `policy_rules.json`. Remaining flat files at `registries/` root: `service-schema.json` + `role-permission-registry.json` (loaded by path — service-schema by retrieval/priority, role-permission by `authz/rbac.py`) and `agent-registry.json` + `capability-registry.json` (read by the manual `tools/seed_uc_capabilities.py` seeder). The legacy flat catalog files (`agent-catalog-registry`, `agent-tool-mapping`, `router-alias-registry`, `service-registry`, flat `tool-registry`) were **removed 2026-06-04** as dead (never loaded by any runtime path).
 
 After steps 1–4 an AI has enough context to do a production-grade change.
 

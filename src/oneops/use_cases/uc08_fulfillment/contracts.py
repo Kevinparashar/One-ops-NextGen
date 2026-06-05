@@ -365,10 +365,11 @@ class Approval(BaseModel):
     a LangGraph interrupt.
 
     NOTE (as of 2026-06-04): there is currently NO production endpoint that
-    consumes a decision to unblock the task — `record_approval_decision`
-    (db.py) is defined but not yet wired to any route. The resume path is a
-    KNOWN GAP, not a shipped feature. (An earlier docstring here described a
-    `POST /api/uc08/approve` + LangGraph-resume flow that does not exist.)
+    consumes a decision to unblock the task — the resume path (a `POST
+    /api/uc08/approve` that re-evaluates blocked tasks) is a KNOWN GAP, not a
+    shipped feature. The previously-present `record_approval_decision` helper
+    was removed as dead code (zero callers); wiring resume will re-introduce
+    the decision-apply query alongside the endpoint.
     """
 
     model_config = ConfigDict(extra="forbid")

@@ -7,6 +7,7 @@ Two implementations:
 Same Protocol on both. apply.py is agnostic.
 """
 from oneops.use_cases.uc05_triage.stores.base import TicketStore
+from oneops.use_cases.uc05_triage.stores.db_store import DbStore
 from oneops.use_cases.uc05_triage.stores.json_store import JsonFixtureStore
 
-__all__ = ["TicketStore", "JsonFixtureStore"]
+__all__ = ["TicketStore", "JsonFixtureStore", "DbStore"]

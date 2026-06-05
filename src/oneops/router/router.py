@@ -35,7 +35,7 @@ from typing import Any
 from oneops.authz.descriptors import from_agent_record
 from oneops.authz.models import Principal
 from oneops.authz.service import AuthzService
-from oneops.observability import get_logger, get_tracer
+from oneops.observability import get_logger, get_tracer, set_langfuse_io
 from oneops.registry.service import RegistryService
 from oneops.router.conditions import evaluate, survives_filter
 from oneops.router.decompose import Decomposer, PassthroughDecomposer
@@ -277,6 +277,10 @@ class Router:
             span.set_attribute("router.plan_steps", len(plan.steps))
             span.set_attribute("router.unrouted", len(unrouted))
             diag.append(f"plan: {len(plan.steps)} step(s) -> {list(plan.agent_ids)}")
+            set_langfuse_io(
+                span, input=query_text,
+                output={"agents": list(plan.agent_ids),
+                        "steps": len(plan.steps), "unrouted": len(unrouted)})
             return RouteResult.routed(plan, diag, unrouted)
 
     # ── the per-sub-query funnel (stages 1-4) ────────────────────────────
@@ -351,6 +355,11 @@ class Router:
             s3.set_attribute("oneops.router.policy_denied", policy_denied_any)
             s3.set_attribute("oneops.router.survivor_ids",
                              ",".join(c.agent_id for c in survivors))
+            set_langfuse_io(
+                s3,
+                input=[c.agent_id for c in candidates],
+                output={"survivors": [c.agent_id for c in survivors],
+                        "policy_denied": policy_denied_any})
 
         if not survivors:
             reason = ("every candidate was denied by access policy"
@@ -402,6 +411,10 @@ class Router:
             pre_target = _deterministic_preroute(preroute_text, survivor_ids)
             pre_span.set_attribute(
                 "oneops.router.preroute.fired", pre_target is not None)
+            set_langfuse_io(
+                pre_span, input=sorted(survivor_ids),
+                output={"fired": pre_target is not None,
+                        "target": pre_target[0] if pre_target else None})
             _log.info("router.stage3.4.preroute_check",
                       preroute_text=preroute_text,
                       normalized=normalized,

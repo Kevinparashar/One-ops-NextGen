@@ -37,7 +37,14 @@ from oneops.errors import NATSUnavailableError, OneOpsError
 from oneops.executor.graph import build_executor_graph, run_turn
 from oneops.executor.memory import NoopTrimmer, TokenBudgetTrimmer
 from oneops.executor.step_runner import HandlerStepExecutor
-from oneops.observability import get_logger, get_tracer
+from oneops.observability import (
+    get_logger,
+    get_tracer,
+    langfuse_capture_content_enabled,
+    redact_for_span,
+    set_langfuse_io,
+    set_langfuse_trace,
+)
 from oneops.observability.metrics import increment as _metric_inc
 from oneops.registry.loader import load_registry
 from oneops.router.fast_path import (
@@ -805,6 +812,19 @@ async def _lifespan(app: FastAPI):
             )
             from oneops.use_cases.uc05_triage.runner import build_runner
 
+            # Store selection: default JsonFixtureStore (demo data); opt into the
+            # real Postgres-backed store (itsm.incident / itsm.request reads +
+            # triage-apply writes) with UC05_TICKET_STORE=postgres. Set BEFORE
+            # any _uc05_get_store() call so the runner, executor handlers, and the
+            # NATS agent all share the same backend.
+            if os.getenv("UC05_TICKET_STORE", "").strip().lower() == "postgres":
+                from oneops.api.uc05_routes import (
+                    set_ticket_store as _uc05_set_ticket_store,
+                )
+                from oneops.use_cases.uc05_triage.stores import DbStore
+                _uc05_set_ticket_store(DbStore())
+                _log.info("oneops.api.uc05_store_selected", backend="postgres")
+
             async def _uc05_conn_provider():
                 import asyncpg
                 pg_url = os.getenv("POSTGRES_URL")
@@ -818,6 +838,45 @@ async def _lifespan(app: FastAPI):
             )
             _uc05_set_runner(uc05_runner)
             _log.info("oneops.api.uc05_runner_attached")
+
+            # B-refactor: wire the standard registry-dispatched UC-5 handlers
+            # (uc05_triage.handlers) with the same deps as the bespoke runner.
+            # Additive — the executor path uses these; the runner above still
+            # serves /api/uc05/propose until Phase 3 retires it. No behavior
+            # change today; this makes the registry tools dispatchable.
+            from oneops.use_cases.uc05_triage.handlers import (
+                set_uc05_connection_provider as _uc05_set_cp,
+            )
+            from oneops.use_cases.uc05_triage.handlers import (
+                set_uc05_gateway as _uc05_set_gw,
+            )
+            from oneops.use_cases.uc05_triage.handlers import (
+                set_uc05_ticket_store as _uc05_set_store,
+            )
+            _uc05_set_gw(gateway)
+            _uc05_set_cp(_uc05_conn_provider)
+            _uc05_set_store(_uc05_get_store())
+            _log.info("oneops.api.uc05_handlers_wired")
+
+            # B-refactor Phase 3: /api/uc05/propose runs on the MAIN executor by
+            # DEFAULT — UC-5 dispatches its registry tools through the one executor
+            # (with AuthzService + per-tool action gate + data-flow binding), like
+            # every other UC. Validated live end-to-end (49-span trace, propose →
+            # decide → apply) before this flip. The legacy bespoke runner remains
+            # wired below as an unused fallback until Phase 3b deletes it; an
+            # operator can still force it off with ONEOPS_UC05_EXECUTOR_PROPOSE=0
+            # (escape hatch during soak).
+            if os.getenv("ONEOPS_UC05_EXECUTOR_PROPOSE", "1").lower() not in (
+                    "0", "false", "no", "off"):
+                from oneops.api.uc05_routes import (
+                    set_executor_propose_runner as _uc05_set_exec_runner,
+                )
+                from oneops.use_cases.uc05_triage.executor_runner import (
+                    make_executor_propose_runner,
+                )
+                _uc05_set_exec_runner(make_executor_propose_runner(graph))
+                _log.info("oneops.api.uc05_executor_propose_enabled",
+                          default=True)
 
             # Start NATS triage agent — listens on oneops.uc05.triage.{propose,decide}
             if invoker_mode == "nats":
@@ -1085,6 +1144,17 @@ async def _lifespan(app: FastAPI):
                 _log.info("oneops.api.uc05_agent_stopped")
         except Exception:
             pass
+
+        # Close the UC-5 ticket-store pool if a DbStore opened one (no-op for
+        # the JSON fixture store, which has no close()).
+        try:
+            from oneops.api.uc05_routes import get_ticket_store as _uc05_gs
+            _uc05_store = _uc05_gs()
+            if hasattr(_uc05_store, "close"):
+                await _uc05_store.close()  # type: ignore[func-returns-value]
+                _log.info("oneops.api.uc05_store_closed")
+        except Exception as exc:                # noqa: BLE001 — shutdown discipline
+            _log.warning("oneops.api.uc05_store_close_failed", error=str(exc))
 
         # Stop embedding refresh worker if it was started.
         try:
@@ -1560,6 +1630,11 @@ def build_app() -> FastAPI:
                         tenant_id=tenant_id, session_id=session_id,
                         user_id=user_id,
                         title=(req.message or "")[:120], bump_turn_count=True)
+                # Observability: a cached chat turn is still one trace.
+                _emit_cache_hit_span(
+                    door="chat", tenant_id=tenant_id, user_id=user_id,
+                    session_id=session_id, request_id=request_id,
+                    message=req.message or "", cached=cached)
                 return TurnResponse(**cached)
 
         envelope: dict[str, Any] = {
@@ -1895,6 +1970,13 @@ def build_app() -> FastAPI:
                 _log.info("oneops.api.fast_path.edge_cache_hit",
                           uc_id=uc_id, tenant_id=tenant_id,
                           request_id=request_id)
+                # Observability: a cached button press is still one trace.
+                _emit_cache_hit_span(
+                    door="fast_path", tenant_id=tenant_id, user_id=user_id,
+                    session_id=session_id, request_id=request_id,
+                    message=_humanise_fast_path_request(
+                        uc_id, inputs, app.state.registry),
+                    cached=cached)
                 return TurnResponse(**cached)
 
         try:
@@ -2052,6 +2134,35 @@ def build_app() -> FastAPI:
 # ── shared turn driver ──────────────────────────────────────────────────
 
 
+def _emit_cache_hit_span(
+    *, door: str, tenant_id: str, user_id: str, session_id: str,
+    request_id: str, message: str, cached: dict[str, Any],
+) -> None:
+    """Emit a one-node Langfuse trace for an edge-cache HIT so a cached turn
+    (chat OR button) is still visible in the Agent Graph — otherwise repeat
+    requests vanish from observability. Best-effort; never raises; the content
+    is redacted + content-gated exactly like the live path."""
+    try:
+        with _tracer.start_as_current_span(
+            "oneops.api.turn",
+            attributes={"oneops.door": door, "oneops.tenant_id": tenant_id,
+                        "oneops.user_id": user_id, "oneops.cache_hit": True},
+        ) as span:
+            set_langfuse_trace(
+                span, tenant_id=tenant_id, user_id=user_id,
+                session_id=session_id, request_id=request_id,
+                name="oneops.query", input=message)
+            span.set_attribute(
+                "oneops.final_status",
+                str(cached.get("final_status") or "cached"))
+            if langfuse_capture_content_enabled():
+                span.set_attribute(
+                    "langfuse.trace.output",
+                    redact_for_span(cached.get("final_response")))
+    except Exception:                                       # noqa: BLE001
+        pass
+
+
 async def _run(
     request: Request, envelope: dict[str, Any], *,
     door: str, thread_id: str, session_id: str,
@@ -2071,6 +2182,7 @@ async def _run(
                 "oneops.invoker_mode": mode,
             },
         ) as span:
+            set_langfuse_io(span, input=envelope.get("message", ""))
             _s = get_settings()
             if mode == "nats":
                 from oneops.api.nats_invoker import nats_invoke
@@ -2084,6 +2196,7 @@ async def _run(
                 trace_id = (reply.get("trace_id")
                             or (format(span.get_span_context().trace_id, "032x")
                                 if span.get_span_context().trace_id else None))
+                set_langfuse_io(span, output=reply.get("final_response"))
                 return TurnResponse(
                     door=door,
                     final_status=str(reply.get("final_status") or ""),
@@ -2102,6 +2215,7 @@ async def _run(
                          config={"configurable": {"thread_id": thread_id}}),
                 timeout=_s.turn_timeout_seconds,
             )
+            set_langfuse_io(span, output=out.get("final_response"))
             trace_id = format(span.get_span_context().trace_id, "032x") \
                 if span.get_span_context().trace_id else None
     except TimeoutError:

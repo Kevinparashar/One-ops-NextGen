@@ -16,7 +16,7 @@
       "created_at": "2026-05-31T08:30:00.000000+00:00",
       "description": "SLA breach escalation. At 80% SLA: notify the assignment group lead. At 100%: notify the requester + manager. Cross-UC: used by UC-8 task SLAs, UC-5 triage SLAs, and any future UC with an SLA clock. Idempotent on (tenant_id, target_id, breach_percent).",
       "execution_type": "action",
-      "handler_ref": "oneops.tools.shared.escalate_sla_breach:escalate_sla_breach",
+      "handler_ref": "oneops.use_cases.uc08_fulfillment.tools:escalate_sla_breach",
       "id": "escalate_sla_breach",
       "idempotent": true,
       "owner": "team-itsm",

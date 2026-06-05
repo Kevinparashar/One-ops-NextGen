@@ -31,7 +31,13 @@ from oneops.executor.memory import (
 )
 from oneops.executor.state import ExecutorState, serialise_plan
 from oneops.executor.step_runner import StepExecutor, make_result
-from oneops.observability import get_logger, get_tracer, histogram, increment
+from oneops.observability import (
+    get_logger,
+    get_tracer,
+    histogram,
+    increment,
+    set_langfuse_io,
+)
 from oneops.registry.models import ExecutionTier
 from oneops.registry.service import RegistryService
 from oneops.router.entity_id import EntityIdNormalizer
@@ -605,6 +611,11 @@ class ExecutorNodes:
                 state.get("message", ""), principal=principal, signals=signals,
                 conversation_history=history, request_ctx=_envelope(state))
             span.set_attribute("executor.route_outcome", result.outcome.value)
+            set_langfuse_io(
+                span, input=state.get("message", ""),
+                output={"outcome": result.outcome.value,
+                        "agents": (list(result.plan.agent_ids)
+                                   if result.plan else [])})
             increment("ai.router.outcome.total", outcome=result.outcome.value,
                       tenant_id=principal.tenant_id)
 
@@ -663,6 +674,31 @@ class ExecutorNodes:
     async def wave(self, state: ExecutorState) -> dict[str, Any]:
         return {}
 
+    # ── action-gate granularity (per-tool when the step names one) ───────
+
+    def _step_is_action(self, step: dict[str, Any], agent: Any) -> bool:
+        """Decide whether this step's work needs the action-approval interrupt.
+
+        Granularity rule (data-driven, backward-compatible):
+          * When the step explicitly names a `tool_id` (multi-tool plans —
+            e.g. UC-5 triage), gate on THAT TOOL's `execution_type`. This is
+            the correct granularity: an action-tier AGENT may own read tools
+            (analysis / propose) and action tools (apply); only the action
+            TOOLS should require approval. A read-only propose step under an
+            action agent must not interrupt.
+          * When the step names no tool (the chat path — the router does not
+            stamp a tool_id), fall back to the AGENT tier. This preserves the
+            existing behaviour exactly (golden tests unchanged).
+          * Unknown tool_id ⇒ conservative fall back to the agent tier (the
+            step will fail loudly in the executor regardless).
+        """
+        tool_id = str(step.get("tool_id") or "").strip()
+        if tool_id:
+            tool = self._registry.tools.get_optional(tool_id)
+            if tool is not None:
+                return tool.execution_type is ExecutionTier.ACTION
+        return agent.abac_tags.tier is ExecutionTier.ACTION
+
     # ── run_step (one Send instance per step) ────────────────────────────
 
     async def run_step(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -678,6 +714,11 @@ class ExecutorNodes:
             attributes={"oneops.agent_id": agent_id,
                         "executor.step_id": step.get("step_id", "")},
         ) as span:
+            # Langfuse: the agent step's INPUT (which agent, with what params).
+            set_langfuse_io(
+                span,
+                input={"agent_id": agent_id,
+                       "parameters": step.get("parameters") or {}})
             agent = self._registry.agents.get_optional(agent_id)
             if agent is None:
                 # The plan named an agent with no active registry record.
@@ -727,7 +768,7 @@ class ExecutorNodes:
 
             before = list(agent.hooks.before_invocation)
             after = list(agent.hooks.after_invocation)
-            is_action = agent.abac_tags.tier is ExecutionTier.ACTION
+            is_action = self._step_is_action(step, agent)
             span.set_attribute("executor.tier", agent.abac_tags.tier.value)
             span.set_attribute("executor.determinism", agent.determinism_level.value)
 

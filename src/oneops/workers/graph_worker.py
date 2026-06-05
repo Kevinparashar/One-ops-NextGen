@@ -32,7 +32,7 @@ from typing import Any
 from oneops.adapters.nats_client import get_nats_client
 from oneops.config import get_settings
 from oneops.executor.graph import run_turn
-from oneops.observability import get_logger, get_tracer
+from oneops.observability import get_logger, get_tracer, set_langfuse_io
 
 _log = get_logger("oneops.workers.graph_worker")
 _tracer = get_tracer("oneops.workers.graph_worker")
@@ -114,6 +114,8 @@ class GraphWorker:
                 )
                 trace_id_int = span.get_span_context().trace_id
                 trace_id = format(trace_id_int, "032x") if trace_id_int else None
+                set_langfuse_io(span, input=envelope.get("message", ""),
+                                output=out.get("final_response"))
                 reply = {
                     "final_status": out.get("final_status") or "",
                     "final_response": out.get("final_response") or "",

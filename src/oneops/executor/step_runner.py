@@ -25,7 +25,7 @@ import time
 from typing import Any, Protocol
 
 from oneops.errors import ToolHandlerError
-from oneops.observability import get_logger, get_tracer
+from oneops.observability import get_logger, get_tracer, set_langfuse_io
 from oneops.observability.event_sink import publish as _publish_event
 from oneops.observability.metrics import increment as _metric_inc
 
@@ -136,6 +136,33 @@ class HandlerStepExecutor:
     """
 
     # ── tool selection ───────────────────────────────────────────────────
+
+    def _select_tool(
+        self, agent: Any, step: dict[str, Any], step_params: dict[str, Any],
+    ) -> tuple[str, Any]:
+        """Pick the tool for a step, honouring an explicit `step["tool_id"]`.
+
+        Multi-tool plans (e.g. UC-5 triage: check → assign ∥ prio → assemble)
+        name the exact tool each step runs — necessary because several tools on
+        one agent can share a required-parameter shape (check and prioritize
+        both need service_id+ticket_id), which `_pick_tool`'s shape heuristic
+        cannot disambiguate. An explicit tool_id is the planner's commitment.
+
+        Rules (data-driven, no UC-specific code):
+          * `step["tool_id"]` present AND bound to the agent (`tool_refs`) →
+            use it (the planner chose it).
+          * present but NOT bound to the agent → return it with tool=None so
+            the caller fails LOUD (never silently run a different tool).
+          * absent → defer to `_pick_tool` (the chat path; zero behaviour
+            change — the router never stamps a tool_id).
+        """
+        explicit = str(step.get("tool_id") or "").strip()
+        if explicit:
+            allowed = {t.tool_id for t in (getattr(agent, "tool_refs", []) or [])}
+            if explicit in allowed:
+                return (explicit, self._registry.tools.get_optional(explicit))
+            return (explicit, None)        # surfaced loud by the caller
+        return self._pick_tool(agent, step_params)
 
     def _pick_tool(
         self, agent: Any, step_params: dict[str, Any],
@@ -293,7 +320,7 @@ class HandlerStepExecutor:
         # only falls back to it when no tool's required params are
         # satisfied.
         step_params: dict[str, Any] = dict(step.get("parameters") or {})
-        tool_id, tool = self._pick_tool(agent, step_params)
+        tool_id, tool = self._select_tool(agent, step, step_params)
         if tool is None:
             return make_result(
                 step, status="failed",
@@ -347,6 +374,9 @@ class HandlerStepExecutor:
                 "oneops.timeout_s": timeout_s,
             },
         ) as span:
+            # Langfuse: tool INPUT (redacted, content-gated) on the handler span
+            # so the trace tree shows what each tool received.
+            set_langfuse_io(span, input=arguments, observation_type="span")
             # "started" — the terminal status (success/failed) is emitted
             # at the aggregation point in `executor.nodes.aggregate`. The
             # dashboard's success-rate query filters for {status=~"success|
@@ -396,6 +426,8 @@ class HandlerStepExecutor:
             latency_ms = int((time.monotonic() - t0) * 1000)
             span.set_attribute("step.status", "success")
             span.set_attribute("step.latency_ms", latency_ms)
+            # Langfuse: tool OUTPUT (redacted, content-gated).
+            set_langfuse_io(span, output=output, observation_type="span")
             _publish_event(rid, {
                 "type": "tool_done", "step_id": step.get("step_id") or "",
                 "agent_id": agent_id, "tool_id": tool_id,

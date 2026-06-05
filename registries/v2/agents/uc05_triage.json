@@ -41,9 +41,54 @@
         "policy_pii_redact",
         "policy_tenant_scope"
       ],
+      "skills": [
+        {
+          "id": "triage_ticket",
+          "name": "Triage a ticket",
+          "description": "Classify, prioritize, near-duplicate-check, and recommend assignment for an incident or request. Use when the user wants the ticket categorized/prioritized/assigned. Action-tier: applying changes requires confirmation.",
+          "use_when": [
+            "triage this ticket",
+            "classify / categorize / prioritize / assign this",
+            "what priority / category / assignment group should this have"
+          ],
+          "not_when": [
+            "just summarize the ticket (summary agent)",
+            "find KB / docs (knowledge agent)"
+          ],
+          "tags": [
+            "triage",
+            "classification",
+            "action",
+            "incident",
+            "request"
+          ],
+          "examples": [
+            "triage INC0001001",
+            "what priority should this incident be",
+            "who should this be assigned to"
+          ]
+        }
+      ],
       "routing_shape": "single_agent",
       "status": "active",
-      "tool_refs": [],
+      "tool_refs": [
+        {
+          "tool_id": "check_duplicate_candidates",
+          "version": 1
+        },
+        {
+          "tool_id": "recommend_assignment",
+          "version": 1
+        },
+        {
+          "tool_id": "prioritize_entity",
+          "version": 1
+        },
+        {
+          "tool_id": "assemble_triage_proposal",
+          "version": 1
+        }
+      ],
       "updated_at": "2026-05-29T16:30:00.000000+00:00",
       "version": 1
     }

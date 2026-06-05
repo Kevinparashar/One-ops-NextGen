@@ -39,8 +39,12 @@ from oneops.observability import (
     get_tracer,
     histogram,
     increment,
+    langfuse_capture_content_enabled,
+    redact_for_span,
     safe_hash_text,
     safe_text_len,
+    set_langfuse_io,
+    set_langfuse_trace,
 )
 from oneops.registry.service import RegistryService
 from oneops.router.router import Router
@@ -239,6 +243,18 @@ async def run_turn(
             "oneops.message_len": safe_text_len(message),
         },
     ) as span:
+        # Langfuse trace-level: the user query as the trace input (content-gated
+        # + redacted), plus the required tenant/user/session/request dimensions
+        # (always set — not content). Makes the whole turn one named, filterable
+        # trace in Langfuse's Agent Graph.
+        set_langfuse_trace(
+            span,
+            tenant_id=envelope.get("tenant_id", ""),
+            user_id=envelope.get("user_id", ""),
+            session_id=envelope.get("session_id", ""),
+            request_id=envelope.get("request_id", ""),
+            name="oneops.query",
+            input=message)
         try:
             result = await graph.ainvoke(envelope, config=cfg)
         except GraphRecursionError:
@@ -253,6 +269,14 @@ async def run_turn(
             raise
         final_status = str(result.get("final_status") or "unknown")
         span.set_attribute("oneops.final_status", final_status)
+        if langfuse_capture_content_enabled():
+            span.set_attribute(
+                "langfuse.trace.output",
+                redact_for_span(result.get("final_response")))
+        # Also set observation-level I/O so the oneops.request NODE itself (not
+        # just the trace) shows the query → answer when clicked.
+        set_langfuse_io(span, input=message,
+                        output=result.get("final_response"))
         latency_ms = int((_time.monotonic() - t0) * 1000)
         histogram("ai.request.latency_ms", value=latency_ms,
                   tenant_id=envelope.get("tenant_id", ""))

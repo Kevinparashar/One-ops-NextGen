@@ -36,6 +36,13 @@ from oneops.observability.cache_event import (
     record_cache_get,
     record_cache_set,
 )
+from oneops.observability.langfuse_content import (
+    langfuse_capture_content_enabled,
+    redact_for_span,
+    set_langfuse_generation,
+    set_langfuse_io,
+    set_langfuse_trace,
+)
 from oneops.observability.metrics import histogram, increment
 from oneops.observability.propagation import (
     current_traceparent,
@@ -261,6 +268,11 @@ __all__ = [
     "set_safe_text_attrs",
     "safe_json_attr",
     "safe_list_attr",
+    "langfuse_capture_content_enabled",
+    "redact_for_span",
+    "set_langfuse_generation",
+    "set_langfuse_io",
+    "set_langfuse_trace",
     "increment",
     "histogram",
     "span",

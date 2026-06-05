@@ -23,7 +23,7 @@ import os
 from dataclasses import dataclass
 from typing import Protocol
 
-from oneops.observability import get_logger, get_tracer
+from oneops.observability import get_logger, get_tracer, set_langfuse_io
 
 _log = get_logger("oneops.router.decompose")
 _tracer = get_tracer("oneops.router.decompose")
@@ -349,6 +349,8 @@ class LlmDecomposer:
                 subs = _sanitize_subqueries(subs)
                 if subs:
                     span.set_attribute("oneops.router.subquery_count", len(subs))
+                    set_langfuse_io(span, input=message,
+                                    output=[s.text for s in subs])
                     return subs
                 span.set_attribute("oneops.router.fallback", "no_subs")
             except (LLMGatewayError, ValueError, KeyError, TypeError) as exc:

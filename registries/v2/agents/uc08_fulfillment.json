@@ -51,6 +51,34 @@
         "policy_pii_redact",
         "policy_tenant_scope"
       ],
+      "skills": [
+        {
+          "id": "fulfill_catalog_request",
+          "name": "Fulfill a catalog request",
+          "description": "Decompose and execute fulfillment for a catalog item or onboarding request (provision accounts, licenses, access, tasks). Use when the user wants a catalog request CARRIED OUT. Action-tier: mutations require confirmation/approval.",
+          "use_when": [
+            "fulfill / provision / onboard",
+            "create the items/tasks for a catalog request",
+            "set up access / mailbox / license for a request"
+          ],
+          "not_when": [
+            "summarize a record (summary agent)",
+            "find KB / docs (knowledge agent)",
+            "report a brand-new incident (ticket-creation, not fulfillment)"
+          ],
+          "tags": [
+            "fulfillment",
+            "catalog",
+            "onboarding",
+            "action"
+          ],
+          "examples": [
+            "fulfill REQ0005001",
+            "onboard the new hire Maria",
+            "provision the standard developer kit"
+          ]
+        }
+      ],
       "routing_shape": "single_agent",
       "status": "active",
       "tool_refs": [

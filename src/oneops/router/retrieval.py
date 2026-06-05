@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from oneops.observability import get_logger, get_tracer
+from oneops.observability import get_logger, get_tracer, set_langfuse_io
 from oneops.registry.service import RegistryService
 
 _log = get_logger("oneops.router.retrieval")
@@ -150,6 +150,10 @@ class LexicalRetriever:
             span.set_attribute(
                 "oneops.router.candidate_ids",
                 ",".join(c.agent_id for c in result))
+            set_langfuse_io(
+                span, input=query_text,
+                output=[{"agent_id": c.agent_id, "score": round(c.score, 3)}
+                        for c in result])
             return result
 
 

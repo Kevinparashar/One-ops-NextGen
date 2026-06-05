@@ -334,3 +334,33 @@ Everything else. No source under `src/oneops/`, no registry JSON, no test file, 
 | §K Anti-pattern sightings | 6 observations | Out of audit scope; logged for separate review. |
 
 **No item in this report carries a "delete this" recommendation.** Every candidate is paired with a risk assessment and a verification step. The next step — if any — is a separate human-reviewed PR per item, not a mass removal.
+
+---
+
+## REMOVALS APPLIED — 2026-06-04 (re-audit, dynamic-reference-aware)
+
+A second forensic audit (dynamic-ref-aware: handler_ref, path-load, env REGISTRY_ROOT,
+importlib, NATS subjects, seed scripts, tests) confirmed the HIGH-confidence set and
+**corrected two would-be mistakes** the original audit missed:
+- `registries/role-permission-registry.json` is **LIVE** — loaded by path in
+  `authz/rbac.py:27`. KEPT.
+- `registries/service-schema.json` is **LIVE** — 17 path-loads (retrieval, priority
+  matrix, id-prefix map). KEPT.
+
+**Removed (provably unused, validated — registry still loads, gate green):**
+- `registries/agent-catalog-registry.json`, `agent-tool-mapping.json`,
+  `router-alias-registry.json`, `service-registry.json`, flat `tool-registry.json`
+  — never loaded by the live `registries/v2` path; zero runtime references.
+- `record_approval_decision` (`uc08_fulfillment/db.py`) — zero callers, owner-documented
+  NOT-WIRED (sibling approval fns `insert_approval`/`get_approval` remain, still used).
+
+**Deferred (MEDIUM — NOT removed):**
+- `agent-registry.json` + `capability-registry.json` — opened by the manual seeder
+  `tools/seed_uc_capabilities.py`; remove only once the seeder is retired.
+- `ops_v1/` + `docker-compose.v1.yml` (alternate `.v1` stack), `.env.shared-stack.bak`,
+  `target_labels` param — need a human decision.
+
+**Doc-debt note:** several planning/briefing docs (PROJECT-BRIEFING, CONVENTIONS,
+production-maturity-plan, day1-execution-plan, phase-2-checklist) still describe the
+removed flat files as canonical config — they document an older model. Reconciling
+those docs is separate doc work, not blocking; CLAUDE.md (the entry doc) was updated.

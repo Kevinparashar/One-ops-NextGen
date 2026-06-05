@@ -43,6 +43,34 @@
         "policy_pii_redact",
         "policy_tenant_scope"
       ],
+      "skills": [
+        {
+          "id": "find_similar_tickets",
+          "name": "Find similar tickets",
+          "description": "Surface semantically and metadata-similar past tickets for a given ticket, for pattern discovery, duplicate awareness, and resolution reuse. Use when the user wants OTHER records like this one.",
+          "use_when": [
+            "find similar / related / comparable tickets",
+            "have we seen this before / any duplicates of X",
+            "other incidents like INC..."
+          ],
+          "not_when": [
+            "summarize the ticket itself (that is the summary agent)",
+            "find KB articles / documentation (that is the knowledge agent)"
+          ],
+          "tags": [
+            "similarity",
+            "retrieval",
+            "read",
+            "incident",
+            "request"
+          ],
+          "examples": [
+            "show tickets similar to INC0001001",
+            "any duplicates of this incident",
+            "have we seen this issue before"
+          ]
+        }
+      ],
       "routing_shape": "single_agent",
       "status": "active",
       "tool_refs": [
