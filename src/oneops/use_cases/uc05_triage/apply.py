@@ -20,6 +20,7 @@ from oneops.use_cases.uc05_triage.contracts import (
     Proposal,
     TriageDecision,
 )
+from oneops.use_cases.uc05_triage.queue import writable_fields_for
 from oneops.use_cases.uc05_triage.stores.base import TicketStore
 
 _DEFAULT_SCHEMA_PATH = (
@@ -107,8 +108,13 @@ async def _apply_impl(*, proposal, decision, final_values, store, schema_path, w
 def _merge_final_values(
     proposal: Proposal, edits: Mapping[str, Any]
 ) -> dict[str, Any]:
-    """Default to AI's suggestions; override with technician's edits."""
-    base: dict[str, Any] = {
+    """Default to AI's suggestions; override with technician's edits.
+
+    Restricted to the service's WRITABLE columns (`writable_fields_for`) and
+    drops None values: a request has no subcategory/impact/urgency columns, so
+    those are never sent to the store. This keeps the projection schema-correct
+    per service — the store-side whitelist is the defence-in-depth backstop."""
+    suggested: dict[str, Any] = {
         "category":         proposal.suggested_category,
         "subcategory":      proposal.suggested_subcategory,
         "impact":           proposal.suggested_impact,
@@ -118,7 +124,11 @@ def _merge_final_values(
         "assigned_to":      proposal.suggested_assigned_to,
         "ci_id":            proposal.suggested_ci_id,
     }
-    base.update({k: v for k, v in edits.items() if v is not None})
+    allowed = set(writable_fields_for(proposal.service_id))
+    base: dict[str, Any] = {
+        k: v for k, v in suggested.items() if k in allowed and v is not None}
+    base.update({
+        k: v for k, v in edits.items() if k in allowed and v is not None})
     return base
 
 

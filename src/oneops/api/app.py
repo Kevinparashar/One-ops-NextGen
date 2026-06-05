@@ -805,6 +805,19 @@ async def _lifespan(app: FastAPI):
             )
             from oneops.use_cases.uc05_triage.runner import build_runner
 
+            # Store selection: default JsonFixtureStore (demo data); opt into the
+            # real Postgres-backed store (itsm.incident / itsm.request reads +
+            # triage-apply writes) with UC05_TICKET_STORE=postgres. Set BEFORE
+            # any _uc05_get_store() call so the runner, executor handlers, and the
+            # NATS agent all share the same backend.
+            if os.getenv("UC05_TICKET_STORE", "").strip().lower() == "postgres":
+                from oneops.api.uc05_routes import (
+                    set_ticket_store as _uc05_set_ticket_store,
+                )
+                from oneops.use_cases.uc05_triage.stores import DbStore
+                _uc05_set_ticket_store(DbStore())
+                _log.info("oneops.api.uc05_store_selected", backend="postgres")
+
             async def _uc05_conn_provider():
                 import asyncpg
                 pg_url = os.getenv("POSTGRES_URL")
@@ -1124,6 +1137,17 @@ async def _lifespan(app: FastAPI):
                 _log.info("oneops.api.uc05_agent_stopped")
         except Exception:
             pass
+
+        # Close the UC-5 ticket-store pool if a DbStore opened one (no-op for
+        # the JSON fixture store, which has no close()).
+        try:
+            from oneops.api.uc05_routes import get_ticket_store as _uc05_gs
+            _uc05_store = _uc05_gs()
+            if hasattr(_uc05_store, "close"):
+                await _uc05_store.close()  # type: ignore[func-returns-value]
+                _log.info("oneops.api.uc05_store_closed")
+        except Exception as exc:                # noqa: BLE001 — shutdown discipline
+            _log.warning("oneops.api.uc05_store_close_failed", error=str(exc))
 
         # Stop embedding refresh worker if it was started.
         try:

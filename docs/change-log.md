@@ -3,6 +3,42 @@
 > One entry per reviewable change. Format: date · batch · what · why · files ·
 > validation · result. Behavior-preserving unless explicitly noted.
 
+## 2026-06-05 · UC-5 Postgres store — production reads + triage-apply writes
+
+- **What**: Built `uc05_triage/stores/db_store.py` `DbStore` — the production
+  TicketStore over the real `itsm.incident`/`itsm.request` tables (the docstring's
+  long-promised store; only `JsonFixtureStore` existed before). Implements the
+  full protocol the routes use: `get_ticket` (tenant-scoped, KeyError on miss),
+  `list_all` (closed-status-filtered for the queue), and `apply` (triage write).
+  Wired at boot behind `UC05_TICKET_STORE=postgres` (default stays JSON fixture
+  for the demo); pool closed on shutdown.
+- **Production discipline**: lazy async pool (SSL required, per-conn
+  statement_timeout, jsonb codec); read-WRITE (apply UPDATEs) — unlike the
+  read-only `_shared.PostgresTicketStore`; apply WHITELISTS columns to
+  `writable_fields_for(service)` (triage fields + `ci_id`) — refuses any other
+  column loud; optimistic lock via `WHERE category IS NULL` in one atomic UPDATE
+  (0 rows → KeyError vs RuntimeError by re-checking existence); structural tenant
+  scoping on every query.
+- **Bug found + fixed (the Postgres store exposed it; the JSON store masked it)**:
+  `apply._merge_final_values` emitted ALL 8 proposal fields incl. `None`s and
+  incident-only columns (subcategory/impact/urgency) for a request → the DbStore
+  whitelist correctly refused them. Root-caused to the proposal→final_values
+  projection; fixed to restrict to `writable_fields_for(service)` and drop `None`.
+  Added `queue.writable_fields_for` as the single source of truth (apply + store).
+- **Files**: new `stores/db_store.py`; `stores/__init__.py` (export DbStore);
+  `queue.py` (`writable_fields_for`); `apply.py` (`_merge_final_values` fix);
+  `api/app.py` (boot store-selection + shutdown pool close); new
+  `tests/unit/use_cases/uc05_triage/test_db_store.py` (8 hermetic tests).
+- **Validation**: 8 DbStore unit tests; uc05 unit 327/327; ruff + mypy clean.
+  **LIVE against real Supabase**: queue reads 26 untriaged requests; full
+  propose → decide → apply on a real request (SR9010107) WROTE the real
+  `itsm.request` row (category/priority/group/assigned_to/ci_id/sla_due,
+  status=assigned), correctly omitting subcategory/impact/urgency; row then reset
+  to untriaged (real data restored).
+- **Result**: UC-5 is now production-data-capable end-to-end (real ITSM tables)
+  on the executor path. Default deployment still uses the demo fixture; flip
+  `UC05_TICKET_STORE=postgres` for real data.
+
 ## 2026-06-05 · UC-5 B-refactor Phase 3a — executor path is the DEFAULT
 
 - **What**: `/api/uc05/propose` now runs on the MAIN executor by default. The

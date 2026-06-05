@@ -33,12 +33,24 @@ CLOSED_STATUSES: frozenset[str] = frozenset({"closed", "resolved", "cancelled"})
 
 
 def triage_fields_for(service_id: str) -> tuple[str, ...]:
-    """Return the whitelist of UC-5-owned fields for a service."""
+    """Return the whitelist of UC-5-owned fields for a service.
+
+    These are the GATING fields — a ticket is "in the triage queue" while any
+    of them is NULL (`missing_uc5_fields`)."""
     if service_id == "incident":
         return INCIDENT_TRIAGE_FIELDS
     if service_id == "request":
         return REQUEST_TRIAGE_FIELDS
     raise ValueError(f"unsupported service_id: {service_id!r}")
+
+
+def writable_fields_for(service_id: str) -> tuple[str, ...]:
+    """Columns UC-5 may WRITE on apply: the gating triage fields plus the
+    `ci_id` enrichment (Step 5 — present on both itsm.incident and
+    itsm.request, but NOT a queue-gating field). This is the single source of
+    truth for the apply whitelist (both the JSON and Postgres stores) and for
+    the proposal→final_values projection."""
+    return (*triage_fields_for(service_id), "ci_id")
 
 
 def missing_uc5_fields(row: Mapping[str, Any], service_id: str) -> list[str]:
