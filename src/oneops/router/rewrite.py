@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass
 from typing import Protocol
 
-from oneops.observability import get_logger, get_tracer
+from oneops.observability import get_logger, get_tracer, set_langfuse_io
 
 _log = get_logger("oneops.router.rewrite")
 _tracer = get_tracer("oneops.router.rewrite")
@@ -308,8 +308,12 @@ class LlmRewriter:
                 "oneops.router.history_turn_count": len(history or []),
             },
         ) as span:
-            return await self._rewrite_inner(
+            result = await self._rewrite_inner(
                 text, history=history, request_ctx=request_ctx, _span=span)
+            set_langfuse_io(
+                span, input=text,
+                output={"rewritten": result.text, "changed": result.changed})
+            return result
 
     async def _rewrite_inner(
         self, text: str, *, history: list[ConversationTurn],

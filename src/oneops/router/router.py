@@ -35,7 +35,7 @@ from typing import Any
 from oneops.authz.descriptors import from_agent_record
 from oneops.authz.models import Principal
 from oneops.authz.service import AuthzService
-from oneops.observability import get_logger, get_tracer
+from oneops.observability import get_logger, get_tracer, set_langfuse_io
 from oneops.registry.service import RegistryService
 from oneops.router.conditions import evaluate, survives_filter
 from oneops.router.decompose import Decomposer, PassthroughDecomposer
@@ -351,6 +351,11 @@ class Router:
             s3.set_attribute("oneops.router.policy_denied", policy_denied_any)
             s3.set_attribute("oneops.router.survivor_ids",
                              ",".join(c.agent_id for c in survivors))
+            set_langfuse_io(
+                s3,
+                input=[c.agent_id for c in candidates],
+                output={"survivors": [c.agent_id for c in survivors],
+                        "policy_denied": policy_denied_any})
 
         if not survivors:
             reason = ("every candidate was denied by access policy"

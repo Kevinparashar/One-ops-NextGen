@@ -3,6 +3,35 @@
 > One entry per reviewable change. Format: date · batch · what · why · files ·
 > validation · result. Behavior-preserving unless explicitly noted.
 
+## 2026-06-05 · Langfuse observability Phase 4 — clean end-to-end flow view
+
+- **What**: (1) ENRICHED the remaining routing-funnel + agent-dispatch spans with
+  redacted I/O so every flow node shows what it did:
+  `router.stage0a.decompose` (→ subqueries), `stage0b.rewrite` (→ rewritten),
+  `stage2.retrieve` (→ candidate agents+scores), `stage3.filter` (candidates →
+  survivors), `executor.run_step` (→ agent_id + params). (2) TRIMMED pure-infra
+  spans from the Langfuse pipeline only (Tempo keeps everything) via the
+  `filter/langfuse` processor: asyncpg DB (`db.system`), `cache_aside`, NATS
+  transport (`nats.*`, `oneops.nats_invoke`), `authz.check`, `session.*`,
+  `executor.{update_focus,load_session,persist}`.
+- **Why**: the Langfuse Agent Graph should show the QUERY FLOW with content at
+  every node, not raw SQL / message-bus / auth-recheck plumbing (that's Grafana/
+  Tempo's job). Closes the "empty in/out nodes" gap.
+- **Files**: `router/decompose.py`, `router/rewrite.py`, `router/retrieval.py`,
+  `router/router.py` (stage3), `executor/nodes.py` (run_step) — all via
+  `set_langfuse_io` (redacted, content-gated); `ops_v1/collector.yaml`
+  (`filter/langfuse` drop-list).
+- **Validation**: ruff+mypy clean; router+executor unit 352/352. **LIVE**: a chat
+  turn now renders in Langfuse as **17 clean nodes** (ingress → worker → request →
+  route → decompose/rewrite/retrieve/filter/disambiguate → run_step → handler_call
+  → 4 generations), each carrying redacted Input/Output; zero `nats.*`/`authz`/
+  `session.*`/`cache`/`SELECT` noise. NOTE: a collector config change needs
+  `docker compose up -d --force-recreate otel-collector` (plain `restart` may not
+  reload the mounted config) — documented for RUNBOOK.
+- **Result**: one query is fully readable end-to-end, component-by-component, with
+  redacted content and no infra noise — the Phase-4 goal. Next: Phase 5 hardening
+  (RUNBOOK + sampling + PII audit + latency), Phase 6 regression.
+
 ## 2026-06-05 · Langfuse observability Phase 3 — fan out to Langfuse (keep Tempo)
 
 - **What**: Added Langfuse as a SECOND trace destination on the OTel collector

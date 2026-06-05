@@ -31,7 +31,13 @@ from oneops.executor.memory import (
 )
 from oneops.executor.state import ExecutorState, serialise_plan
 from oneops.executor.step_runner import StepExecutor, make_result
-from oneops.observability import get_logger, get_tracer, histogram, increment
+from oneops.observability import (
+    get_logger,
+    get_tracer,
+    histogram,
+    increment,
+    set_langfuse_io,
+)
 from oneops.registry.models import ExecutionTier
 from oneops.registry.service import RegistryService
 from oneops.router.entity_id import EntityIdNormalizer
@@ -703,6 +709,11 @@ class ExecutorNodes:
             attributes={"oneops.agent_id": agent_id,
                         "executor.step_id": step.get("step_id", "")},
         ) as span:
+            # Langfuse: the agent step's INPUT (which agent, with what params).
+            set_langfuse_io(
+                span,
+                input={"agent_id": agent_id,
+                       "parameters": step.get("parameters") or {}})
             agent = self._registry.agents.get_optional(agent_id)
             if agent is None:
                 # The plan named an agent with no active registry record.

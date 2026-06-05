@@ -23,6 +23,31 @@ processors:
     check_interval: 2s
     limit_mib: 256
     spike_limit_mib: 64
+  # Langfuse-only noise filter: drop pure-infrastructure spans so the Langfuse
+  # Agent Graph shows the QUERY FLOW (ingress → router → agent → tool → LLM),
+  # not raw SQL. Tempo keeps EVERYTHING (this processor is on the langfuse
+  # pipeline only). Drops: asyncpg DB spans (bare SELECT/INSERT/… that arrive as
+  # their own 1-span traces) and the standalone session-lifecycle touch span.
+  filter/langfuse:
+    error_mode: ignore
+    traces:
+      span:
+        # asyncpg DB spans (bare SELECT/INSERT/… — noise as 1-span traces).
+        - 'attributes["db.system"] != nil'
+        # cache get/set spans (uc01.cache_aside.get, etc.).
+        - 'IsMatch(name, "cache_aside")'
+        # NATS transport mechanics (request/process/resilient_call + publish).
+        - 'name == "nats.request"'
+        - 'name == "nats.process"'
+        - 'name == "nats.resilient_call"'
+        - 'name == "oneops.nats_invoke"'
+        # auth re-checks (yes/no gate, repeats per step).
+        - 'name == "authz.check"'
+        # session store + checkpointer plumbing (no semantic I/O).
+        - 'IsMatch(name, "^session")'
+        - 'name == "executor.update_focus"'
+        - 'name == "executor.load_session"'
+        - 'name == "executor.persist"'
 
 exporters:
   # Traces → Tempo (container-internal name).
@@ -56,10 +81,16 @@ exporters:
 
 service:
   pipelines:
-    traces:
+    # Tempo gets EVERYTHING (full timing fidelity, incl. DB spans).
+    traces/tempo:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [otlphttp/tempo, otlphttp/langfuse, debug]
+      exporters: [otlphttp/tempo, debug]
+    # Langfuse gets the FILTERED set (query-flow view, no SQL/infra noise).
+    traces/langfuse:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/langfuse, batch]
+      exporters: [otlphttp/langfuse]
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, batch]
