@@ -3,6 +3,45 @@
 > One entry per reviewable change. Format: date · batch · what · why · files ·
 > validation · result. Behavior-preserving unless explicitly noted.
 
+## 2026-06-05 · Langfuse observability Phase 2 — LLM-aware span enrichment (redacted)
+
+- **What**: Enriched the EXISTING manual spans with REDACTED content using the
+  Langfuse/OTel-GenAI attribute keys (no auto-instrumentor — preserves the single
+  egress + existing span tree):
+  - `llm/gateway.py` `llm.call` → `set_langfuse_generation` (gen_ai.request.model
+    + gen_ai.usage.input/output_tokens + gen_ai.usage.cost ALWAYS; gen_ai.prompt /
+    gen_ai.completion content-gated+redacted). Renders as a Langfuse "generation".
+  - `executor/graph.py` `oneops.request` → `set_langfuse_trace` (trace name +
+    user.id/session.id + trace.metadata.tenant_id/request_id ALWAYS; trace.input /
+    trace.output content-gated+redacted).
+  - `executor/step_runner.py` `executor.step.handler_call` → `set_langfuse_io`
+    (tool input + output, redacted).
+  - `router/disambiguation.py` `router.stage4.disambiguate` → the routing "WHY":
+    `oneops.router.chosen` + `.confidence` (always) + observation input/output
+    (query+candidates → chosen+confidence+rationale, redacted).
+- **New module** `observability/langfuse_content.py`: dual-layer redaction +
+  setters. Refinement #1 — a SEPARATE `LANGFUSE_CAPTURE_CONTENT` switch (NOT
+  OTEL_CAPTURE_TEXT); content emitted only when on, always redacted. Refinement #2 —
+  DUAL-LAYER redaction before any content reaches a span: (a) RBAC field-policy
+  drops confidential/restricted field VALUES + blanks internal-content arrays
+  (work_notes/comments/timeline); (b) PII patterns (redact_text). Non-content
+  signals (model/tokens/cost, tenant/request dims, observation TYPE) emit
+  regardless so structure renders with content off. Never raises (§2.7).
+- **Files**: new `observability/langfuse_content.py` + `observability/__init__.py`
+  (exports); `llm/gateway.py`, `executor/graph.py`, `executor/step_runner.py`,
+  `router/disambiguation.py`; new `tests/unit/observability/test_langfuse_content.py`
+  (11 tests). Lazy `redact_text` import avoids an observability↔llm cycle.
+- **Validation**: 11 redaction tests (PII + restricted/confidential fields +
+  internal arrays + flag gating + always-on dims + never-raises); regression
+  llm+executor+router+observability 466/466; ruff+mypy clean. **LIVE (flag ON,
+  inspected in Tempo)**: a chat turn carries trace input/output, 3 generations with
+  redacted prompts/responses+model+tokens+cost, tool I/O, and the routing why.
+  REDACTION AUDIT: restricted tenant value `T001` in **0** content fields, 231
+  `[REDACTED` markers, no raw internal-content arrays.
+- **Result**: spans carry redacted content; gen_ai mapping set per current
+  Langfuse v3 docs (renders as generations). No request-path latency (BatchSpan
+  async + set_attribute only). Next: Phase 3 — fan out to Langfuse (keep Tempo).
+
 ## 2026-06-05 · Langfuse observability Phase 1 — self-host deploy (opt-in profile)
 
 - **What**: Added self-hosted **Langfuse v3** to `docker-compose.v1.yml` behind an

@@ -22,7 +22,7 @@ import re as _re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from oneops.observability import get_tracer
+from oneops.observability import get_tracer, set_langfuse_io
 from oneops.router.retrieval import Candidate
 
 _tracer = get_tracer("oneops.router.disambiguation")
@@ -426,8 +426,25 @@ class LlmDisambiguator:
                 "oneops.router.model": self._model,
             },
         ) as span:
-            return await self._disambiguate_inner(
+            result = await self._disambiguate_inner(
                 query_text, candidates, request_ctx=request_ctx, _span=span)
+            # Langfuse: the routing "WHY" — candidates in, chosen agent(s) +
+            # confidence + rationale out. chosen/confidence are safe routing
+            # signals (always on span); the query + rationale are content
+            # (redacted + content-gated via set_langfuse_io).
+            span.set_attribute(
+                "oneops.router.chosen",
+                ",".join(result.selected_agent_ids) or "none")
+            span.set_attribute("oneops.router.confidence", result.confidence)
+            set_langfuse_io(
+                span,
+                input={"query": query_text,
+                       "candidates": sorted(c.agent_id for c in candidates)},
+                output={"chosen": list(result.selected_agent_ids),
+                        "confidence": result.confidence,
+                        "rationale": result.rationale},
+                observation_type="span")
+            return result
 
     async def _disambiguate_inner(
         self, query_text: str, candidates: list[Candidate], *,

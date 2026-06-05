@@ -30,7 +30,13 @@ from oneops.llm.models import LlmRequest, LlmResponse
 from oneops.llm.quota import QuotaGuard
 from oneops.llm.redaction import redact_messages
 from oneops.llm.transport import LlmTransport
-from oneops.observability import get_logger, get_tracer, histogram, increment
+from oneops.observability import (
+    get_logger,
+    get_tracer,
+    histogram,
+    increment,
+    set_langfuse_generation,
+)
 
 _log = get_logger("oneops.llm.gateway")
 _tracer = get_tracer("oneops.llm.gateway")
@@ -112,6 +118,20 @@ class LlmGateway:
                 span.set_attribute(
                     "llm.cache_creation_input_tokens",
                     result.cache_creation_input_tokens)
+
+            # Langfuse: mark this span a "generation" so the prompt/response,
+            # model, tokens, and cost render in the trace tree. Model/tokens/cost
+            # always; prompt/completion only under LANGFUSE_CAPTURE_CONTENT,
+            # dual-layer redacted. `outbound.messages` is already PII-scrubbed
+            # (step 2) — redact_for_span re-applies redaction defensively.
+            set_langfuse_generation(
+                span, model=served_model,
+                prompt=[{"role": m.role, "content": m.content}
+                        for m in outbound.messages],
+                completion=result.content,
+                input_tokens=result.prompt_tokens,
+                output_tokens=result.completion_tokens,
+                cost_usd=cost)
 
             # Latency histogram for p99 alerting on LLM duration.
             # Paired with the `llm.call` span — same labels for Tempo↔

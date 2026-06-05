@@ -25,7 +25,7 @@ import time
 from typing import Any, Protocol
 
 from oneops.errors import ToolHandlerError
-from oneops.observability import get_logger, get_tracer
+from oneops.observability import get_logger, get_tracer, set_langfuse_io
 from oneops.observability.event_sink import publish as _publish_event
 from oneops.observability.metrics import increment as _metric_inc
 
@@ -374,6 +374,9 @@ class HandlerStepExecutor:
                 "oneops.timeout_s": timeout_s,
             },
         ) as span:
+            # Langfuse: tool INPUT (redacted, content-gated) on the handler span
+            # so the trace tree shows what each tool received.
+            set_langfuse_io(span, input=arguments, observation_type="span")
             # "started" — the terminal status (success/failed) is emitted
             # at the aggregation point in `executor.nodes.aggregate`. The
             # dashboard's success-rate query filters for {status=~"success|
@@ -423,6 +426,8 @@ class HandlerStepExecutor:
             latency_ms = int((time.monotonic() - t0) * 1000)
             span.set_attribute("step.status", "success")
             span.set_attribute("step.latency_ms", latency_ms)
+            # Langfuse: tool OUTPUT (redacted, content-gated).
+            set_langfuse_io(span, output=output, observation_type="span")
             _publish_event(rid, {
                 "type": "tool_done", "step_id": step.get("step_id") or "",
                 "agent_id": agent_id, "tool_id": tool_id,
