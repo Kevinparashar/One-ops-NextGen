@@ -219,6 +219,22 @@ def set_tools_runner(fn: ToolsRunner | None) -> None:
     _tools_runner = fn
 
 
+# B-refactor Phase 2b-iii — the executor-backed propose runner (runs the triage
+# plan on the MAIN executor). PARALLEL to `_tools_runner`: when wired (flag-gated
+# at boot), `_propose_impl` uses it instead of the legacy bespoke runner. The
+# legacy seam above is left untouched. Signature carries the actor context the
+# executor's authz_recheck before-hook needs:
+#     async fn(*, service_id, ticket_id, tenant_id, user_id, role) -> Proposal
+ExecutorProposeRunner = Callable[..., Awaitable[Proposal]]
+_executor_propose_runner: ExecutorProposeRunner | None = None
+
+
+def set_executor_propose_runner(fn: ExecutorProposeRunner | None) -> None:
+    """Wire (or clear) the executor-backed propose runner. None ⇒ legacy path."""
+    global _executor_propose_runner
+    _executor_propose_runner = fn
+
+
 # NATS-mode override for the decide path. When set, /decide forwards to NATS
 # instead of calling apply_triage_decision in-process.
 # Signature: async fn(proposal, payload, actor_user_id) -> Outcome
@@ -280,7 +296,8 @@ async def propose(
     import time as _time
     _t0 = _time.perf_counter()
     try:
-        return await _propose_impl(payload=payload, tenant=tenant, store=store)
+        return await _propose_impl(payload=payload, tenant=tenant,
+                                   user=user, role=role, store=store)
     finally:
         # Latency emission — defensive try/except so any metric-side error
         # is invisible to the caller (rule §2.7).
@@ -295,12 +312,15 @@ async def propose(
         _sp_cm.__exit__(None, None, None)
 
 
-async def _propose_impl(*, payload, tenant, store):
+async def _propose_impl(*, payload, tenant, user, role, store):
     _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
                 tenant_id=tenant, operation="propose",
                 status="started")
     try:
-        # Load the row first — tenant-scoped read; 404 on miss (no info leak)
+        # Load the row first — tenant-scoped read; 404 on miss (no info leak).
+        # These API-level gates (404/409) stay at the route for both runners;
+        # the executor path re-loads the row inside its handlers (standard
+        # registry-handler pattern), which is harmless.
         try:
             row = await store.get_ticket(
                 service_id=payload.service_id,
@@ -314,14 +334,25 @@ async def _propose_impl(*, payload, tenant, store):
         if not missing_uc5_fields(row, payload.service_id):
             raise HTTPException(409, detail="ticket already fully triaged")
 
-        if _tools_runner is None:
+        # B-refactor: when the executor runner is wired (flag-gated at boot),
+        # run the triage plan on the MAIN executor; else the legacy bespoke
+        # runner. Both return the same Proposal contract.
+        if _executor_propose_runner is not None:
+            proposal = await _executor_propose_runner(
+                service_id=payload.service_id,
+                ticket_id=payload.ticket_id,
+                tenant_id=tenant,
+                user_id=user,
+                role=role,
+            )
+        elif _tools_runner is not None:
+            proposal = await _tools_runner(
+                ticket_row=dict(row),
+                service_id=payload.service_id,
+                tenant_id=tenant,
+            )
+        else:
             raise HTTPException(503, detail="tools runner not wired")
-
-        proposal = await _tools_runner(
-            ticket_row=dict(row),
-            service_id=payload.service_id,
-            tenant_id=tenant,
-        )
         _proposal_cache[proposal.proposal_id] = proposal
         _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="propose",
