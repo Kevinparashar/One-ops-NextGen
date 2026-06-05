@@ -83,6 +83,10 @@
         {
           "tool_id": "prioritize_entity",
           "version": 1
+        },
+        {
+          "tool_id": "assemble_triage_proposal",
+          "version": 1
         }
       ],
       "updated_at": "2026-05-29T16:30:00.000000+00:00",

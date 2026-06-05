@@ -36,7 +36,14 @@ from oneops.use_cases.uc05_triage.adapters import (
     make_tag_fn,
     make_tiebreak_fn,
 )
-from oneops.use_cases.uc05_triage.contracts import ScoredNeighbour
+from oneops.use_cases.uc05_triage.assembly import assemble_proposal
+from oneops.use_cases.uc05_triage.contracts import (
+    AssignmentRecommendation,
+    DuplicateCheckResult,
+    PrioritizationResult,
+    ScoredNeighbour,
+)
+from oneops.use_cases.uc05_triage.plan import STEP_ASSIGN, STEP_CHECK, STEP_PRIO
 from oneops.use_cases.uc05_triage.tools.check_duplicates import (
     check_duplicate_candidates,
 )
@@ -172,6 +179,72 @@ async def prioritize(arguments: dict[str, Any],
     return result.model_dump()
 
 
+# ── Tool 4: assemble the proposal (terminal step, no external deps) ──────────
+
+
+def _is_err(output: Any) -> bool:
+    """True when an upstream step returned an `_err(...)` dict rather than a
+    serialised contract (the typed contracts never carry an `outcome` key —
+    `extra='forbid'` guarantees it)."""
+    return isinstance(output, dict) and "outcome" in output
+
+
+def _upstream_output(previous_results: dict[str, Any], step_id: str) -> Any:
+    """The serialised `output` of a completed dependency step, or None."""
+    res = previous_results.get(step_id)
+    if not isinstance(res, dict):
+        return None
+    return res.get("output")
+
+
+def _empty_assignment() -> AssignmentRecommendation:
+    """The "no neighbours" recommendation — identical to the old graph's
+    fallback when no candidates are available."""
+    return AssignmentRecommendation(
+        assignment_group=None, confidence=0.0, coverage=0.0, diversity=0,
+        basis_ids=[], basis="empty_neighbours",
+        rationale="no neighbours available")
+
+
+async def assemble_triage_proposal(arguments: dict[str, Any],
+                                   context: dict[str, Any]) -> dict[str, Any]:
+    """Standard handler for UC-5's terminal assembly step. Reconstructs the
+    three typed tool outputs from `previous_results` and builds the Proposal
+    via the existing pure `assemble_proposal()` — the same Section-I logic the
+    old graph's assemble node ran. Dependency-free (reads only upstream
+    outputs + the request context); never silent on a missing/failed upstream."""
+    previous_results = context.get("previous_results") or {}
+    tenant_id = str(context.get("tenant_id") or "")
+    service_id = str(arguments.get("service_id") or "")
+    ticket_id = str(arguments.get("ticket_id") or "")
+    if not (tenant_id and service_id and ticket_id):
+        return _err("invalid_request", "tenant_id, service_id, ticket_id required")
+
+    check_out = _upstream_output(previous_results, STEP_CHECK)
+    if check_out is None:
+        return _err("upstream_missing", "duplicate-check step produced no result")
+    if _is_err(check_out):
+        return check_out                      # propagate not_found / dep error
+    prio_out = _upstream_output(previous_results, STEP_PRIO)
+    if prio_out is None:
+        return _err("upstream_missing", "prioritize step produced no result")
+    if _is_err(prio_out):
+        return prio_out
+
+    duplicate = DuplicateCheckResult.model_validate(check_out)
+    prioritization = PrioritizationResult.model_validate(prio_out)
+    asn_out = _upstream_output(previous_results, STEP_ASSIGN)
+    assignment = (AssignmentRecommendation.model_validate(asn_out)
+                  if asn_out is not None and not _is_err(asn_out)
+                  else _empty_assignment())
+
+    proposal = assemble_proposal(
+        ticket_id=ticket_id, service_id=service_id, tenant_id=tenant_id,
+        duplicate=duplicate, assignment=assignment,
+        prioritization=prioritization)
+    return proposal.model_dump(mode="json")
+
+
 __all__ = [
     "set_uc05_gateway",
     "set_uc05_connection_provider",
@@ -179,4 +252,5 @@ __all__ = [
     "check_duplicates",
     "recommend_assignment_handler",
     "prioritize",
+    "assemble_triage_proposal",
 ]

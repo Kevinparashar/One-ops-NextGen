@@ -1,0 +1,60 @@
+{
+  "active_version": 1,
+  "id": "assemble_triage_proposal",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "role_in",
+        "values": ["__uc05_api_only_never_matches__"]
+      },
+      "created_at": "2026-06-04T00:00:00.000000+00:00",
+      "description": "Triage terminal step: assemble the technician-facing Proposal from the duplicate-check, assignment, and prioritization outputs (Section-I derivation: overall confidence, confidence tier, risk class). Reads the three upstream results via previous_results; read-only — produces a recommend-only proposal, never writes.",
+      "execution_type": "read",
+      "handler_ref": "oneops.use_cases.uc05_triage.handlers:assemble_triage_proposal",
+      "id": "assemble_triage_proposal",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "data_classification": "internal",
+          "description": "Service module of the ticket: incident | request.",
+          "name": "service_id",
+          "required": true,
+          "type": "str"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Canonical work-record id being triaged (e.g. INC0001001).",
+          "name": "ticket_id",
+          "required": true,
+          "type": "str"
+        }
+      ],
+      "requires_scopes": [
+        "read:ticket"
+      ],
+      "output_fields": [
+        "proposal_id",
+        "ticket_id",
+        "service_id",
+        "suggested_category",
+        "suggested_subcategory",
+        "suggested_assignment_group",
+        "suggested_impact",
+        "suggested_urgency",
+        "suggested_priority",
+        "duplicate_verdict",
+        "overall_confidence_score",
+        "confidence_tier",
+        "risk_class"
+      ],
+      "status": "active",
+      "timeout_ms": 15000,
+      "updated_at": "2026-06-04T00:00:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

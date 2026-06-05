@@ -3,6 +3,33 @@
 > One entry per reviewable change. Format: date · batch · what · why · files ·
 > validation · result. Behavior-preserving unless explicitly noted.
 
+## 2026-06-04 · UC-5 B-refactor Phase 2b-ii — triage plan + assemble handler
+
+- **What**: Expressed UC-5's orchestration as DATA: `uc05_triage/plan.py`
+  `build_triage_plan()` returns the serialised executor plan (check →
+  [assign ∥ prio] → assemble) — the exact DAG of the old bespoke graph, with
+  explicit `tool_id` per step (Phase 2b-i) + data-flow bindings
+  (candidates → assign; category/subcategory → prioritize). Added a 4th
+  registry tool `assemble_triage_proposal` + handler
+  (`handlers:assemble_triage_proposal`) — the terminal step reconstructs the 3
+  typed tool outputs from `previous_results` and builds the Proposal via the
+  existing pure `assemble_proposal()` (same Section-I logic as the graph's
+  assemble node). Dependency-free; propagates upstream errors (not_found, etc.)
+  — no silent failure.
+- **Why**: The executor can now run the entire triage as a registry plan — the
+  agents-as-data target. Old runner/graph still serve `/api/uc05/propose`.
+- **Files**: new `src/oneops/use_cases/uc05_triage/plan.py`; `handlers.py`
+  (+assemble_triage_proposal); new tool record `assemble_triage_proposal.json`;
+  `agents/uc05_triage.json` (4th tool_ref); new
+  `tests/unit/use_cases/uc05_triage/test_plan_and_assemble.py` (7 tests).
+- **Validation**: 7 new tests; uc05 full regression 316/316; registry integrity
+  loads (29 tools, uc05 4 bound, assemble handler_ref resolves); ruff+mypy clean.
+- **Result**: ADDITIVE. Remaining for B: **Phase 2b-iii** — route
+  `/api/uc05/propose` through the main executor via fast-path (`entry_mode` +
+  `build_triage_plan`), needs the app's real AuthzService wiring (the
+  authz_recheck before-hook). **Phase 3** — retire runner/graph; routes become
+  thin. Both behind validate-then-flip against the old engine's output.
+
 ## 2026-06-04 · UC-5 B-refactor Phase 2b-i — generic executor multi-tool extensions
 
 - **What**: Two additive, backward-compatible executor behaviours that let one
