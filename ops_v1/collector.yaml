@@ -28,6 +28,23 @@ exporters:
   # Traces → Tempo (container-internal name).
   otlphttp/tempo:
     endpoint: http://v1nextgen-tempo:4318
+  # Traces → self-hosted Langfuse OTLP (HTTP/protobuf; the collector appends
+  # /v1/traces → /api/public/otel/v1/traces). Auth via env (base64 of pk:sk).
+  # BEST-EFFORT: if Langfuse is down (or the `langfuse` profile isn't up) the
+  # spans queue then drop — this NEVER blocks the Tempo exporter or the request
+  # path. This is the dual fan-out; Tempo stays the source of truth for timing.
+  otlphttp/langfuse:
+    endpoint: http://langfuse-web:3000/api/public/otel
+    headers:
+      Authorization: "Basic ${env:LANGFUSE_OTEL_AUTH}"
+    sending_queue:
+      enabled: true
+      queue_size: 1000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 2s
+      max_interval: 30s
+      max_elapsed_time: 120s
   # Metrics → Prometheus scrape endpoint on :8889.
   prometheus:
     endpoint: 0.0.0.0:8889
@@ -42,7 +59,7 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [otlphttp/tempo, debug]
+      exporters: [otlphttp/tempo, otlphttp/langfuse, debug]
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, batch]

@@ -102,6 +102,11 @@ services:
     command: ["--config=/etc/collector.yaml"]
     ports:
       - "4630:4318"   # OTLP HTTP (only host-exposed port; gRPC + Prom-scrape are container-internal)
+    environment:
+      # Basic-auth (base64 of pk:sk) for the otlphttp/langfuse trace exporter.
+      # Default = the LOCAL init keys (pk-lf-oneops-local:sk-lf-oneops-local);
+      # OVERRIDE in prod via .env (RUNBOOK §Langfuse). Never hardcoded in config.
+      LANGFUSE_OTEL_AUTH: ${LANGFUSE_OTEL_AUTH:-cGstbGYtb25lb3BzLWxvY2FsOnNrLWxmLW9uZW9wcy1sb2NhbA==}
     volumes:
       - ./ops_v1/collector.yaml:/etc/collector.yaml:ro
     depends_on:

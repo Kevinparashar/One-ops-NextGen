@@ -3,6 +3,35 @@
 > One entry per reviewable change. Format: date · batch · what · why · files ·
 > validation · result. Behavior-preserving unless explicitly noted.
 
+## 2026-06-05 · Langfuse observability Phase 3 — fan out to Langfuse (keep Tempo)
+
+- **What**: Added Langfuse as a SECOND trace destination on the OTel collector
+  (`ops_v1/collector.yaml`) — `otlphttp/langfuse` exporter →
+  `http://langfuse-web:3000/api/public/otel` (collector appends `/v1/traces`),
+  Basic-auth via `${env:LANGFUSE_OTEL_AUTH}` (base64 pk:sk), added to the traces
+  pipeline alongside `otlphttp/tempo`. BEST-EFFORT: `sending_queue` +
+  `retry_on_failure` (2s→30s, 120s cap) so a Langfuse outage queues then drops —
+  never blocks Tempo or the request path. `docker-compose.v1.yml`: pass
+  `LANGFUSE_OTEL_AUTH` env to the collector (local default = the init keys; prod
+  overrides via .env). Tempo + Prometheus pipelines untouched.
+- **Why**: dual export — Tempo stays source-of-truth for timing; Langfuse gets the
+  same enriched (redacted) spans for the content/agent-graph view.
+- **Files**: `ops_v1/collector.yaml` (langfuse exporter + traces pipeline);
+  `docker-compose.v1.yml` (collector LANGFUSE_OTEL_AUTH env).
+- **Validation (live)**: collector recreated, no config error; a chat turn lands in
+  BOTH Tempo (timing) AND Langfuse. In Langfuse the `oneops.query` trace is ONE
+  grouped tree — **39 observations (35 spans + 4 generations)**; generations render
+  with model + prompt + response + token usage; routing why visible
+  (`router.stage4.disambiguate` → chosen=uc01_summarization, confidence=1,
+  rationale). GRACEFUL DEGRADATION: stopped langfuse-web → app still HTTP 200,
+  Tempo still received the trace, collector stayed up; restarted cleanly.
+- **Known noise (Phase 4 cleanup)**: stray background DB spans (asyncpg
+  `db.query`) + session-lifecycle spans land in Langfuse as their own bare
+  `SELECT` / `session.lifecycle.touch` 1-span traces — to be filtered from the
+  Langfuse pipeline so the Agent Graph is clean.
+- **Result**: dual export working; Langfuse failure non-fatal. Login: :3060,
+  ops@oneops.local. Next: Phase 4 — noise filter + multi-agent flow view.
+
 ## 2026-06-05 · Langfuse observability Phase 2 — LLM-aware span enrichment (redacted)
 
 - **What**: Enriched the EXISTING manual spans with REDACTED content using the
