@@ -11,7 +11,6 @@ from oneops.use_cases.uc05_triage.agent import (
     QUEUE_GROUP,
     SUBJECT_APPLIED,
     SUBJECT_DECIDE,
-    SUBJECT_PROPOSE,
     TriageAgent,
 )
 from oneops.use_cases.uc05_triage.contracts import (
@@ -80,7 +79,6 @@ def _proposal(ticket_id: str = "INC0000001") -> Proposal:
 
 class TestSubjects:
     def test_subjects_locked(self) -> None:
-        assert SUBJECT_PROPOSE == "oneops.uc05.triage.propose"
         assert SUBJECT_DECIDE == "oneops.uc05.triage.decide"
         assert SUBJECT_APPLIED == "oneops.uc05.triage.applied"
         assert QUEUE_GROUP == "uc05-triage-workers"
@@ -90,103 +88,23 @@ class TestSubjects:
 
 class TestStart:
     @pytest.mark.asyncio
-    async def test_subscribes_to_both_subjects(self) -> None:
+    async def test_subscribes_to_decide_only(self) -> None:
+        # Phase 3b: propose runs on the executor; the agent serves decide only.
         nats = _FakeNats()
-
-        async def runner(*, ticket_row, service_id, tenant_id):
-            return _proposal()
-
-        agent = TriageAgent(nats=nats, runner=runner, store=None)  # type: ignore[arg-type]
+        agent = TriageAgent(nats=nats, store=None)  # type: ignore[arg-type]
         await agent.start()
         subjects = sorted({s[0] for s in nats.subs})
-        assert SUBJECT_PROPOSE in subjects
-        assert SUBJECT_DECIDE in subjects
-        # Both share the queue group
+        assert subjects == [SUBJECT_DECIDE]
         assert all(s[1] == QUEUE_GROUP for s in nats.subs)
 
     @pytest.mark.asyncio
     async def test_stop_drains_subscriptions(self) -> None:
         nats = _FakeNats()
-
-        async def runner(*, ticket_row, service_id, tenant_id):
-            return _proposal()
-
-        agent = TriageAgent(nats=nats, runner=runner, store=None)  # type: ignore[arg-type]
+        agent = TriageAgent(nats=nats, store=None)  # type: ignore[arg-type]
         await agent.start()
         await agent.stop()
         # _subs cleared after stop
         assert agent._subs == []
-
-
-# ── _on_propose handler ─────────────────────────────────────────────────────
-
-class TestOnPropose:
-    @pytest.mark.asyncio
-    async def test_runs_runner_and_replies_proposal_json(self) -> None:
-        nats = _FakeNats()
-
-        async def runner(*, ticket_row, service_id, tenant_id):
-            assert tenant_id == "T001"
-            assert service_id == "incident"
-            return _proposal(ticket_id=ticket_row["incident_id"])
-
-        agent = TriageAgent(nats=nats, runner=runner, store=None)  # type: ignore[arg-type]
-        msg = _FakeMsg(
-            data=json.dumps({
-                "tenant_id": "T001", "service_id": "incident",
-                "ticket_row": {"incident_id": "INC0000007",
-                                "title": "X", "description": "Y"},
-            }).encode(),
-            reply="reply.inbox.1",
-        )
-        await agent._on_propose(msg)
-        # One publish to the reply inbox
-        assert len(nats.publishes) == 1
-        subject, payload = nats.publishes[0]
-        assert subject == "reply.inbox.1"
-        body = json.loads(payload.decode())
-        assert body["ticket_id"] == "INC0000007"
-        assert body["mutation_intent"] == "recommend_only"
-
-    @pytest.mark.asyncio
-    async def test_runner_exception_returns_error_envelope(self) -> None:
-        nats = _FakeNats()
-
-        async def runner(*, ticket_row, service_id, tenant_id):
-            raise RuntimeError("gateway 500")
-
-        agent = TriageAgent(nats=nats, runner=runner, store=None)  # type: ignore[arg-type]
-        msg = _FakeMsg(
-            data=json.dumps({
-                "tenant_id": "T001", "service_id": "incident",
-                "ticket_row": {"incident_id": "X", "title": "x",
-                                "description": "y"},
-            }).encode(),
-            reply="reply.inbox.2",
-        )
-        await agent._on_propose(msg)
-        body = json.loads(nats.publishes[0][1].decode())
-        assert body["error"] == "propose_failed"
-        assert "gateway" in body["message"]
-
-    @pytest.mark.asyncio
-    async def test_no_reply_inbox_does_not_publish(self) -> None:
-        nats = _FakeNats()
-
-        async def runner(*, ticket_row, service_id, tenant_id):
-            return _proposal()
-
-        agent = TriageAgent(nats=nats, runner=runner, store=None)  # type: ignore[arg-type]
-        msg = _FakeMsg(
-            data=json.dumps({
-                "tenant_id": "T001", "service_id": "incident",
-                "ticket_row": {"incident_id": "X", "title": "x",
-                                "description": "y"},
-            }).encode(),
-            reply="",
-        )
-        await agent._on_propose(msg)
-        assert nats.publishes == []
 
 
 # ── _on_decide handler ──────────────────────────────────────────────────────
@@ -215,11 +133,7 @@ class TestOnDecide:
         }))
         store = JsonFixtureStore(fx)
         nats = _FakeNats()
-
-        async def runner(*, ticket_row, service_id, tenant_id):
-            return _proposal()
-
-        agent = TriageAgent(nats=nats, runner=runner, store=store)
+        agent = TriageAgent(nats=nats, store=store)
         proposal = _proposal()
         msg = _FakeMsg(
             data=json.dumps({
@@ -263,11 +177,7 @@ class TestOnDecide:
         }))
         store = JsonFixtureStore(fx)
         nats = _FakeNats()
-
-        async def runner(**_):
-            return _proposal()
-
-        agent = TriageAgent(nats=nats, runner=runner, store=store)
+        agent = TriageAgent(nats=nats, store=store)
         proposal = _proposal()
         msg = _FakeMsg(
             data=json.dumps({
@@ -288,14 +198,12 @@ class TestOnDecide:
     async def test_decide_apply_exception_returns_error_envelope(self) -> None:
         nats = _FakeNats()
 
-        async def runner(**_): return _proposal()
-
         class _BrokenStore:
             async def get_ticket(self, **_): raise KeyError("missing")
             async def apply(self, **_): raise KeyError("missing")
             async def list_all(self, **_): return []
 
-        agent = TriageAgent(nats=nats, runner=runner, store=_BrokenStore())  # type: ignore[arg-type]
+        agent = TriageAgent(nats=nats, store=_BrokenStore())  # type: ignore[arg-type]
         proposal = _proposal()
         import json as _json
         msg = _FakeMsg(

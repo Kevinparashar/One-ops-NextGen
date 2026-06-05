@@ -780,6 +780,13 @@ class ExecutorNodes:
                 hook_services = {"agent": agent}
                 if self._authz_service is not None:
                     hook_services["authz"] = self._authz_service
+                # Per-tool tier granularity (matches the action-approval gate):
+                # an action-tier AGENT may own read tools (analysis / propose)
+                # and action tools (apply). The authz re-check must evaluate the
+                # resource at the STEP's effective tier — `is_action` from
+                # `_step_is_action` — not blanket the agent tier, so a read-only
+                # propose step under an action agent is checked as READ.
+                hook_services["step_is_action"] = is_action
                 ctx = HookContext(agent_id=agent_id, phase=HookPhase.BEFORE,
                                   step=step, request=request,
                                   services=hook_services)

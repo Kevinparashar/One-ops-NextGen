@@ -220,6 +220,33 @@ async def test_authz_recheck_allows_when_authz_allows(authz_subclass):
     assert resource.tier.value == "action"
 
 
+async def test_authz_recheck_read_step_under_action_agent_checks_as_read(
+        authz_subclass):
+    # Per-tool granularity: a read-only step under an ACTION-tier agent (the
+    # executor injects step_is_action=False) must be checked at READ tier, so a
+    # recommend-only propose does not demand write-class permission.
+    fake = authz_subclass(allow=True)
+    ctx = _recheck_ctx(services={
+        "authz": fake, "agent": _agent_record(tier="action"),
+        "step_is_action": False,
+    })
+    await hook_authz_recheck(ctx)
+    _, resource = fake.calls[0]
+    assert resource.tier.value == "read"
+
+
+async def test_authz_recheck_action_step_checks_as_action(authz_subclass):
+    # The action tool under the same agent (step_is_action=True) stays ACTION.
+    fake = authz_subclass(allow=True)
+    ctx = _recheck_ctx(services={
+        "authz": fake, "agent": _agent_record(tier="action"),
+        "step_is_action": True,
+    })
+    await hook_authz_recheck(ctx)
+    _, resource = fake.calls[0]
+    assert resource.tier.value == "action"
+
+
 async def test_authz_recheck_denies_with_reasons(authz_subclass):
     fake = authz_subclass(allow=False, reasons=("role_not_in_audience", "tier"))
     ctx = _recheck_ctx(services={

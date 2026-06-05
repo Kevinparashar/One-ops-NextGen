@@ -19,7 +19,6 @@ from fastapi.testclient import TestClient
 from oneops.errors import (
     LLMGatewayError,
     LLMUpstreamError,
-    NATSUnavailableError,
 )
 from oneops.llm.gateway import LlmGateway
 from oneops.llm.models import (
@@ -32,7 +31,6 @@ from oneops.use_cases.uc05_triage.adapters import (
     make_embed_fn,
     make_infer_fn,
 )
-from oneops.use_cases.uc05_triage.runner import build_runner
 from oneops.use_cases.uc05_triage.tools.check_duplicates import (
     check_duplicate_candidates,
 )
@@ -169,43 +167,12 @@ class TestProbeQuotaCeiling:
 
 # ── Probe 5.4: OTel collector unreachable → spans no-op, code runs ─────────
 
-class TestProbeOtelUnreachable:
-    @pytest.mark.asyncio
-    async def test_runner_runs_without_otel_exporter(self) -> None:
-        # By default the test env has no exporter configured; the span
-        # context manager is a no-op. Runner must still produce a Proposal.
-        gw = LlmGateway(transport=_OkTransport(), redact=False)
-        run = build_runner(gateway=gw, connection_provider=_conn)
-        proposal = await run(
-            ticket_row={"incident_id": "INC0000001",
-                        "title": "VPN drops at Mumbai",
-                        "description": "tunnel drops"},
-            service_id="incident", tenant_id="T001",
-        )
-        assert proposal.proposal_id.startswith("p-")
-
-
-# ── Probe 5.5 / 5.6: NATS down → dispatch surfaces; agent crash → envelope ─
-
-# Already covered in test_nats_dispatcher.py and test_phase4_devils_play.py.
-# Re-confirm via direct import for evidence in this file too.
-
-class TestProbeNatsDownSurfacing:
-    @pytest.mark.asyncio
-    async def test_dispatch_propose_raises_nats_unavailable(self) -> None:
-        from oneops.use_cases.uc05_triage.nats_dispatcher import dispatch_propose
-
-        class _Down:
-            async def request(self, *a, **k):
-                raise NATSUnavailableError("broker unreachable")
-
-        with pytest.raises(NATSUnavailableError):
-            await dispatch_propose(
-                nats=_Down(),  # type: ignore[arg-type]
-                tenant_id="T001", service_id="incident",
-                ticket_row={"incident_id": "X", "title": "x",
-                            "description": "y"},
-            )
+# ── Probe 5.5 / 5.6: decide dispatch surfacing + agent-crash envelope ──────
+# Covered in test_nats_dispatcher.py (dispatch_decide raise path) and
+# test_phase4_devils_play.py (TestProbeDecideException). Propose no longer
+# runs over NATS (Phase 3b — it executes on the main executor), so the old
+# propose-over-NATS and runner-without-OTel probes were retired with the
+# legacy engine.
 
 
 # ── Probe 5.7: concurrent decide on same proposal → first wins, second 404 ─
@@ -217,8 +184,8 @@ class TestProbeConcurrentDecide:
     def test_double_decide_second_returns_404(self, tmp_path) -> None:
         from oneops.api.uc05_routes import (
             router,
+            set_executor_propose_runner,
             set_ticket_store,
-            set_tools_runner,
         )
         from oneops.use_cases.uc05_triage.contracts import Proposal
         from oneops.use_cases.uc05_triage.stores.json_store import JsonFixtureStore
@@ -238,10 +205,11 @@ class TestProbeConcurrentDecide:
         }))
         set_ticket_store(JsonFixtureStore(fx))
 
-        async def fake_runner(*, ticket_row, service_id, tenant_id):
+        async def fake_runner(*, service_id, ticket_id, tenant_id,
+                              user_id, role):
             return Proposal(
                 proposal_id="p-concurrent",
-                ticket_id=ticket_row["incident_id"],
+                ticket_id=ticket_id,
                 service_id="incident", tenant_id=tenant_id,
                 created_at=datetime.now(UTC),
                 suggested_category="network", suggested_subcategory="vpn",
@@ -258,7 +226,7 @@ class TestProbeConcurrentDecide:
                 assignment_confidence=0.8,
             )
 
-        set_tools_runner(fake_runner)
+        set_executor_propose_runner(fake_runner)
         app = FastAPI()
         app.include_router(router)
         c = TestClient(app)

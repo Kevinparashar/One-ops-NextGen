@@ -797,26 +797,22 @@ async def _lifespan(app: FastAPI):
     else:
         _log.info("oneops.api.agent_transport_selected", transport="local")
 
-    # ── UC-5 Triage runner + agent wiring (Phase 6) ─────────────────────
-    # Wires the production runner (LangGraph + adapters + gateway) into the
-    # Section J FastAPI endpoints. Starts the NATS agent if a NATS client
-    # is available so the propose/decide hops travel via NATS in production.
+    # ── UC-5 Triage wiring (Phase 3b — executor-only propose) ───────────
+    # Propose runs on the MAIN executor (registry tools, like every other UC);
+    # the bespoke runner/graph were retired. The NATS triage worker now serves
+    # the DECIDE (apply) hop only.
     app.state.uc05_agent = None
     try:
         if gateway is not None:
             from oneops.api.uc05_routes import (
                 get_ticket_store as _uc05_get_store,
             )
-            from oneops.api.uc05_routes import (
-                set_tools_runner as _uc05_set_runner,
-            )
-            from oneops.use_cases.uc05_triage.runner import build_runner
 
             # Store selection: default JsonFixtureStore (demo data); opt into the
             # real Postgres-backed store (itsm.incident / itsm.request reads +
-            # triage-apply writes) with UC05_TICKET_STORE=postgres. Set BEFORE
-            # any _uc05_get_store() call so the runner, executor handlers, and the
-            # NATS agent all share the same backend.
+            # triage-apply writes) with UC05_TICKET_STORE=postgres. Set BEFORE any
+            # _uc05_get_store() call so the executor handlers + the NATS decide
+            # worker share the same backend.
             if os.getenv("UC05_TICKET_STORE", "").strip().lower() == "postgres":
                 from oneops.api.uc05_routes import (
                     set_ticket_store as _uc05_set_ticket_store,
@@ -830,20 +826,11 @@ async def _lifespan(app: FastAPI):
                 pg_url = os.getenv("POSTGRES_URL")
                 if not pg_url:
                     raise RuntimeError(
-                        "POSTGRES_URL not set for Triage (UC-5) runner")
+                        "POSTGRES_URL not set for Triage (UC-5) handlers")
                 return await asyncpg.connect(pg_url)
 
-            uc05_runner = build_runner(
-                gateway=gateway, connection_provider=_uc05_conn_provider,
-            )
-            _uc05_set_runner(uc05_runner)
-            _log.info("oneops.api.uc05_runner_attached")
-
-            # B-refactor: wire the standard registry-dispatched UC-5 handlers
-            # (uc05_triage.handlers) with the same deps as the bespoke runner.
-            # Additive — the executor path uses these; the runner above still
-            # serves /api/uc05/propose until Phase 3 retires it. No behavior
-            # change today; this makes the registry tools dispatchable.
+            # Wire the registry-dispatched UC-5 tool handlers — the executor
+            # dispatches these for propose (check → assign ∥ prio → assemble).
             from oneops.use_cases.uc05_triage.handlers import (
                 set_uc05_connection_provider as _uc05_set_cp,
             )
@@ -858,57 +845,35 @@ async def _lifespan(app: FastAPI):
             _uc05_set_store(_uc05_get_store())
             _log.info("oneops.api.uc05_handlers_wired")
 
-            # B-refactor Phase 3: /api/uc05/propose runs on the MAIN executor by
-            # DEFAULT — UC-5 dispatches its registry tools through the one executor
-            # (with AuthzService + per-tool action gate + data-flow binding), like
-            # every other UC. Validated live end-to-end (49-span trace, propose →
-            # decide → apply) before this flip. The legacy bespoke runner remains
-            # wired below as an unused fallback until Phase 3b deletes it; an
-            # operator can still force it off with ONEOPS_UC05_EXECUTOR_PROPOSE=0
-            # (escape hatch during soak).
-            if os.getenv("ONEOPS_UC05_EXECUTOR_PROPOSE", "1").lower() not in (
-                    "0", "false", "no", "off"):
-                from oneops.api.uc05_routes import (
-                    set_executor_propose_runner as _uc05_set_exec_runner,
-                )
-                from oneops.use_cases.uc05_triage.executor_runner import (
-                    make_executor_propose_runner,
-                )
-                _uc05_set_exec_runner(make_executor_propose_runner(graph))
-                _log.info("oneops.api.uc05_executor_propose_enabled",
-                          default=True)
+            # /api/uc05/propose → MAIN executor (the only propose path).
+            from oneops.api.uc05_routes import (
+                set_executor_propose_runner as _uc05_set_exec_runner,
+            )
+            from oneops.use_cases.uc05_triage.executor_runner import (
+                make_executor_propose_runner,
+            )
+            _uc05_set_exec_runner(make_executor_propose_runner(graph))
+            _log.info("oneops.api.uc05_executor_propose_enabled")
 
-            # Start NATS triage agent — listens on oneops.uc05.triage.{propose,decide}
+            # Start the NATS triage DECIDE worker (apply path) — propose does NOT
+            # go over NATS; it runs on the executor above. If NATS is down the
+            # route falls back to in-process apply (graceful).
             if invoker_mode == "nats":
                 try:
                     from oneops.adapters.nats_client import get_nats_client
                     from oneops.api.uc05_routes import (
                         set_decide_dispatcher as _uc05_set_decide_dispatcher,
                     )
-                    from oneops.api.uc05_routes import (
-                        set_tools_runner as _uc05_set_runner_inner,
-                    )
                     from oneops.use_cases.uc05_triage.agent import TriageAgent
                     from oneops.use_cases.uc05_triage.nats_dispatcher import (
                         dispatch_decide as _uc05_dispatch_decide,
                     )
-                    from oneops.use_cases.uc05_triage.nats_dispatcher import (
-                        dispatch_propose as _uc05_dispatch_propose,
-                    )
                     nats_client = await get_nats_client()
                     agent = TriageAgent(
-                        nats=nats_client, runner=uc05_runner,
-                        store=_uc05_get_store(),
+                        nats=nats_client, store=_uc05_get_store(),
                     )
                     await agent.start()
                     app.state.uc05_agent = agent
-
-                    # Re-route the API surface through NATS instead of local.
-                    async def _propose_over_nats(*, ticket_row, service_id, tenant_id):
-                        return await _uc05_dispatch_propose(
-                            nats=nats_client, tenant_id=tenant_id,
-                            service_id=service_id, ticket_row=ticket_row,
-                        )
 
                     async def _decide_over_nats(*, proposal, proposal_id, choice,
                                                 actor_user_id, final_values):
@@ -919,10 +884,8 @@ async def _lifespan(app: FastAPI):
                             final_values=final_values,
                         )
 
-                    _uc05_set_runner_inner(_propose_over_nats)
                     _uc05_set_decide_dispatcher(_decide_over_nats)
-                    _log.info("oneops.api.uc05_agent_started",
-                              dispatch="nats")
+                    _log.info("oneops.api.uc05_agent_started", dispatch="nats")
                 except Exception as exc:                          # noqa: BLE001
                     _log.warning("oneops.api.uc05_agent_failed",
                                   error=str(exc)[:160])

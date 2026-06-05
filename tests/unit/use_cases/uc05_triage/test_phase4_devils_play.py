@@ -6,10 +6,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from oneops.errors import NATSUnavailableError
 from oneops.use_cases.uc05_triage.agent import SUBJECT_APPLIED, TriageAgent
 from oneops.use_cases.uc05_triage.contracts import Proposal
-from oneops.use_cases.uc05_triage.nats_dispatcher import dispatch_propose
 from oneops.use_cases.uc05_triage.traceparent import (
     extract_from_headers,
     parse_traceparent,
@@ -40,24 +38,6 @@ def _proposal() -> Proposal:
         assignment_basis="majority_of_top_k",
         assignment_confidence=0.8,
     )
-
-
-# ── Probe 1: NATS down → API surfaces NATSUnavailableError ─────────────────
-
-class TestProbeNatsDown:
-    @pytest.mark.asyncio
-    async def test_dispatch_propose_propagates_when_nats_down(self) -> None:
-        class _Down:
-            async def request(self, *a, **k):
-                raise NATSUnavailableError("broker unreachable")
-
-        with pytest.raises(NATSUnavailableError):
-            await dispatch_propose(
-                nats=_Down(),  # type: ignore[arg-type]
-                tenant_id="T001", service_id="incident",
-                ticket_row={"incident_id": "X", "title": "x",
-                            "description": "y"},
-            )
 
 
 # ── Probe 2: traceparent valid round-trip ──────────────────────────────────
@@ -91,36 +71,39 @@ class TestProbeTraceparentFromNatsHeaders:
         assert extract_from_headers({"x-tenant-id": "T001"}) is None
 
 
-# ── Probe 4: runner exception → agent replies with error envelope ──────────
+# ── Probe 4: decide apply error → agent replies error envelope (no crash) ───
 
-class TestProbeRunnerException:
+class TestProbeDecideException:
     @pytest.mark.asyncio
-    async def test_propose_handler_returns_error_envelope_not_crash(self) -> None:
+    async def test_decide_handler_returns_error_envelope_not_crash(self) -> None:
         class _Nats:
             def __init__(self): self.published = []
             async def subscribe(self, *a, **k): return None
             async def publish(self, subject, payload, headers=None):
                 self.published.append((subject, payload))
 
-        async def broken_runner(**_):
-            raise RuntimeError("simulated crash")
+        class _BrokenStore:
+            async def get_ticket(self, **_): raise KeyError("missing")
+            async def apply(self, **_): raise KeyError("missing")
+            async def list_all(self, **_): return []
 
         nats = _Nats()
-        agent = TriageAgent(nats=nats, runner=broken_runner, store=None)  # type: ignore[arg-type]
+        agent = TriageAgent(nats=nats, store=_BrokenStore())  # type: ignore[arg-type]
+        proposal = _proposal()
 
         class _Msg:
             data = json.dumps({
-                "tenant_id": "T001", "service_id": "incident",
-                "ticket_row": {"incident_id": "X", "title": "x",
-                                "description": "y"},
+                "proposal_id": "p-001", "choice": "yes",
+                "actor_user_id": "tech1@corp", "final_values": None,
+                "proposal": json.loads(proposal.model_dump_json()),
             }).encode()
             reply = "reply.inbox.x"
 
-        await agent._on_propose(_Msg())
+        await agent._on_decide(_Msg())
         # Crash did NOT propagate; an error envelope was published instead
         assert len(nats.published) == 1
         body = json.loads(nats.published[0][1].decode())
-        assert body["error"] == "propose_failed"
+        assert body["error"] == "decide_failed"
 
 
 # ── Probe 5: decide → No → no applied broadcast ─────────────────────────────
@@ -146,10 +129,8 @@ class TestProbeDecideNoNoApplied:
             async def publish(self, subject, payload, headers=None):
                 self.published.append((subject, payload))
 
-        async def runner(**_): return _proposal()
-
         nats = _Nats()
-        agent = TriageAgent(nats=nats, runner=runner, store=store)
+        agent = TriageAgent(nats=nats, store=store)
         proposal = _proposal()
 
         class _Msg:

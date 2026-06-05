@@ -207,30 +207,17 @@ async def queue(
     return out
 
 
-# Pluggable tool runners — injected by tests; real wiring in app.py at startup.
-# Type: async fn(ticket_row, service_id, tenant_id) -> Proposal
-ToolsRunner = Callable[..., Awaitable[Proposal]]
-_tools_runner: ToolsRunner | None = None
-
-
-def set_tools_runner(fn: ToolsRunner | None) -> None:
-    """Wire the Tools 1+2+3 + assembly orchestration. Tests inject a stub."""
-    global _tools_runner
-    _tools_runner = fn
-
-
-# B-refactor Phase 2b-iii — the executor-backed propose runner (runs the triage
-# plan on the MAIN executor). PARALLEL to `_tools_runner`: when wired (flag-gated
-# at boot), `_propose_impl` uses it instead of the legacy bespoke runner. The
-# legacy seam above is left untouched. Signature carries the actor context the
-# executor's authz_recheck before-hook needs:
+# The executor-backed propose runner — UC-5's ONLY propose path (Phase 3b: the
+# bespoke runner/graph were retired). Runs the triage plan on the MAIN executor.
+# Real wiring in app.py at startup; tests inject a stub. Signature carries the
+# actor context the executor's authz_recheck before-hook needs:
 #     async fn(*, service_id, ticket_id, tenant_id, user_id, role) -> Proposal
 ExecutorProposeRunner = Callable[..., Awaitable[Proposal]]
 _executor_propose_runner: ExecutorProposeRunner | None = None
 
 
 def set_executor_propose_runner(fn: ExecutorProposeRunner | None) -> None:
-    """Wire (or clear) the executor-backed propose runner. None ⇒ legacy path."""
+    """Wire (or clear) the executor-backed propose runner."""
     global _executor_propose_runner
     _executor_propose_runner = fn
 
@@ -334,25 +321,16 @@ async def _propose_impl(*, payload, tenant, user, role, store):
         if not missing_uc5_fields(row, payload.service_id):
             raise HTTPException(409, detail="ticket already fully triaged")
 
-        # B-refactor: when the executor runner is wired (flag-gated at boot),
-        # run the triage plan on the MAIN executor; else the legacy bespoke
-        # runner. Both return the same Proposal contract.
-        if _executor_propose_runner is not None:
-            proposal = await _executor_propose_runner(
-                service_id=payload.service_id,
-                ticket_id=payload.ticket_id,
-                tenant_id=tenant,
-                user_id=user,
-                role=role,
-            )
-        elif _tools_runner is not None:
-            proposal = await _tools_runner(
-                ticket_row=dict(row),
-                service_id=payload.service_id,
-                tenant_id=tenant,
-            )
-        else:
-            raise HTTPException(503, detail="tools runner not wired")
+        # Run the triage plan on the MAIN executor (the only propose path).
+        if _executor_propose_runner is None:
+            raise HTTPException(503, detail="executor propose runner not wired")
+        proposal = await _executor_propose_runner(
+            service_id=payload.service_id,
+            ticket_id=payload.ticket_id,
+            tenant_id=tenant,
+            user_id=user,
+            role=role,
+        )
         _proposal_cache[proposal.proposal_id] = proposal
         _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="propose",

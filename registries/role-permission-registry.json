@@ -31,6 +31,36 @@
       ]
     },
     {
+      "role": "technician_l1",
+      "display_name": "Technician (L1)",
+      "description": "First-line triage technician. Can read all tickets within the tenant, generate AI triage proposals (recommend-only, read-tier), and apply approved triage values (category, assignment, priority).",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket"
+      ]
+    },
+    {
+      "role": "technician_l2",
+      "display_name": "Technician (L2)",
+      "description": "Second-line triage technician. Can read all tickets within the tenant, generate AI triage proposals, and apply approved triage values.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket"
+      ]
+    },
+    {
+      "role": "triage_desk",
+      "display_name": "Triage Desk",
+      "description": "Dedicated triage desk role. Can read all tickets within the tenant, generate AI triage proposals, and apply approved triage values.",
+      "permissions": [
+        "read:all_tickets",
+        "write:ticket",
+        "create:ticket"
+      ]
+    },
+    {
       "role": "network_engineer",
       "display_name": "Network Engineer",
       "description": "Specialist agent. Can read all tickets and update work notes within the tenant.",

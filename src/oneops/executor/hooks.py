@@ -179,8 +179,18 @@ async def hook_authz_recheck(ctx: HookContext) -> None:
     except ValueError:
         data_class = DataClass.INTERNAL
 
-    # Tier likewise — `ACTION` ↔ `Tier.ACTION`, anything else ↔ `Tier.READ`.
-    tier = Tier.ACTION if agent.abac_tags.tier.value == "action" else Tier.READ
+    # Tier — evaluate at the STEP's effective tier, not blanket the agent tier.
+    # The executor injects `step_is_action` (from `_step_is_action`, the same
+    # decision that drives the action-approval interrupt): an action-tier AGENT
+    # may own read tools (analysis / propose) and action tools (apply); a
+    # read-only step under such an agent must be checked as READ, so generating
+    # a recommend-only proposal does not demand write-class permission. When the
+    # hint is absent (non-executor caller), fall back to the agent tier.
+    step_is_action = ctx.services.get("step_is_action")
+    if step_is_action is None:
+        tier = Tier.ACTION if agent.abac_tags.tier.value == "action" else Tier.READ
+    else:
+        tier = Tier.ACTION if step_is_action else Tier.READ
 
     resource = ResourceDescriptor(
         resource_id=agent.id,
