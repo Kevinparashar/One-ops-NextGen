@@ -123,3 +123,56 @@ This is non-negotiable per rule §2.9.
   old `tools/`, `use_cases/`, `gateway/`.
 - **Live-infra validation** — load/chaos at 10x scale against real NATS /
   Postgres / LLM, and the soak test, are the operator's pre-prod gate.
+
+## 11. Langfuse — query-flow tracing (self-hosted)
+
+Langfuse shows ONE user query end-to-end, component-by-component, **with content**
+(prompts, tool I/O, routing decision + why) — complementary to Tempo/Grafana
+(timing/metrics). Self-hosted; tenant data never leaves our infra.
+
+**Start / stop** (opt-in compose profile; ~6 containers incl. ClickHouse — budget
+~2–3 GB RAM):
+```
+docker compose -f docker-compose.v1.yml --profile langfuse up -d     # start
+docker compose -f docker-compose.v1.yml --profile langfuse down      # stop
+```
+The default stack (no `--profile langfuse`) runs without it. After editing
+`ops_v1/collector.yaml`, reload the collector with
+`docker compose -f docker-compose.v1.yml up -d --force-recreate otel-collector`
+(a plain `docker restart` may not re-read the mounted config).
+
+**UI / login:** http://localhost:3060 — `ops@oneops.local` / `oneops-langfuse-admin`
+(LOCAL dev defaults; override `LANGFUSE_INIT_USER_*` + all `LANGFUSE_*` secrets via
+`.env` and **rotate before any shared/prod deploy**).
+
+**View a query's flow:**
+1. Left nav → **Tracing → Traces** (NOT Home/Dashboards — those are metrics).
+2. Filter Name = `oneops.query`; click a row → open the full trace page.
+3. Read the tree **top → bottom** (chronological): `oneops.request` (query→answer)
+   → `route` → `decompose`/`rewrite`/`retrieve`/`filter` → **`stage4.disambiguate`**
+   (the routing decision + confidence + rationale) → `run_step` → **`handler_call`**
+   (the action + tool I/O) → **`llm.call`** (⚡ generations: prompt + response).
+   Click any node → right panel = its Input/Output.
+
+**Look up a specific request:** every `/api/chat` + `/ws/chat` response returns
+`trace_id`. Open `http://localhost:3060/project/oneops-nextgen/traces/<trace_id>`.
+
+**Redaction (mandatory — even self-hosted):** content reaches a span only when
+`LANGFUSE_CAPTURE_CONTENT=true`, and is **dual-layer redacted** first:
+(a) RBAC field-policy strips confidential/restricted field VALUES + blanks
+internal-content arrays (work_notes/comments/timeline); (b) PII patterns scrub
+emails/phones/ids. `LANGFUSE_CAPTURE_CONTENT` is INDEPENDENT of `OTEL_CAPTURE_TEXT`
+(raw text) — never enable raw-text capture for Langfuse. With the flag OFF, spans
+still render structure (model/tokens/cost + the graph) but no prompt/response text.
+
+**What's in Langfuse vs Tempo:** the `filter/langfuse` collector processor drops
+pure-infra spans (DB/`SELECT`, `nats.*`, `authz.check`, `session.*`, cache,
+load_session/persist) from Langfuse so the Agent Graph is clean — **Tempo keeps
+everything** for deep debugging.
+
+**Security:** all tenants' (redacted) traces share ONE Langfuse project;
+`tenant_id` is a trace attribute for **filtering**, NOT access isolation — restrict
+Langfuse UI auth to ops. **Sampling:** `OTEL_TRACES_SAMPLER_ARG` (1.0 = full, for
+demo; lower for prod volume). **Failure is non-fatal:** the Langfuse exporter is
+best-effort (queue + retry); a Langfuse outage never blocks the request path or
+Tempo (verified).

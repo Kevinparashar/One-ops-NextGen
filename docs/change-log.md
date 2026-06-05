@@ -3,6 +3,27 @@
 > One entry per reviewable change. Format: date · batch · what · why · files ·
 > validation · result. Behavior-preserving unless explicitly noted.
 
+## 2026-06-05 · Langfuse observability Phase 5 — hardening (RUNBOOK + audits)
+
+- **What**: Added RUNBOOK §11 (Langfuse): start/stop (`--profile langfuse`,
+  `--force-recreate` for collector config), UI login, the Traces click-path +
+  top→bottom reading guide, trace-id lookup from the API response, the dual-layer
+  redaction policy + the independent `LANGFUSE_CAPTURE_CONTENT` flag, the
+  Langfuse-vs-Tempo split, sampling (`OTEL_TRACES_SAMPLER_ARG`), and the security
+  note (tenant_id = filter not isolation; restrict UI auth; rotate keys in prod).
+- **Validation gates**:
+  - **PII audit** — 5 recent `oneops.query` traces scanned across all content
+    fields: **0 leaks** (no restricted tenant value, no email/phone, no raw
+    internal-content arrays; ~230 `[REDACTED` markers per trace).
+  - **Latency** — warm fast-path **5–7 ms** (matches the 6–10 ms baseline; the
+    span enrichment + dual export add nothing to the hot path — export is async,
+    enrichment is `set_attribute`); chat is LLM-bound (~4 s). No regression.
+  - **tenant_id** present as a Langfuse trace attribute (per-tenant filtering);
+    secrets via env.
+- **Files**: `RUNBOOK.md` (§11).
+- **Result**: no latency regression; no PII leakage; runbook complete. Next:
+  Phase 6 — full regression (smoke + devils + unit + lint + typecheck).
+
 ## 2026-06-05 · Langfuse observability Phase 4 — clean end-to-end flow view
 
 - **What**: (1) ENRICHED the remaining routing-funnel + agent-dispatch spans with
