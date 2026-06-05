@@ -3,6 +3,28 @@
 > One entry per reviewable change. Format: date · batch · what · why · files ·
 > validation · result. Behavior-preserving unless explicitly noted.
 
+## 2026-06-05 · Langfuse observability Phase 4b — full node coverage + cache-hit traces
+
+- **What**: (1) Enriched the remaining STRUCTURAL/wrapper spans with redacted I/O so
+  EVERY surviving node in the Langfuse tree shows content (no more empty in/out):
+  `oneops.api.turn`, `graph_worker.run_turn`, `oneops.request` (node-level too),
+  `executor.route`, `router.route`, `router.stage3.4.preroute`. (2) Cache-HIT
+  observability: both `/api/chat` and `/api/fast/{uc_id}` (button) edge-cache
+  branches returned early with NO trace — a repeat request was invisible. Added
+  `_emit_cache_hit_span` (one-node trace, `oneops.cache_hit=true`, redacted
+  query→cached-answer).
+- **Why**: user feedback — wrapper nodes showed `null/undefined`, and a repeated
+  button press produced no Langfuse trace. Closes the wrapper-empties + cache-hit
+  gaps for BOTH doors (the button already matched chat on cache-MISS).
+- **Files**: `executor/graph.py`, `executor/nodes.py`, `router/router.py`,
+  `workers/graph_worker.py`, `api/app.py`.
+- **Validation**: ruff+mypy clean; router+executor unit 352/352. LIVE: a chat turn
+  shows **18/18 nodes with content — EMPTY nodes: NONE**. Button twice: #1 (miss)
+  full trace; #2 (HIT) served in **3.8 ms** AND emits a `cache_hit=true` trace. No
+  hot-path regression.
+- **Result**: every Agent-Graph node is readable; cached requests (button + chat)
+  observable; button == chat observability.
+
 ## 2026-06-05 · Langfuse observability Phase 5 — hardening (RUNBOOK + audits)
 
 - **What**: Added RUNBOOK §11 (Langfuse): start/stop (`--profile langfuse`,

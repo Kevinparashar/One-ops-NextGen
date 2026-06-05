@@ -611,6 +611,11 @@ class ExecutorNodes:
                 state.get("message", ""), principal=principal, signals=signals,
                 conversation_history=history, request_ctx=_envelope(state))
             span.set_attribute("executor.route_outcome", result.outcome.value)
+            set_langfuse_io(
+                span, input=state.get("message", ""),
+                output={"outcome": result.outcome.value,
+                        "agents": (list(result.plan.agent_ids)
+                                   if result.plan else [])})
             increment("ai.router.outcome.total", outcome=result.outcome.value,
                       tenant_id=principal.tenant_id)
 

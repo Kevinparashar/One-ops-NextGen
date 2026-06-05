@@ -43,6 +43,7 @@ from oneops.observability import (
     redact_for_span,
     safe_hash_text,
     safe_text_len,
+    set_langfuse_io,
     set_langfuse_trace,
 )
 from oneops.registry.service import RegistryService
@@ -272,6 +273,10 @@ async def run_turn(
             span.set_attribute(
                 "langfuse.trace.output",
                 redact_for_span(result.get("final_response")))
+        # Also set observation-level I/O so the oneops.request NODE itself (not
+        # just the trace) shows the query → answer when clicked.
+        set_langfuse_io(span, input=message,
+                        output=result.get("final_response"))
         latency_ms = int((_time.monotonic() - t0) * 1000)
         histogram("ai.request.latency_ms", value=latency_ms,
                   tenant_id=envelope.get("tenant_id", ""))

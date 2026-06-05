@@ -277,6 +277,10 @@ class Router:
             span.set_attribute("router.plan_steps", len(plan.steps))
             span.set_attribute("router.unrouted", len(unrouted))
             diag.append(f"plan: {len(plan.steps)} step(s) -> {list(plan.agent_ids)}")
+            set_langfuse_io(
+                span, input=query_text,
+                output={"agents": list(plan.agent_ids),
+                        "steps": len(plan.steps), "unrouted": len(unrouted)})
             return RouteResult.routed(plan, diag, unrouted)
 
     # ── the per-sub-query funnel (stages 1-4) ────────────────────────────
@@ -407,6 +411,10 @@ class Router:
             pre_target = _deterministic_preroute(preroute_text, survivor_ids)
             pre_span.set_attribute(
                 "oneops.router.preroute.fired", pre_target is not None)
+            set_langfuse_io(
+                pre_span, input=sorted(survivor_ids),
+                output={"fired": pre_target is not None,
+                        "target": pre_target[0] if pre_target else None})
             _log.info("router.stage3.4.preroute_check",
                       preroute_text=preroute_text,
                       normalized=normalized,
