@@ -3,6 +3,36 @@
 > One entry per reviewable change. Format: date · batch · what · why · files ·
 > validation · result. Behavior-preserving unless explicitly noted.
 
+## 2026-06-05 · Langfuse observability Phase 1 — self-host deploy (opt-in profile)
+
+- **What**: Added self-hosted **Langfuse v3** to `docker-compose.v1.yml` behind an
+  opt-in `langfuse` compose profile (6 services: langfuse-web/worker + dedicated
+  postgres/clickhouse/redis/minio). Only `langfuse-web` is host-exposed on **3060**;
+  the rest are docker-network internal. Secrets via `${VAR:-local-default}`
+  (override in prod); `LANGFUSE_INIT_*` auto-provisions org `OneOps` / project
+  `oneops-nextgen` + fixed LOCAL API keys (`pk-lf-oneops-local`/`sk-lf-oneops-local`)
+  for the Phase-3 collector OTLP Basic-auth.
+- **Why**: foundation for query-flow observability; opt-in keeps the ~6 extra
+  containers (incl. ClickHouse) toggleable; data stays local (no cloud egress).
+- **Files**: `docker-compose.v1.yml` (6 langfuse services + 4 named volumes).
+- **Validation (live)**: `docker compose --profile langfuse up -d` → all 6 healthy
+  (web healthcheck fixed to probe `$(hostname)` — Next.js binds the container IP,
+  not loopback). `GET :3060/api/public/health` → `{"status":"OK","version":"3.178.0"}`;
+  `GET :3060/api/public/projects` with the init keys → project `oneops-nextgen`
+  (HTTP 200). Existing stack intact (Grafana/Tempo/Prometheus/otel-collector Up;
+  app :8765 Up). `docker compose config` confirms **0** langfuse services without
+  the profile (opt-in verified).
+- **Verified for Phase 2 (no edit yet)**: current Langfuse v3 OTel mapping — a span
+  renders as a **generation** when it has a model attr (`gen_ai.request.model` /
+  `langfuse.observation.model.name`) or `langfuse.observation.type=generation`;
+  `gen_ai.prompt`→input, `gen_ai.completion`→output, `gen_ai.usage.*` tokens/cost;
+  generic spans use `langfuse.observation.input/output`; trace-level
+  `langfuse.trace.input` + `user.id`/`session.id`/`langfuse.trace.metadata.*`.
+- **Result**: Langfuse running, isolated, existing telemetry untouched. Next:
+  Phase 2 — enrich spans with REDACTED content (gateway gen_ai.* + node
+  langfuse.observation.* ; separate `LANGFUSE_CAPTURE_CONTENT` flag; dual-layer
+  PII + RBAC-field redaction).
+
 ## 2026-06-05 · UC-5 Postgres store — production reads + triage-apply writes
 
 - **What**: Built `uc05_triage/stores/db_store.py` `DbStore` — the production
