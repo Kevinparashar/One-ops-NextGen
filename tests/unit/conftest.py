@@ -41,3 +41,27 @@ def _isolate_settings_cache():
         yield
     finally:
         get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_uc05_route_runners():
+    """Reset UC-5 route module-global propose runner around each test.
+
+    `build_app()` wires the executor propose runner into a module global
+    (the production default since B-refactor Phase 3a). Module globals are NOT
+    reset between tests, so a test that builds the app leaks that runner — and
+    its dangling compiled graph / psycopg pool — into later tests. Victims:
+    tests that stub the legacy `_tools_runner` (the leaked executor runner
+    preempts the stub) and unrelated async tests (the dangling pool poisons a
+    later event loop). Clearing it before+after each test restores order
+    independence. Test-only; no product behaviour changes."""
+    try:
+        from oneops.api import uc05_routes
+    except Exception:                                   # pragma: no cover
+        yield
+        return
+    uc05_routes.set_executor_propose_runner(None)
+    try:
+        yield
+    finally:
+        uc05_routes.set_executor_propose_runner(None)

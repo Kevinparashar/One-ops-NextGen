@@ -838,12 +838,16 @@ async def _lifespan(app: FastAPI):
             _uc05_set_store(_uc05_get_store())
             _log.info("oneops.api.uc05_handlers_wired")
 
-            # B-refactor Phase 2b-iii: optionally route /api/uc05/propose through
-            # the MAIN executor (the compiled graph built above, with AuthzService
-            # wired) instead of the legacy bespoke runner. Flag-gated + default
-            # OFF — validate-then-flip. When off, the legacy runner above serves.
-            if os.getenv("ONEOPS_UC05_EXECUTOR_PROPOSE", "").lower() in (
-                    "1", "true", "yes", "on"):
+            # B-refactor Phase 3: /api/uc05/propose runs on the MAIN executor by
+            # DEFAULT — UC-5 dispatches its registry tools through the one executor
+            # (with AuthzService + per-tool action gate + data-flow binding), like
+            # every other UC. Validated live end-to-end (49-span trace, propose →
+            # decide → apply) before this flip. The legacy bespoke runner remains
+            # wired below as an unused fallback until Phase 3b deletes it; an
+            # operator can still force it off with ONEOPS_UC05_EXECUTOR_PROPOSE=0
+            # (escape hatch during soak).
+            if os.getenv("ONEOPS_UC05_EXECUTOR_PROPOSE", "1").lower() not in (
+                    "0", "false", "no", "off"):
                 from oneops.api.uc05_routes import (
                     set_executor_propose_runner as _uc05_set_exec_runner,
                 )
@@ -851,7 +855,8 @@ async def _lifespan(app: FastAPI):
                     make_executor_propose_runner,
                 )
                 _uc05_set_exec_runner(make_executor_propose_runner(graph))
-                _log.info("oneops.api.uc05_executor_propose_enabled")
+                _log.info("oneops.api.uc05_executor_propose_enabled",
+                          default=True)
 
             # Start NATS triage agent — listens on oneops.uc05.triage.{propose,decide}
             if invoker_mode == "nats":

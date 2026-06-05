@@ -3,6 +3,36 @@
 > One entry per reviewable change. Format: date · batch · what · why · files ·
 > validation · result. Behavior-preserving unless explicitly noted.
 
+## 2026-06-05 · UC-5 B-refactor Phase 3a — executor path is the DEFAULT
+
+- **What**: `/api/uc05/propose` now runs on the MAIN executor by default. The
+  `ONEOPS_UC05_EXECUTOR_PROPOSE` gate flipped from default-OFF to default-ON
+  (only `0/false/no/off` disables it — an operator escape hatch during soak). The
+  legacy bespoke runner remains wired as an unused fallback until Phase 3b deletes it.
+- **Why**: validated live end-to-end first (49-span trace through the main
+  executor; propose on incidents + requests; full propose → decide → apply;
+  404/403/409 guards; all components — NATS/LiteLLM/Dragonfly/OTel→Tempo/
+  Prometheus/Grafana/authz/checkpointer). The flip is the soak default.
+- **Files**: `src/oneops/api/app.py` (one gate default);
+  `tests/unit/conftest.py` (test-isolation fixture — see below).
+- **Test-isolation fix (required by the flip)**: making the executor runner
+  default-wired exposed a latent leak — `build_app()` sets
+  `uc05_routes._executor_propose_runner` (a module global) and nothing reset it
+  between tests, so a test that built the app leaked the runner (and its dangling
+  compiled graph / psycopg pool) into later tests, breaking 10 that stub the
+  legacy `_tools_runner` or run unrelated async work. Added an autouse
+  `_isolate_uc05_route_runners` fixture (mirrors `_isolate_settings_cache`) that
+  clears the global before+after each test. RCA-confirmed: affected files pass in
+  isolation and in gate collection order; full `-m unit` gate = 1596 passed, 0
+  failed with the flip + fixture.
+- **Validation**: API restarted with NO env var → boot logs
+  `uc05_executor_propose_enabled default=True`; propose returns a valid Proposal
+  on the default path; INC0000026 reset to untriaged (fixture restored to HEAD).
+  Full unit gate green (1596 passed, 83 deselected).
+- **Result**: executor path is production default; reversible via env. Next:
+  Phase 3b deletes the legacy `runner.py`/`graph.py`, makes the NATS triage agent
+  decide-only, removes the `_tools_runner` seam.
+
 ## 2026-06-05 · Fix the CI gate's flaky alarm — re-lane leaking integration test
 
 - **What**: `tests/unit/api/test_session_continuity.py` now carries a module-level
