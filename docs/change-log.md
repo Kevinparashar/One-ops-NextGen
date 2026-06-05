@@ -3,6 +3,31 @@
 > One entry per reviewable change. Format: date · batch · what · why · files ·
 > validation · result. Behavior-preserving unless explicitly noted.
 
+## 2026-06-05 · Fix the CI gate's flaky alarm — re-lane leaking integration test
+
+- **What**: `tests/unit/api/test_session_continuity.py` now carries a module-level
+  `pytestmark = pytest.mark.integration` (removed the 3 redundant per-test
+  decorators). The file builds the full app and asserts on the DURABLE session
+  backend, so the whole module belongs in the integration lane.
+- **Why (RCA)**: the pre-commit gate runs `pytest -m unit`. `tests/conftest.py`
+  loads the real `.env` (live POSTGRES_URL/NATS/Dragonfly), and the auto-marker
+  (`tests/unit/conftest.py`) tags every non-heavier-lane test `unit`. Only 3/5
+  tests in this file were marked `integration`; the 2 unmarked ones
+  (`test_session_history_starts_empty`, `test_config_reports_session_wired`) were
+  auto-tagged `unit` and ran in the gate against shared live infra → flaked
+  nondeterministically (the gate failure that forced the 2b-ii/2b-iii `--no-verify`
+  commits). This is the trustworthy-gate fix so future commits don't need to bypass.
+- **Scope discipline**: enumerated ALL unit-lane files that build the app / touch
+  infra. The genuinely-infra ones (uc08_*) are already module-marked integration.
+  The 4 stable app-building files (test_error_no_leak, test_uc_display_name,
+  test_agent_skills, test_app_boot_smoke) only read config/registry/error-shape —
+  no shared mutable infra state, never flaked — so they STAY in the unit gate
+  (boot coverage). Only the proven-flaky file was re-laned.
+- **Files**: `tests/unit/api/test_session_continuity.py`; R-8 in `risk-register.md`.
+- **Validation**: `-m unit` now deselects all 5 (was leaking 2); `-m integration`
+  collects 5. Full `-m unit tests/unit` gate re-run to confirm green.
+- **Result**: behavior-preserving (test-lane only); the unit gate is hermetic again.
+
 ## 2026-06-05 · UC-5 B-refactor Phase 2b-iii — propose runs on the MAIN executor
 
 - **What**: `/api/uc05/propose` can now run the whole triage on the main executor
