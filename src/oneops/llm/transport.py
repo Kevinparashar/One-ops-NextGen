@@ -167,28 +167,7 @@ class LiteLLMTransport:
         # support prompt caching see flat-string content (the non-cached
         # path below). The mixed-shape branching keeps the simple case
         # token-identical with the pre-caching behaviour.
-        any_cached = any(getattr(m, "cache_control", False)
-                         for m in request.messages)
-        if any_cached:
-            messages_payload: list[dict[str, Any]] = []
-            for m in request.messages:
-                if getattr(m, "cache_control", False):
-                    messages_payload.append({
-                        "role": m.role,
-                        "content": [{
-                            "type": "text",
-                            "text": m.content,
-                            "cache_control": {"type": "ephemeral"},
-                        }],
-                    })
-                else:
-                    messages_payload.append({
-                        "role": m.role, "content": m.content,
-                    })
-        else:
-            messages_payload = [
-                {"role": m.role, "content": m.content} for m in request.messages
-            ]
+        messages_payload = _build_messages_payload(request.messages)
         body: dict[str, Any] = {
             "model": request.model,
             "messages": messages_payload,
@@ -200,66 +179,36 @@ class LiteLLMTransport:
         # text; the caller validates either way.
         if request.response_format.value == "json":
             body["response_format"] = {"type": "json_object"}
+        from oneops.errors import LLMTimeoutError, LLMUpstreamError
         try:
-            import httpx
-
-            from oneops.errors import LLMTimeoutError, LLMUpstreamError
-            try:
-                resp = await client.post("/chat/completions", json=body)
-            except httpx.TimeoutException as exc:
-                raise LLMTimeoutError(
-                    f"LiteLLM proxy timed out after {self._timeout_s:.0f}s",
-                    cause=exc) from exc
-            except httpx.HTTPError as exc:
-                raise LLMUpstreamError(
-                    f"LiteLLM proxy HTTP error: {exc}", cause=exc) from exc
-            if resp.status_code >= 500:
-                raise LLMUpstreamError(
-                    f"LiteLLM proxy returned {resp.status_code}: "
-                    f"{resp.text[:200]}")
-            if resp.status_code >= 400:
-                raise LLMUpstreamError(
-                    f"LiteLLM proxy returned {resp.status_code}: "
-                    f"{resp.text[:200]}")
-            payload = resp.json()
+            payload = await self._post_chat(client, body)
         except (LLMTimeoutError, LLMUpstreamError):
             raise
         except Exception as exc:                       # noqa: BLE001 — boundary
-            from oneops.errors import LLMUpstreamError
             raise LLMUpstreamError(
                 f"LiteLLM proxy: unexpected error {type(exc).__name__}: {exc}",
                 cause=exc) from exc
+        return _parse_completion(payload, request)
 
-        # OpenAI-compatible response shape.
-        choices = payload.get("choices") or []
-        if not choices:
-            from oneops.errors import LLMUpstreamError
-            raise LLMUpstreamError("LiteLLM proxy returned no choices")
-        choice = choices[0]
-        content = (choice.get("message") or {}).get("content") or ""
-        finish_reason = choice.get("finish_reason") or "stop"
-        usage = payload.get("usage") or {}
-        # Cache-token fields surface differently across providers:
-        #   * Anthropic (via LiteLLM): `cache_read_input_tokens` /
-        #     `cache_creation_input_tokens`
-        #   * OpenAI (auto-cached, server-side): `prompt_tokens_details:
-        #     {"cached_tokens": N}` — no creation count exposed.
-        # Read whatever the provider gave us; absence → 0.
-        cache_read = int(
-            usage.get("cache_read_input_tokens")
-            or ((usage.get("prompt_tokens_details") or {}).get("cached_tokens"))
-            or 0
-        )
-        cache_creation = int(usage.get("cache_creation_input_tokens") or 0)
-        return TransportResult(
-            content=str(content),
-            prompt_tokens=int(usage.get("prompt_tokens") or 0),
-            completion_tokens=int(usage.get("completion_tokens") or 0),
-            finish_reason=str(finish_reason),
-            actual_model=str(payload.get("model") or request.model),
-            cache_read_input_tokens=cache_read,
-            cache_creation_input_tokens=cache_creation,
-        )
+    async def _post_chat(self, client: Any, body: dict[str, Any]) -> dict[str, Any]:
+        """POST /chat/completions, mapping transport failures to typed errors
+        (timeout → LLMTimeoutError; HTTP / 4xx-5xx → LLMUpstreamError)."""
+        import httpx
+
+        from oneops.errors import LLMTimeoutError, LLMUpstreamError
+        try:
+            resp = await client.post("/chat/completions", json=body)
+        except httpx.TimeoutException as exc:
+            raise LLMTimeoutError(
+                f"LiteLLM proxy timed out after {self._timeout_s:.0f}s",
+                cause=exc) from exc
+        except httpx.HTTPError as exc:
+            raise LLMUpstreamError(
+                f"LiteLLM proxy HTTP error: {exc}", cause=exc) from exc
+        if resp.status_code >= 400:
+            raise LLMUpstreamError(
+                f"LiteLLM proxy returned {resp.status_code}: {resp.text[:200]}")
+        return resp.json()
 
     async def embed(self, texts: list[str], *, model: str,
                     dimensions: int | None = None) -> list[list[float]]:
@@ -281,6 +230,58 @@ class LiteLLMTransport:
         payload = resp.json()
         data = payload.get("data") or []
         return [list(map(float, row.get("embedding") or [])) for row in data]
+
+
+def _build_messages_payload(messages: Any) -> list[dict[str, Any]]:
+    """Anthropic prompt-cache content-block shape for messages flagged
+    cache_control=True (LiteLLM passes it through to Anthropic); flat-string
+    content otherwise — token-identical with the pre-caching path."""
+    if not any(getattr(m, "cache_control", False) for m in messages):
+        return [{"role": m.role, "content": m.content} for m in messages]
+    payload: list[dict[str, Any]] = []
+    for m in messages:
+        if getattr(m, "cache_control", False):
+            payload.append({
+                "role": m.role,
+                "content": [{
+                    "type": "text",
+                    "text": m.content,
+                    "cache_control": {"type": "ephemeral"},
+                }],
+            })
+        else:
+            payload.append({"role": m.role, "content": m.content})
+    return payload
+
+
+def _parse_completion(payload: dict[str, Any], request: LlmRequest) -> TransportResult:
+    """Map an OpenAI-compatible completion payload to a TransportResult. Cache-
+    token fields surface differently across providers (Anthropic via LiteLLM:
+    cache_read/creation_input_tokens; OpenAI: prompt_tokens_details.cached_tokens)
+    — read whatever is present, absence → 0."""
+    from oneops.errors import LLMUpstreamError
+    choices = payload.get("choices") or []
+    if not choices:
+        raise LLMUpstreamError("LiteLLM proxy returned no choices")
+    choice = choices[0]
+    content = (choice.get("message") or {}).get("content") or ""
+    finish_reason = choice.get("finish_reason") or "stop"
+    usage = payload.get("usage") or {}
+    cache_read = int(
+        usage.get("cache_read_input_tokens")
+        or ((usage.get("prompt_tokens_details") or {}).get("cached_tokens"))
+        or 0
+    )
+    cache_creation = int(usage.get("cache_creation_input_tokens") or 0)
+    return TransportResult(
+        content=str(content),
+        prompt_tokens=int(usage.get("prompt_tokens") or 0),
+        completion_tokens=int(usage.get("completion_tokens") or 0),
+        finish_reason=str(finish_reason),
+        actual_model=str(payload.get("model") or request.model),
+        cache_read_input_tokens=cache_read,
+        cache_creation_input_tokens=cache_creation,
+    )
 
 
 __all__ = ["LlmTransport", "EchoTransport", "LiteLLMTransport"]

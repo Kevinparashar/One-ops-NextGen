@@ -383,14 +383,7 @@ class AgentRecord(_VersionedRecord):
             raise ValueError(f"compound agent {self.id} cannot contain itself")
         if self.compound_of and self.routing_shape is RoutingShape.SINGLE:
             raise ValueError("a compound action cannot have routing_shape=single_agent")
-        if self.journey is not None:
-            if self.routing_shape is not RoutingShape.JOURNEY:
-                raise ValueError("journey set → routing_shape must be slot_filling_journey")
-            # Journeys are inherently gated, multi-turn flows — never LOW determinism.
-            if self.determinism_level is DeterminismLevel.LOW:
-                raise ValueError("a journey agent cannot be determinism_level=low")
-        if self.routing_shape is RoutingShape.JOURNEY and self.journey is None:
-            raise ValueError("routing_shape=slot_filling_journey requires a `journey` spec")
+        self._validate_journey()
         # Action-tier agents must declare an auth re-check hook — defence in
         # depth (docs/architecture/ARCHITECTURE.md §9: authz at every boundary).
         if self.abac_tags.tier is ExecutionTier.ACTION and not self.hooks.before_invocation:
@@ -398,8 +391,24 @@ class AgentRecord(_VersionedRecord):
                 f"action-tier agent {self.id} must declare a before_invocation hook "
                 "(auth re-check) — see docs/architecture/ARCHITECTURE.md §9"
             )
-        # Fast-path cross-field rules. The dispatcher trusts the registry —
-        # validate the declaration here so a bad fast_path can never load.
+        self._validate_fast_path()
+        return self
+
+    def _validate_journey(self) -> None:
+        """Journey ⇔ routing_shape=JOURNEY consistency; a journey is a gated
+        multi-turn flow so it can never be determinism_level=low."""
+        if self.journey is not None:
+            if self.routing_shape is not RoutingShape.JOURNEY:
+                raise ValueError("journey set → routing_shape must be slot_filling_journey")
+            if self.determinism_level is DeterminismLevel.LOW:
+                raise ValueError("a journey agent cannot be determinism_level=low")
+        if self.routing_shape is RoutingShape.JOURNEY and self.journey is None:
+            raise ValueError("routing_shape=slot_filling_journey requires a `journey` spec")
+
+    def _validate_fast_path(self) -> None:
+        """Fast-path declaration sanity: primary_tool_id is one the agent owns
+        and input_field names are unique. The dispatcher trusts the registry,
+        so a bad fast_path must never load."""
         if self.fast_path is not None and self.fast_path.enabled:
             tool_ids = {ref.tool_id for ref in self.tool_refs}
             if self.fast_path.primary_tool_id not in tool_ids:
@@ -413,7 +422,6 @@ class AgentRecord(_VersionedRecord):
                 raise ValueError(
                     f"agent {self.id} fast_path input_fields have duplicate "
                     f"names: {field_names}")
-        return self
 
 
 class ToolParameter(BaseModel):
