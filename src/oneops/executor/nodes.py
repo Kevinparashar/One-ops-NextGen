@@ -241,6 +241,51 @@ def dotted_get(obj: Any, path: str) -> Any:
     return cur
 
 
+def _resolve_one_binding(
+    b: dict[str, Any], kind: str,
+    previous_results: dict[str, dict[str, Any]],
+) -> tuple[str, str, Any, str]:
+    """Resolve a single declared binding against its dependency result.
+
+    Returns `(action, to_param, value, reason)`:
+      * `("bind", to_param, value, "")` → deliver `value` as `to_param`.
+      * `("omit", "", None, "")` → soft/optional dep absent; contribute nothing.
+      * `("blocked", to_param, None, reason)` → a hard+required dependency did
+        not succeed or a required field was missing (surfaced, never silent).
+
+    `kind` (hard|soft) gates a failed upstream: hard → block; soft → omit.
+    """
+    from_step = b.get("from_step", "")
+    from_field = b.get("from_field", "")
+    to_param = b.get("to_param", "")
+    required = b.get("required", True)
+    prev = previous_results.get(from_step)
+
+    if prev is None or prev.get("status") != "success":
+        if kind == "soft":
+            return "omit", "", None, ""       # best-effort: omit this dep's value
+        if required:
+            why = ("did not succeed" if prev is not None
+                   else "produced no result")
+            return "blocked", to_param, None, f"upstream step '{from_step}' {why}"
+        return "omit", "", None, ""           # hard but optional binding → omit
+
+    # Resolve the field against the producer's output: try the top level
+    # first, then the `bindable` namespace (where producers expose their
+    # record's dynamic fields). Flat from_field names work either way.
+    output = prev.get("output")
+    val = dotted_get(output, from_field)
+    if val is None and isinstance(output, dict):
+        val = dotted_get(output.get("bindable"), from_field)
+    if val is None:
+        if required:
+            return ("blocked", to_param, None,
+                    f"required input '{to_param}' is missing — "
+                    f"'{from_step}.{from_field}' was not in its output")
+        return "omit", "", None, ""           # optional missing → omit + proceed
+    return "bind", to_param, val, ""
+
+
 def _resolve_bindings(
     step: dict[str, Any], previous_results: dict[str, dict[str, Any]],
 ) -> tuple[dict[str, Any], str, str]:
@@ -269,36 +314,14 @@ def _resolve_bindings(
 
     bound: dict[str, Any] = {}
     for b in bindings:
-        from_step = b.get("from_step", "")
-        from_field = b.get("from_field", "")
-        to_param = b.get("to_param", "")
-        required = b.get("required", True)
-        prev = previous_results.get(from_step)
-        kind = dep_kind(from_step)
-
-        if prev is None or prev.get("status") != "success":
-            if kind == "soft":
-                continue                      # best-effort: omit this dep's value
-            if required:
-                why = ("did not succeed" if prev is not None
-                       else "produced no result")
-                return {}, "blocked", f"upstream step '{from_step}' {why}"
-            continue                          # hard but optional binding → omit
-
-        # Resolve the field against the producer's output: try the top level
-        # first, then the `bindable` namespace (where producers expose their
-        # record's dynamic fields). Flat from_field names work either way.
-        output = prev.get("output")
-        val = dotted_get(output, from_field)
-        if val is None and isinstance(output, dict):
-            val = dotted_get(output.get("bindable"), from_field)
-        if val is None:
-            if required:
-                return ({}, "blocked",
-                        f"required input '{to_param}' is missing — "
-                        f"'{from_step}.{from_field}' was not in its output")
-            continue                          # optional missing → omit + proceed
-        bound[to_param] = val
+        kind = dep_kind(b.get("from_step", ""))
+        action, to_param, val, reason = _resolve_one_binding(
+            b, kind, previous_results)
+        if action == "blocked":
+            return {}, "blocked", reason
+        if action == "bind":
+            bound[to_param] = val
+        # action == "omit" → soft/optional dep contributes nothing; proceed.
 
     return bound, "ok", ""
 
@@ -384,28 +407,8 @@ def friendly_step_response(
     error = (result.get("error") or "")
     entity_id = _extract_entity_id(step, result)
 
-    # ── success path ────────────────────────────────────────────────────
     if status == "success":
-        if isinstance(output, dict):
-            # 1. Canonical chat-ready text — used by UCs whose spec dictates
-            #    an opinionated output shape (UC-2 ranked list with flags).
-            display_text = output.get("display_text")
-            if isinstance(display_text, str) and display_text.strip():
-                return display_text.strip()
-            # 2. UC-1 summariser path.
-            outer_summary = output.get("summary")
-            if isinstance(outer_summary, dict):
-                paragraph = str(outer_summary.get("summary") or "").strip()
-                if paragraph:
-                    return paragraph
-            elif isinstance(outer_summary, str) and outer_summary.strip():
-                return outer_summary.strip()
-            # 3. Handlers that emit `outcome` + already-friendly `message`.
-            message = output.get("message")
-            if isinstance(message, str) and message.strip():
-                return message.strip()
-        # A success step with no surfaceable text — short ack, never empty.
-        return "Done."
+        return _render_success_text(output)
 
     # ── blocked path (data-flow dependency could not be satisfied) ──────
     # A step is `blocked` when a required upstream output was missing or a
@@ -416,7 +419,39 @@ def friendly_step_response(
         return reason or ("This step was skipped because a prerequisite "
                           "did not complete.")
 
-    # ── failure / denial paths ─────────────────────────────────────────
+    return _classify_failure_text(error, entity_id)
+
+
+def _render_success_text(output: Any) -> str:
+    """Surface the best chat-ready text from a successful step's output.
+
+    Precedence (first non-empty wins):
+      1. `display_text` — canonical chat-ready text, used by UCs whose spec
+         dictates an opinionated output shape (UC-2 ranked list with flags).
+      2. `summary` — UC-1 summariser path (dict paragraph or plain str).
+      3. `message` — handlers that emit `outcome` + already-friendly text.
+      4. `"Done."` — a success step with no surfaceable text, never empty.
+    """
+    if isinstance(output, dict):
+        display_text = output.get("display_text")
+        if isinstance(display_text, str) and display_text.strip():
+            return display_text.strip()
+        outer_summary = output.get("summary")
+        if isinstance(outer_summary, dict):
+            paragraph = str(outer_summary.get("summary") or "").strip()
+            if paragraph:
+                return paragraph
+        elif isinstance(outer_summary, str) and outer_summary.strip():
+            return outer_summary.strip()
+        message = output.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    return "Done."
+
+
+def _classify_failure_text(error: str, entity_id: str) -> str:
+    """Map a failed/denied step's error string to a short, user-safe line —
+    no internals leaked. Falls back to a neutral generic line."""
     lowered = error.lower()
     if "hookerror" in lowered or "authz_recheck" in lowered or \
        "before-hook aborted" in lowered:
@@ -659,40 +694,9 @@ class ExecutorNodes:
             attributes={"oneops.request_id": state.get("request_id", ""),
                         _ONEOPS_TENANT_ID: state.get("tenant_id", "")},
         ) as span:
-            # ── Pre-routed dispatch (forced-agent path) ──────────────────
-            # A caller already selected the agent(s) (a team manager's member-
-            # selector, a button/HTTP route, the /propose fast-path). Build the
-            # plan directly and SKIP the LLM router — first-class, not a fallback.
-            # Drop ids with no active record (never invent); none left → no-match.
-            requested = list(state.get("forced_agent_ids") or [])
-            if requested:
-                forced = [a for a in requested
-                          if self._registry.agents.get_optional(a) is not None]
-                span.set_attribute("executor.forced_dispatch", True)
-                span.set_attribute("executor.forced_agents", ",".join(forced))
-                if not forced:
-                    span.set_attribute(_EXECUTOR_ROUTE_OUTCOME, "no_confident_match")
-                    increment(_AI_ROUTER_OUTCOME_TOTAL, outcome="no_confident_match",
-                              tenant_id=state.get("tenant_id", ""))
-                    return {
-                        "route_outcome": "no_confident_match",
-                        "boundary_reason": "forced agents have no active registry record",
-                        "route_diagnostics": [f"forced dispatch: none of {requested} active"],
-                        "unrouted": [], "plan": [], "entity_clarification": "",
-                        "time_filter": {},
-                    }
-                plan = assemble_plan(
-                    [SubQueryRoute(sub_query_id="sq_forced", agent_ids=forced)],
-                    self._registry)
-                span.set_attribute(_EXECUTOR_ROUTE_OUTCOME, "routed")
-                increment(_AI_ROUTER_OUTCOME_TOTAL, outcome="routed",
-                          tenant_id=state.get("tenant_id", ""))
-                return {
-                    "route_outcome": "routed",
-                    "plan": serialise_plan(plan),
-                    "route_diagnostics": [f"forced dispatch: {forced}"],
-                    "unrouted": [], "entity_clarification": "", "time_filter": {},
-                }
+            forced_update = self._forced_dispatch_update(state, span)
+            if forced_update is not None:
+                return forced_update
             principal = Principal(
                 tenant_id=state.get("tenant_id", ""),
                 user_id=state.get("user_id", "") or "unknown",
@@ -760,43 +764,94 @@ class ExecutorNodes:
                 update["plan"] = []
                 update["boundary_reason"] = result.boundary_reason
 
-            # ── Conditional TimeFilter extraction ─────────────────────────
-            # Run the extractor ONLY when the plan contains an agent whose
-            # registry record opts in via `consumes_time_filter: true`. This
-            # keeps the LLM cost off summarisation / KB / triage turns that
-            # don't need a temporal scope.
-            update["time_filter"] = {}
-            if (self._time_filter_extractor is not None
-                    and update["plan"]):
-                wants_filter = False
-                for step in update["plan"]:
-                    aid = step.get("agent_id")
-                    if not aid:
-                        continue
-                    try:
-                        rec = self._registry.agents.get_optional(aid)
-                    except Exception:                                  # noqa: BLE001
-                        rec = None
-                    if rec is not None and getattr(
-                            rec, "consumes_time_filter", False):
-                        wants_filter = True
-                        break
-                if wants_filter:
-                    try:
-                        tf = await self._time_filter_extractor.extract(
-                            message=state.get("message", "") or "",
-                            tenant_id=principal.tenant_id,
-                            user_id=principal.user_id,
-                        )
-                        if tf is not None:
-                            update["time_filter"] = tf.model_dump(mode="json")
-                            span.set_attribute(
-                                "executor.time_filter.present", True)
-                    except Exception as exc:                          # noqa: BLE001
-                        # Never break routing on extractor failure.
-                        _log.warning("executor.time_filter.extract_failed",
-                                     error=str(exc)[:160])
+            update["time_filter"] = await self._maybe_extract_time_filter(
+                update["plan"], state, principal, span)
             return update
+
+    def _forced_dispatch_update(
+        self, state: ExecutorState, span,
+    ) -> dict[str, Any] | None:
+        """Pre-routed (forced-agent) dispatch — a caller already selected the
+        agent(s) (a team manager's member-selector, a button/HTTP route, the
+        /propose fast-path). Build the plan directly and SKIP the LLM router —
+        first-class, not a fallback. Ids with no active record are dropped
+        (never invent); none left → no-match.
+
+        Returns the state update, or None when no agents were forced (the
+        caller proceeds to the LLM router).
+        """
+        requested = list(state.get("forced_agent_ids") or [])
+        if not requested:
+            return None
+        forced = [a for a in requested
+                  if self._registry.agents.get_optional(a) is not None]
+        span.set_attribute("executor.forced_dispatch", True)
+        span.set_attribute("executor.forced_agents", ",".join(forced))
+        if not forced:
+            span.set_attribute(_EXECUTOR_ROUTE_OUTCOME, "no_confident_match")
+            increment(_AI_ROUTER_OUTCOME_TOTAL, outcome="no_confident_match",
+                      tenant_id=state.get("tenant_id", ""))
+            return {
+                "route_outcome": "no_confident_match",
+                "boundary_reason": "forced agents have no active registry record",
+                "route_diagnostics": [f"forced dispatch: none of {requested} active"],
+                "unrouted": [], "plan": [], "entity_clarification": "",
+                "time_filter": {},
+            }
+        plan = assemble_plan(
+            [SubQueryRoute(sub_query_id="sq_forced", agent_ids=forced)],
+            self._registry)
+        span.set_attribute(_EXECUTOR_ROUTE_OUTCOME, "routed")
+        increment(_AI_ROUTER_OUTCOME_TOTAL, outcome="routed",
+                  tenant_id=state.get("tenant_id", ""))
+        return {
+            "route_outcome": "routed",
+            "plan": serialise_plan(plan),
+            "route_diagnostics": [f"forced dispatch: {forced}"],
+            "unrouted": [], "entity_clarification": "", "time_filter": {},
+        }
+
+    def _plan_wants_time_filter(self, plan: list[dict[str, Any]]) -> bool:
+        """True if any planned step names an agent whose registry record opts
+        into temporal scope via `consumes_time_filter: true`."""
+        for step in plan:
+            aid = step.get("agent_id")
+            if not aid:
+                continue
+            try:
+                rec = self._registry.agents.get_optional(aid)
+            except Exception:                                  # noqa: BLE001
+                rec = None
+            if rec is not None and getattr(rec, "consumes_time_filter", False):
+                return True
+        return False
+
+    async def _maybe_extract_time_filter(
+        self, plan: list[dict[str, Any]], state: ExecutorState,
+        principal: Principal, span,
+    ) -> dict[str, Any]:
+        """Conditional TimeFilter extraction. Run the extractor ONLY when the
+        plan contains an agent that opts in — keeps the LLM cost off
+        summarisation / KB / triage turns that don't need a temporal scope.
+        Returns the serialised filter dict, or {} when not wanted / unavailable
+        / on failure (extractor failure never breaks routing)."""
+        if self._time_filter_extractor is None or not plan:
+            return {}
+        if not self._plan_wants_time_filter(plan):
+            return {}
+        try:
+            tf = await self._time_filter_extractor.extract(
+                message=state.get("message", "") or "",
+                tenant_id=principal.tenant_id,
+                user_id=principal.user_id,
+            )
+            if tf is not None:
+                span.set_attribute("executor.time_filter.present", True)
+                return tf.model_dump(mode="json")
+        except Exception as exc:                          # noqa: BLE001
+            _log.warning("executor.time_filter.extract_failed",
+                         error=str(exc)[:160])
+        return {}
 
     # ── wave (no-op; dispatch_wave does the routing) ─────────────────────
 
@@ -855,26 +910,9 @@ class ExecutorNodes:
                     step, status="failed",
                     error=f"agent '{agent_id}' has no active registry record")]}
 
-            # ── Policy gate (P10) ────────────────────────────────────────
-            # A DENY refuses the step; a CANNED verdict replaces the step's
-            # work with a pre-approved response (compliance touchpoint — zero
-            # hallucination). Both skip the handler entirely.
-            if self._policy_engine is not None:
-                from oneops.policy_engine import PolicyEffect, PolicyQuery
-                decision = self._policy_engine.evaluate(PolicyQuery(
-                    tenant_id=request.get("tenant_id", ""),
-                    role=request.get("role") or None,
-                    data_classification=agent.abac_tags.data_classification.value,
-                    intent=step.get("intent") or None))
-                span.set_attribute("executor.policy_effect", decision.effect.value)
-                if decision.effect is PolicyEffect.DENY:
-                    return {"step_results": [make_result(
-                        step, status="denied", error=f"policy: {decision.reason}")]}
-                if decision.effect is PolicyEffect.CANNED:
-                    return {"step_results": [make_result(
-                        step, status="success",
-                        output={"canned_response": decision.canned_response,
-                                "policy_rule": decision.matched_rule_id})]}
+            policy_result = self._evaluate_step_policy(step, request, agent, span)
+            if policy_result is not None:
+                return policy_result
 
             # ── data-flow binding (previous_results) ─────────────────────
             # Resolve declared bindings from upstream outputs BEFORE hooks /
@@ -975,44 +1013,81 @@ class ExecutorNodes:
             span.set_attribute("executor.latency_ms", latency_ms)
             histogram("ai.agent.latency_ms", value=latency_ms, agent_id=agent_id)
 
-            # ── runtime-generated steps (dynamic fan-out) ────────────────
-            # A handler signals follow-up work it discovered at runtime by
-            # returning `generated_steps` on its result. We validate +
-            # namespace them and append to the `plan` channel; `dispatch_wave`
-            # re-reads the plan each superstep, so they run in a later wave —
-            # no graph recompile, no topology change. Budget-guarded so a
-            # self-spawning handler can never run away (depth + width caps).
-            raw_generated = (result.pop("generated_steps", None)
-                             if isinstance(result, dict) else None)
             update: dict[str, Any] = {"step_results": [result]}
-            if raw_generated:
-                new_steps, note = _normalise_generated_steps(step, raw_generated)
-                # ── anti-hallucination guard ─────────────────────────────
-                # Generated steps may be produced by a handler's LLM decision,
-                # so they cannot be trusted blindly. A step may ONLY name an
-                # agent that has an active registry record (closed-vocabulary
-                # check); a hallucinated / made-up agent_id is refused here and
-                # surfaced — never executed, never silent (thumb rule #11).
-                # Each surviving step still re-enters run_step, so it is
-                # re-gated by policy + RBAC + hooks like any planned step —
-                # generation can never escalate privilege or skip a control.
-                valid: list[dict[str, Any]] = []
-                for s in new_steps:
-                    if self._registry.agents.get_optional(s["agent_id"]) is None:
-                        note = ((note + "; " if note else "")
-                                + f"refused generated step naming unknown "
-                                  f"agent '{s['agent_id']}'")
-                        continue
-                    valid.append(s)
-                if valid:
-                    span.set_attribute("executor.generated_steps", len(valid))
-                    update["plan"] = valid
-                if note:
-                    span.add_event("executor.generation_capped", {"reason": note})
-                    _log.warning("executor.generation_capped",
-                                 parent=step.get("step_id"), reason=note)
-                    result["generation_note"] = note
+            self._append_generated_steps(step, result, update, span)
             return update
+
+    def _evaluate_step_policy(
+        self, step: dict[str, Any], request: dict[str, Any], agent: Any, span,
+    ) -> dict[str, Any] | None:
+        """Policy gate (P10). A DENY refuses the step; a CANNED verdict
+        replaces the step's work with a pre-approved response (compliance
+        touchpoint — zero hallucination). Both skip the handler entirely.
+
+        Returns a short-circuit `step_results` dict for a DENY/CANNED verdict,
+        or None to proceed (no engine wired, or an ALLOW)."""
+        if self._policy_engine is None:
+            return None
+        from oneops.policy_engine import PolicyEffect, PolicyQuery
+        decision = self._policy_engine.evaluate(PolicyQuery(
+            tenant_id=request.get("tenant_id", ""),
+            role=request.get("role") or None,
+            data_classification=agent.abac_tags.data_classification.value,
+            intent=step.get("intent") or None))
+        span.set_attribute("executor.policy_effect", decision.effect.value)
+        if decision.effect is PolicyEffect.DENY:
+            return {"step_results": [make_result(
+                step, status="denied", error=f"policy: {decision.reason}")]}
+        if decision.effect is PolicyEffect.CANNED:
+            return {"step_results": [make_result(
+                step, status="success",
+                output={"canned_response": decision.canned_response,
+                        "policy_rule": decision.matched_rule_id})]}
+        return None
+
+    def _append_generated_steps(
+        self, step: dict[str, Any], result: dict[str, Any],
+        update: dict[str, Any], span,
+    ) -> None:
+        """Runtime-generated steps (dynamic fan-out). A handler signals
+        follow-up work it discovered at runtime by returning `generated_steps`
+        on its result. We validate + namespace them and append to the `plan`
+        channel; `dispatch_wave` re-reads the plan each superstep, so they run
+        in a later wave — no graph recompile, no topology change. Budget-guarded
+        so a self-spawning handler can never run away (depth + width caps).
+
+        Mutates `update` (appends to the `plan` channel) and `result` (records
+        a `generation_note`) in place.
+        """
+        raw_generated = (result.pop("generated_steps", None)
+                         if isinstance(result, dict) else None)
+        if not raw_generated:
+            return
+        new_steps, note = _normalise_generated_steps(step, raw_generated)
+        # ── anti-hallucination guard ─────────────────────────────────────
+        # Generated steps may be produced by a handler's LLM decision, so they
+        # cannot be trusted blindly. A step may ONLY name an agent that has an
+        # active registry record (closed-vocabulary check); a hallucinated /
+        # made-up agent_id is refused here and surfaced — never executed, never
+        # silent (thumb rule #11). Each surviving step still re-enters run_step,
+        # so it is re-gated by policy + RBAC + hooks like any planned step —
+        # generation can never escalate privilege or skip a control.
+        valid: list[dict[str, Any]] = []
+        for s in new_steps:
+            if self._registry.agents.get_optional(s["agent_id"]) is None:
+                note = ((note + "; " if note else "")
+                        + f"refused generated step naming unknown "
+                          f"agent '{s['agent_id']}'")
+                continue
+            valid.append(s)
+        if valid:
+            span.set_attribute("executor.generated_steps", len(valid))
+            update["plan"] = valid
+        if note:
+            span.add_event("executor.generation_capped", {"reason": note})
+            _log.warning("executor.generation_capped",
+                         parent=step.get("step_id"), reason=note)
+            result["generation_note"] = note
 
     # ── aggregate ────────────────────────────────────────────────────────
 
@@ -1099,33 +1174,10 @@ class ExecutorNodes:
         # Always set the marker so the graph's conditional edge sees it.
         update: dict[str, Any] = {"control_gate_outcome": result.control_type}
         if result.is_control and result.response_text:
-            # ── Data-driven domain backstop (2026-06-02 RCA) ─────────────
-            # The gate's `out_of_scope` verdict is occasionally wrong — and
-            # not perfectly deterministic even at temperature 0 — for
-            # borderline IT how-to phrasings ("how do I configure a VPN
-            # client?" refused while "...client" answered). Before refusing,
-            # probe the KB CORPUS itself, the authoritative + deterministic
-            # domain signal: if it has a real answer the query IS in-domain,
-            # so return that answer instead of "out of scope". A genuine
-            # off-topic query ("recommend a pizza place") matches nothing
-            # (search_kb's relevance gate) and refuses exactly as before —
-            # this only rescues real IT questions the scope LLM mishandled.
             if result.control_type == "out_of_scope":
-                from oneops.use_cases.uc03_kb_lookup.handlers import (
-                    kb_backstop_answer,
-                )
-                ctx = {
-                    "tenant_id": state.get("tenant_id", "") or "",
-                    "user_id": state.get("user_id", "") or "",
-                    "role": state.get("role", "") or "",
-                    "request_id": state.get("request_id", "") or "",
-                }
-                kb = await kb_backstop_answer(
-                    state.get("message", "") or "", ctx)
-                if kb:
-                    return {"control_gate_outcome": "kb_backstop",
-                            "final_status": "executed",
-                            "final_response": kb}
+                backstop = await self._kb_backstop(state)
+                if backstop is not None:
+                    return backstop
             # Short-circuit. final_status mirrors the boundary's
             # `clarification` for non-task replies so the UI renders the
             # same way it does today for greetings/OOS.
@@ -1134,6 +1186,36 @@ class ExecutorNodes:
                 "final_response": result.response_text,
             })
         return update
+
+    async def _kb_backstop(
+        self, state: ExecutorState,
+    ) -> dict[str, Any] | None:
+        """Data-driven domain backstop (2026-06-02 RCA). The control gate's
+        `out_of_scope` verdict is occasionally wrong — and not perfectly
+        deterministic even at temperature 0 — for borderline IT how-to
+        phrasings ("how do I configure a VPN client?" refused while
+        "...client" answered). Before refusing, probe the KB CORPUS itself,
+        the authoritative + deterministic domain signal: if it has a real
+        answer the query IS in-domain, so return that answer instead of "out
+        of scope". A genuine off-topic query ("recommend a pizza place")
+        matches nothing (search_kb's relevance gate) and refuses exactly as
+        before — this only rescues real IT questions the scope LLM mishandled.
+
+        Returns a short-circuit update carrying the KB answer, or None to
+        refuse as the gate decided."""
+        from oneops.use_cases.uc03_kb_lookup.handlers import kb_backstop_answer
+        ctx = {
+            "tenant_id": state.get("tenant_id", "") or "",
+            "user_id": state.get("user_id", "") or "",
+            "role": state.get("role", "") or "",
+            "request_id": state.get("request_id", "") or "",
+        }
+        kb = await kb_backstop_answer(state.get("message", "") or "", ctx)
+        if kb:
+            return {"control_gate_outcome": "kb_backstop",
+                    "final_status": "executed",
+                    "final_response": kb}
+        return None
 
     # ── boundary ─────────────────────────────────────────────────────────
 

@@ -126,17 +126,25 @@ async def hook_authz_recheck(ctx: HookContext) -> None:
       * authz DENY → `HookError("authz_recheck: …reasons")` — the executor
         records the typed abort with the deny reasons in the trace.
     """
-    # Lazy imports keep the hook module decoupled from the authz package at
-    # import time (cold-start friendly — see scale concern 21).
-    from oneops.authz.models import (
-        DataClass,
-        Principal,
-        ResourceDescriptor,
-        Tier,
-    )
+    authz, agent = _require_authz_services(ctx)
+    principal = _principal_from_request(ctx)
+    resource = _resource_from_agent(agent, principal, ctx)
+
+    decision = await authz.check(principal, resource)
+    if not decision.allowed:
+        raise HookError(
+            "authz_recheck: " + "; ".join(decision.reasons) if decision.reasons
+            else "authz_recheck: denied")
+
+
+def _require_authz_services(ctx: HookContext) -> tuple[Any, Any]:
+    """Return `(authz, agent)` from the hook services, raising HookError on a
+    wiring gap (misconfiguration, never a silent skip).
+
+    Lazy imports keep the hook module decoupled from the authz package at
+    import time (cold-start friendly — see scale concern 21)."""
     from oneops.authz.service import AuthzService
     from oneops.registry.models import AgentRecord
-
     authz = ctx.services.get("authz")
     agent = ctx.services.get("agent")
     if not isinstance(authz, AuthzService):
@@ -147,7 +155,14 @@ async def hook_authz_recheck(ctx: HookContext) -> None:
         raise HookError(
             "authz_recheck: services['agent'] is not an AgentRecord — "
             "executor wiring is incomplete (no silent skip)")
+    return authz, agent
 
+
+def _principal_from_request(ctx: HookContext) -> Any:
+    """Build the authz Principal from the request envelope, raising HookError
+    when tenant_id/role are missing (cannot construct a Principal →
+    deny-by-default)."""
+    from oneops.authz.models import Principal
     tenant_id = str(ctx.request.get("tenant_id") or "").strip()
     user_id = str(ctx.request.get("user_id") or "").strip()
     role = str(ctx.request.get("role") or "").strip()
@@ -155,57 +170,46 @@ async def hook_authz_recheck(ctx: HookContext) -> None:
         raise HookError(
             "authz_recheck: request envelope missing tenant_id/role — "
             "cannot construct a Principal (deny-by-default)")
-
     raw_attrs = ctx.request.get("attributes") or ()
-    if isinstance(raw_attrs, dict):
-        attributes = tuple((str(k), str(v)) for k, v in raw_attrs.items())
-    else:
-        attributes = tuple(
-            (str(k), str(v)) for k, v in raw_attrs
-            if isinstance(k, str) or isinstance(v, str) or True
-        )
+    pairs = raw_attrs.items() if isinstance(raw_attrs, dict) else raw_attrs
+    attributes = tuple((str(k), str(v)) for k, v in pairs)
+    return Principal(tenant_id=tenant_id, user_id=user_id, role=role,
+                     attributes=attributes)
 
-    principal = Principal(
-        tenant_id=tenant_id, user_id=user_id, role=role, attributes=attributes,
-    )
 
-    # `data_classification` on AbacTags is the registry enum; map by name —
-    # data-driven, no static catalogue (Component Spec C12). Unknown values
-    # collapse to INTERNAL (deny-by-default for stricter classes still bites
-    # in the ABAC rule eval).
+def _resource_from_agent(agent: Any, principal: Any, ctx: HookContext) -> Any:
+    """Build the ResourceDescriptor for `agent` at the STEP's effective tier.
+
+    `data_classification` maps by name (data-driven, no static catalogue —
+    Component Spec C12); unknown values collapse to INTERNAL (deny-by-default
+    for stricter classes still bites in the ABAC rule eval).
+
+    Tier is evaluated at the STEP's effective tier, not blanket the agent tier.
+    The executor injects `step_is_action` (from `_step_is_action`, the same
+    decision that drives the action-approval interrupt): an action-tier AGENT
+    may own read tools (analysis / propose) and action tools (apply); a
+    read-only step under such an agent must be checked as READ, so generating a
+    recommend-only proposal does not demand write-class permission. When the
+    hint is absent (non-executor caller), fall back to the agent tier."""
+    from oneops.authz.models import DataClass, ResourceDescriptor, Tier
     data_class_name = agent.abac_tags.data_classification.value
     try:
         data_class = DataClass(data_class_name)
     except ValueError:
         data_class = DataClass.INTERNAL
-
-    # Tier — evaluate at the STEP's effective tier, not blanket the agent tier.
-    # The executor injects `step_is_action` (from `_step_is_action`, the same
-    # decision that drives the action-approval interrupt): an action-tier AGENT
-    # may own read tools (analysis / propose) and action tools (apply); a
-    # read-only step under such an agent must be checked as READ, so generating
-    # a recommend-only proposal does not demand write-class permission. When the
-    # hint is absent (non-executor caller), fall back to the agent tier.
     step_is_action = ctx.services.get("step_is_action")
     if step_is_action is None:
-        tier = Tier.ACTION if agent.abac_tags.tier.value == "action" else Tier.READ
+        is_action = agent.abac_tags.tier.value == "action"
     else:
-        tier = Tier.ACTION if step_is_action else Tier.READ
-
-    resource = ResourceDescriptor(
+        is_action = bool(step_is_action)
+    return ResourceDescriptor(
         resource_id=agent.id,
-        resource_tenant_id=tenant_id,
-        tier=tier,
+        resource_tenant_id=principal.tenant_id,
+        tier=Tier.ACTION if is_action else Tier.READ,
         data_classification=data_class,
         audience=tuple(agent.abac_tags.audience),
         required_scopes=(),
     )
-
-    decision = await authz.check(principal, resource)
-    if not decision.allowed:
-        raise HookError(
-            "authz_recheck: " + "; ".join(decision.reasons) if decision.reasons
-            else "authz_recheck: denied")
 
 
 def default_hook_registry() -> HookRegistry:

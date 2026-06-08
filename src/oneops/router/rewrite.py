@@ -791,6 +791,33 @@ def _enforce_linked_phrase_guard(
 _BARE_DIGIT_RE = re.compile(r"^\s*(\d{3,7})\s*$")
 
 
+def _bare_digit_allowed_ids(
+    original: str, new_ids: set[str], history: list[ConversationTurn],
+) -> set[str]:
+    """Phase N: a bare-digit original (e.g. '0001002') may legitimately produce
+    a canonical id whose digit-body matches, IF history names a record of the
+    same prefix (proving the service context was inferable). Returns the subset
+    of `new_ids` allowed under this rule (empty when the original isn't bare
+    digits or no prefix matches)."""
+    bare_digit_match = _BARE_DIGIT_RE.match(original)
+    if not bare_digit_match:
+        return set()
+    digit_body = bare_digit_match.group(1).zfill(7)
+    history_prefixes: set[str] = set()
+    for turn in history:
+        for hid in _extract_record_ids(turn.content or ""):
+            pm = re.match(r"^([A-Z]{2,5})", hid)
+            if pm:
+                history_prefixes.add(pm.group(1))
+    allowed: set[str] = set()
+    for nid in new_ids:
+        m = re.match(r"^([A-Z]{2,5})(\d{4,})$", nid)
+        if m and m.group(2).lstrip("0") == digit_body.lstrip("0") \
+                and m.group(1) in history_prefixes:
+            allowed.add(nid)
+    return allowed
+
+
 def _reject_hallucinated_ids(
     *, original: str, rewritten: str, history: list[ConversationTurn],
 ) -> str:
@@ -823,26 +850,11 @@ def _reject_hallucinated_ids(
     # subsequent attribute queries to a fake id.
     allowed.update(_history_focus_ids(history))
 
-    # Phase N exemption: a bare-digit original may legitimately
-    # produce an id whose digit-body matches. e.g. "0001002" →
-    # INC0001002 (or any other prefix). Allow such IDs even if not
-    # in history, AS LONG AS history has a record of the same prefix
-    # (proving service context was inferable). Without history we
-    # would have nothing to bind the prefix to anyway.
-    bare_digit_match = _BARE_DIGIT_RE.match(original)
-    if bare_digit_match:
-        digit_body = bare_digit_match.group(1).zfill(7)
-        history_prefixes = set()
-        for turn in history:
-            for hid in _extract_record_ids(turn.content or ""):
-                pm = re.match(r"^([A-Z]{2,5})", hid)
-                if pm:
-                    history_prefixes.add(pm.group(1))
-        for nid in list(new_ids):
-            m = re.match(r"^([A-Z]{2,5})(\d{4,})$", nid)
-            if m and m.group(2).lstrip("0") == digit_body.lstrip("0") \
-                    and m.group(1) in history_prefixes:
-                allowed.add(nid)
+    # Phase N exemption: a bare-digit original may legitimately produce an id
+    # whose digit-body matches (e.g. "0001002" → INC0001002), as long as
+    # history names a record of the same prefix (proving service context was
+    # inferable). Without history there is nothing to bind the prefix to anyway.
+    allowed.update(_bare_digit_allowed_ids(original, new_ids, history))
 
     hallucinated = new_ids - allowed
     if not hallucinated:

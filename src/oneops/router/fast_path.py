@@ -78,36 +78,45 @@ def _coerce(value: Any, *, field: FastPathInputField) -> Any:
     if declared == "str":
         return str(value)
     if declared == "int":
-        try:
-            return int(value)
-        except (TypeError, ValueError) as exc:
-            raise FastPathError(
-                f"field {field.name!r} expects an int, got {type(value).__name__}",
-                cause=exc) from exc
+        return _coerce_numeric(value, field=field, caster=int, type_name="int")
     if declared == "float":
-        try:
-            return float(value)
-        except (TypeError, ValueError) as exc:
-            raise FastPathError(
-                f"field {field.name!r} expects a float, got {type(value).__name__}",
-                cause=exc) from exc
+        return _coerce_numeric(value, field=field, caster=float, type_name="float")
     if declared == "bool":
-        if isinstance(value, bool):
-            return value
-        # Accept truthy/falsy textual forms commonly arriving from URL params.
-        if isinstance(value, str):
-            v = value.strip().lower()
-            if v in {"true", "1", "yes"}:
-                return True
-            if v in {"false", "0", "no"}:
-                return False
-        raise FastPathError(
-            f"field {field.name!r} expects a bool, got {value!r}")
+        return _coerce_bool(value, field=field)
     # An unknown declared type is a registry bug (caught at integrity check
     # in production); fail loud rather than pass-through a free-form value.
     raise FastPathError(
         f"field {field.name!r} declares unsupported type {declared!r}; "
         f"supported: str|int|bool|float")
+
+
+def _coerce_numeric(
+    value: Any, *, field: FastPathInputField, caster: Any, type_name: str,
+) -> Any:
+    """Coerce to int/float via `caster`, raising a typed FastPathError that
+    names the field and the offending value type."""
+    try:
+        return caster(value)
+    except (TypeError, ValueError) as exc:
+        raise FastPathError(
+            f"field {field.name!r} expects a{'n' if type_name == 'int' else ''} "
+            f"{type_name}, got {type(value).__name__}",
+            cause=exc) from exc
+
+
+def _coerce_bool(value: Any, *, field: FastPathInputField) -> bool:
+    """Coerce to bool, accepting truthy/falsy textual forms commonly arriving
+    from URL params (true/1/yes, false/0/no)."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in {"true", "1", "yes"}:
+            return True
+        if v in {"false", "0", "no"}:
+            return False
+    raise FastPathError(
+        f"field {field.name!r} expects a bool, got {value!r}")
 
 
 # ── Field derivation (registry-data-driven) ─────────────────────────────

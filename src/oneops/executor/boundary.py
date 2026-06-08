@@ -335,8 +335,6 @@ class LlmBoundaryResponder:
     async def respond(
         self, *, outcome: str, reason: str, request: dict[str, Any]
     ) -> str:
-        import json
-
         from oneops.errors import LLMGatewayError
         from oneops.llm import LlmMessage, LlmRequest
         from oneops.llm.models import ResponseFormat
@@ -385,29 +383,7 @@ class LlmBoundaryResponder:
                 response_format=ResponseFormat.JSON,
                 request_id=request.get("request_id", "")))
             content = (response.content or "").strip()
-            # Strict-JSON parse first; fall back to treating the whole
-            # content as a plain reply on parse failure.
-            try:
-                payload = json.loads(content)
-                category = str(payload.get("category") or "").strip().lower()
-                reply = str(payload.get("reply") or "").strip()
-                # Three-axis decomposition override. When the LLM provides
-                # the `axes` block, recompute category deterministically.
-                # If the derived category differs from the LLM's stated
-                # one, the LLM's accompanying `reply` was written for the
-                # WRONG category — swap it for a safe default for the
-                # derived category, so we don't tell the user "out of
-                # scope" while routing them to a KB lookup.
-                # When `axes` is absent or malformed (older prompts /
-                # partial output) we keep the LLM's stated category and
-                # reply — preserving the pre-2026-05-30 contract.
-                derived = _combine_axes(payload.get("axes") or {})
-                if derived in _VALID_CATEGORIES and derived != category:
-                    category = derived
-                    reply = _DEFAULT_REPLIES.get(derived, reply)
-            except json.JSONDecodeError:
-                category = ""
-                reply = content
+            category, reply = _parse_boundary_payload(content)
             # ── Data-driven domain backstop (2026-06-02 RCA) ─────────────
             # The LLM scope verdict mis-fires on borderline IT how-to
             # phrasings ("configure a VPN client?" → out_of_scope while
@@ -440,6 +416,31 @@ class LlmBoundaryResponder:
         # gets a safe deterministic reply.
         return await self._fallback.respond(
             outcome=outcome, reason=reason, request=request)
+
+
+def _parse_boundary_payload(content: str) -> tuple[str, str]:
+    """Parse the boundary LLM's strict-JSON reply into `(category, reply)`.
+
+    On a parse failure the whole content is treated as a plain reply (category
+    ""). When the LLM supplies the three-axis `axes` block, the category is
+    recomputed deterministically; if the derived category differs from the
+    LLM's stated one, its `reply` was written for the WRONG category, so it is
+    swapped for the derived category's safe default (so we don't tell the user
+    "out of scope" while routing them to a KB lookup). When `axes` is absent or
+    malformed (older prompts / partial output) the LLM's stated category +
+    reply are kept — preserving the pre-2026-05-30 contract."""
+    import json
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return "", content
+    category = str(payload.get("category") or "").strip().lower()
+    reply = str(payload.get("reply") or "").strip()
+    derived = _combine_axes(payload.get("axes") or {})
+    if derived in _VALID_CATEGORIES and derived != category:
+        category = derived
+        reply = _DEFAULT_REPLIES.get(derived, reply)
+    return category, reply
 
 
 __all__ = [

@@ -104,6 +104,21 @@ def _cache_key(message: str, today: str) -> str:
     return f"router:time_filter:{h}"
 
 
+def _detect_year_inferred(payload: Mapping, today: date) -> bool:
+    """True when a start/end date is more than 7 days in the future. The
+    TimeFilter validator rolls such dates back a year; callers use this to emit
+    the `time_filter.year_inferred_past` span event."""
+    for key in ("start_date", "end_date"):
+        v = payload.get(key)
+        if isinstance(v, str):
+            try:
+                if (date.fromisoformat(v) - today).days > 7:
+                    return True
+            except ValueError:
+                continue
+    return False
+
+
 def _parse_response(
     raw: str,
 ) -> tuple[TimeFilter | None, str | None, bool]:
@@ -135,18 +150,7 @@ def _parse_response(
 
     # Detect future anchors BEFORE validation so the year-inference event is
     # emitted even though the schema silently corrects it.
-    today = date.today()
-    year_inferred = False
-    for key in ("start_date", "end_date"):
-        v = payload.get(key)
-        if isinstance(v, str):
-            try:
-                parsed = date.fromisoformat(v)
-                if (parsed - today).days > 7:
-                    year_inferred = True
-                    break
-            except ValueError:
-                continue
+    year_inferred = _detect_year_inferred(payload, date.today())
 
     try:
         return TimeFilter(**payload), unresolved, year_inferred
