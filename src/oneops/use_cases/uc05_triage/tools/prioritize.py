@@ -289,6 +289,49 @@ async def _incident_path(
 
 # ── Request path (deterministic maps) ────────────────────────────────────────
 
+def _derive_impact(
+    suggested_category: str | None, vip_flag: bool,
+    block: dict[str, Any],
+) -> tuple[Impact, str]:
+    """Impact by catalog category, with VIP override + safe default. Returns
+    (impact, basis)."""
+    impact_map = (block.get("by_catalog_category") or {}) if block else {}
+    impact_default = (
+        block.get("default_when_unmatched") or _SAFE_DEFAULT_IMPACT
+    ) if block else _SAFE_DEFAULT_IMPACT
+    vip_override = (
+        block.get("vip_user_override") or _ON_BUSINESS
+    ) if block else _ON_BUSINESS
+
+    cat_key = (suggested_category or "").lower().strip()
+    raw_impact = vip_override if vip_flag else impact_map.get(cat_key, impact_default)
+    impact: Impact = raw_impact if raw_impact in _VALID_IMPACTS else _SAFE_DEFAULT_IMPACT  # type: ignore[assignment]
+    impact_basis = (
+        "vip_override" if vip_flag
+        else f"catalog_category[{cat_key}]" if cat_key in impact_map
+        else "default_when_unmatched"
+    )
+    return impact, impact_basis
+
+
+def _derive_urgency(
+    sla_state: str | None, block: dict[str, Any],
+) -> tuple[Urgency, str]:
+    """Urgency by SLA state, with safe default. Returns (urgency, basis)."""
+    urgency_map = (block.get("by_sla_state") or {}) if block else {}
+    urgency_default = (
+        block.get("default_when_no_sla") or _SAFE_DEFAULT_URGENCY
+    ) if block else _SAFE_DEFAULT_URGENCY
+    sla_key = (sla_state or "").strip()
+    raw_urgency = urgency_map.get(sla_key, urgency_default)
+    urgency: Urgency = raw_urgency if raw_urgency in _VALID_URGENCIES else _SAFE_DEFAULT_URGENCY  # type: ignore[assignment]
+    urgency_basis = (
+        f"sla_state[{sla_key}]" if sla_key in urgency_map
+        else "default_when_no_sla"
+    )
+    return urgency, urgency_basis
+
+
 def _request_path(
     *,
     suggested_category: str | None,
@@ -297,54 +340,9 @@ def _request_path(
     derive_impact_block: dict[str, Any],
     derive_urgency_block: dict[str, Any],
 ) -> tuple[Impact, Urgency, dict[str, str]]:
-    # Impact map by catalog category, with VIP override + sensible default
-    impact_map = (
-        derive_impact_block.get("by_catalog_category") or {}
-        if derive_impact_block
-        else {}
-    )
-    impact_default = (
-        derive_impact_block.get("default_when_unmatched") or _SAFE_DEFAULT_IMPACT
-        if derive_impact_block
-        else _SAFE_DEFAULT_IMPACT
-    )
-    vip_override = (
-        derive_impact_block.get("vip_user_override") or _ON_BUSINESS
-        if derive_impact_block
-        else _ON_BUSINESS
-    )
-
-    cat_key = (suggested_category or "").lower().strip()
-    raw_impact = impact_map.get(cat_key, impact_default)
-    if vip_flag:
-        raw_impact = vip_override
-    impact: Impact = raw_impact if raw_impact in _VALID_IMPACTS else _SAFE_DEFAULT_IMPACT  # type: ignore[assignment]
-
-    impact_basis = (
-        "vip_override" if vip_flag
-        else f"catalog_category[{cat_key}]" if cat_key in impact_map
-        else "default_when_unmatched"
-    )
-
-    # Urgency map by SLA state, with default
-    urgency_map = (
-        derive_urgency_block.get("by_sla_state") or {}
-        if derive_urgency_block
-        else {}
-    )
-    urgency_default = (
-        derive_urgency_block.get("default_when_no_sla") or _SAFE_DEFAULT_URGENCY
-        if derive_urgency_block
-        else _SAFE_DEFAULT_URGENCY
-    )
-    sla_key = (sla_state or "").strip()
-    raw_urgency = urgency_map.get(sla_key, urgency_default)
-    urgency: Urgency = raw_urgency if raw_urgency in _VALID_URGENCIES else _SAFE_DEFAULT_URGENCY  # type: ignore[assignment]
-    urgency_basis = (
-        f"sla_state[{sla_key}]" if sla_key in urgency_map
-        else "default_when_no_sla"
-    )
-
+    impact, impact_basis = _derive_impact(
+        suggested_category, vip_flag, derive_impact_block)
+    urgency, urgency_basis = _derive_urgency(sla_state, derive_urgency_block)
     return impact, urgency, {"impact": impact_basis, "urgency": urgency_basis}
 
 

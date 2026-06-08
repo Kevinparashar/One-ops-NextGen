@@ -214,6 +214,26 @@ async def _check_duplicate_candidates_impl(
     return result
 
 
+def _count_tokens(
+    probe_title: str, probe_description: str,
+    neighbour_titles: list[str], neighbour_descriptions: list[str],
+) -> Counter[str]:
+    """Weighted token frequency over probe + neighbours (probe title boosted).
+    Feeds both the LLM candidate-pool hint and the algorithmic fallback."""
+    counts: Counter[str] = Counter()
+    for tok in _tokenise(probe_title):
+        counts[tok] += PROBE_TITLE_BOOST
+    for tok in _tokenise(probe_description):
+        counts[tok] += 1
+    for title in neighbour_titles:
+        for tok in _tokenise(title):
+            counts[tok] += 1
+    for desc in neighbour_descriptions:
+        for tok in _tokenise(desc):
+            counts[tok] += 1
+    return counts
+
+
 async def _extract_tags(
     *,
     probe_title: str,
@@ -257,17 +277,8 @@ async def _extract_tags(
 
     # Algorithmic preprocessing — produces clean candidate words for the LLM
     # AND the fallback result if LLM unavailable.
-    counts: Counter[str] = Counter()
-    for tok in _tokenise(probe_title):
-        counts[tok] += PROBE_TITLE_BOOST
-    for tok in _tokenise(probe_description):
-        counts[tok] += 1
-    for title in neighbour_titles:
-        for tok in _tokenise(title):
-            counts[tok] += 1
-    for desc in neighbour_descriptions:
-        for tok in _tokenise(desc):
-            counts[tok] += 1
+    counts = _count_tokens(
+        probe_title, probe_description, neighbour_titles, neighbour_descriptions)
     filtered = [
         (tok, n) for tok, n in counts.items()
         if tok not in _STOPWORDS

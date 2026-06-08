@@ -425,32 +425,34 @@ class LlmAnswerComposer:
                     request_id=request_id)
 
 
+def _format_article(i: int, a: dict[str, Any]) -> str:
+    """Render one retrieved article as a faithful prompt block. Content is
+    bounded at 1200 chars so the total prompt stays under the 600-token budget
+    even with 5 results."""
+    kb_id = a.get("kb_id", "") or "(unknown)"
+    title = (a.get("title", "") or "").strip()
+    summary = (a.get("summary", "") or "").strip()
+    content = (a.get("content", "") or "").strip()
+    score = a.get("relevance_score")
+    if content and len(content) > 1200:
+        content = content[:1200] + "…"
+    head = f"Article {i} — id={kb_id}"
+    if score is not None:
+        head += f"  (relevance {score})"
+    if title:
+        head += f"\nTitle: {title}"
+    if summary:
+        head += f"\nSummary: {summary}"
+    if content:
+        head += f"\nContent:\n{content}"
+    return head
+
+
 def _format_articles_for_prompt(articles: list[dict[str, Any]]) -> str:
     """Render the retrieved articles as a stable, faithful prompt block."""
     if not articles:
         return "(none — no matching article was returned by the search)"
-    lines: list[str] = []
-    for i, a in enumerate(articles, 1):
-        kb_id = a.get("kb_id", "") or "(unknown)"
-        title = (a.get("title", "") or "").strip()
-        summary = (a.get("summary", "") or "").strip()
-        content = (a.get("content", "") or "").strip()
-        score = a.get("relevance_score")
-        # Bound content per-article so the total prompt stays under the
-        # 600-token budget even with 5 results.
-        if content and len(content) > 1200:
-            content = content[:1200] + "…"
-        head = f"Article {i} — id={kb_id}"
-        if score is not None:
-            head += f"  (relevance {score})"
-        if title:
-            head += f"\nTitle: {title}"
-        if summary:
-            head += f"\nSummary: {summary}"
-        if content:
-            head += f"\nContent:\n{content}"
-        lines.append(head)
-    return "\n\n".join(lines)
+    return "\n\n".join(_format_article(i, a) for i, a in enumerate(articles, 1))
 
 
 def _has_uncited_kb_id(text: str, articles: list[dict[str, Any]]) -> bool:
