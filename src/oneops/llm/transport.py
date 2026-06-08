@@ -179,10 +179,10 @@ class LiteLLMTransport:
         # text; the caller validates either way.
         if request.response_format.value == "json":
             body["response_format"] = {"type": "json_object"}
-        from oneops.errors import LLMTimeoutError, LLMUpstreamError
+        from oneops.errors import LLMUpstreamError
         try:
             payload = await self._post_chat(client, body)
-        except (LLMTimeoutError, LLMUpstreamError):
+        except LLMUpstreamError:  # LLMTimeoutError is a subclass — caught here too
             raise
         except Exception as exc:                       # noqa: BLE001 — boundary
             raise LLMUpstreamError(
