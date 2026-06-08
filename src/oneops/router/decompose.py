@@ -106,6 +106,14 @@ whether the two parts are independent asks or two facets of the same ask. \
 Default to ONE sub-query; split only when the message contains two truly \
 distinct asks.
 
+Same action, several DISTINCT entities = N independent asks → N sub-queries: \
+when one verb is applied to each of several entities and each entity yields \
+its OWN answer ("summarize A and B", "status of A and B", "details of A and B"), \
+split into one sub-query per entity. The exception is a single SPANNING job \
+whose one answer inherently needs all the entities together — compare / diff / \
+correlate / rank / "what's common between" — which stays ONE sub-query. \
+Multiple FACETS of a single entity ("priority and status of A") also stay ONE.
+
 ## Reasoning steps (think silently, then emit)
 
 1. **List entity ids mentioned** (INC..., REQ..., PBM..., CHG..., AST..., \
@@ -200,9 +208,16 @@ OUTPUT:
    {"id":"sq1","text":"summarize CHG0004001","depends_on":[]},
    {"id":"sq2","text":"search KB for outlook sync issues","depends_on":[]}]}
 
+INPUT: "summarize INC0001001 and INC0001002"
+OUTPUT:
+{"reasoning":"same action ('summarize') applied to 2 distinct entities — each yields its own independent answer → 2 subs (contrast 'compare' below)",
+ "subqueries":[
+   {"id":"sq1","text":"summarize INC0001001","depends_on":[]},
+   {"id":"sq2","text":"summarize INC0001002","depends_on":[]}]}
+
 INPUT: "compare INC0001001 and INC0001002"
 OUTPUT:
-{"reasoning":"single analytical job over 2 entities → 1 sub",
+{"reasoning":"single SPANNING job — the one comparison answer needs both entities together → 1 sub (contrast 'summarize A and B' above)",
  "subqueries":[{"id":"sq1","text":"compare INC0001001 and INC0001002","depends_on":[]}]}
 
 ## Inlining rule (when to add the entity id to a sub-query, when NOT to)
