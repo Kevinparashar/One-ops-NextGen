@@ -167,6 +167,31 @@ class HandlerStepExecutor:
             return (explicit, None)        # surfaced loud by the caller
         return self._pick_tool(agent, step_params)
 
+    def _candidate_tool_ids(self, agent: Any) -> tuple[list[str], str]:
+        """The agent's candidate tool ids (its tool_refs, else its fast-path
+        primary tool) plus the declared primary_id."""
+        tool_refs = list(getattr(agent, "tool_refs", []) or [])
+        primary_id = (agent.fast_path.primary_tool_id
+                      if agent.fast_path else "")
+        candidate_ids = [t.tool_id for t in tool_refs] or (
+            [primary_id] if primary_id else [])
+        return candidate_ids, primary_id
+
+    def _primary_tool_if_fits(
+        self, primary_id: str, candidate_ids: list[str], present: set[str],
+    ) -> tuple[str, Any] | None:
+        """The declared primary tool, IF it's a candidate and its required
+        params are all present in `present`; else None."""
+        if not primary_id or primary_id not in candidate_ids:
+            return None
+        primary_tool = self._registry.tools.get_optional(primary_id)
+        if primary_tool is None:
+            return None
+        need = _required_params(primary_tool)
+        if not need or need.issubset(present):
+            return (primary_id, primary_tool)
+        return None
+
     def _pick_tool(
         self, agent: Any, step_params: dict[str, Any],
     ) -> tuple[str, Any]:
@@ -187,11 +212,7 @@ class HandlerStepExecutor:
         Returns `(tool_id, ToolRecord)`. Either is empty/None when no
         invokable tool can be resolved — the caller surfaces that loud.
         """
-        tool_refs = list(getattr(agent, "tool_refs", []) or [])
-        primary_id = (agent.fast_path.primary_tool_id
-                      if agent.fast_path else "")
-        candidate_ids: list[str] = [t.tool_id for t in tool_refs] or (
-            [primary_id] if primary_id else [])
+        candidate_ids, primary_id = self._candidate_tool_ids(agent)
         if not candidate_ids:
             return ("", None)
         if len(candidate_ids) == 1:
@@ -201,15 +222,12 @@ class HandlerStepExecutor:
         present = {k for k, v in step_params.items()
                    if v not in (None, "", [], {})}
 
-        # First pass — does the agent's declared primary tool fit? If so,
-        # it wins (an agent author has explicitly named it as the chat
-        # default for this UC).
-        primary_tool = (self._registry.tools.get_optional(primary_id)
-                        if primary_id else None)
-        if primary_tool is not None and primary_id in candidate_ids:
-            need = _required_params(primary_tool)
-            if not need or need.issubset(present):
-                return (primary_id, primary_tool)
+        # First pass — the agent's declared primary tool wins if it's a
+        # candidate and its required params are all present (the author named
+        # it as the chat default for this UC).
+        hit = self._primary_tool_if_fits(primary_id, candidate_ids, present)
+        if hit is not None:
+            return hit
 
         # Second pass — highest specificity among tools whose required params
         # are all present (tie-break entity-shaped, then registry order).

@@ -34,14 +34,24 @@ def build_agent_chunks(body: Mapping[str, Any]) -> list[AgentChunk]:
         if desc:
             chunks.append(("description", desc_i, desc))
             desc_i += 1
-        for phrase in skill.get("use_when") or []:
-            text = (phrase or "").strip()
-            if text:
-                chunks.append(("use_when", uw_i, text))
-                uw_i += 1
-        for phrase in skill.get("examples") or []:
-            text = (phrase or "").strip()
-            if text:
-                chunks.append(("example", ex_i, text))
-                ex_i += 1
+        uw_chunks, uw_i = _phrase_chunks(skill, "use_when", "use_when", uw_i)
+        chunks.extend(uw_chunks)
+        ex_chunks, ex_i = _phrase_chunks(skill, "examples", "example", ex_i)
+        chunks.extend(ex_chunks)
     return chunks
+
+
+def _phrase_chunks(
+    skill: Mapping[str, Any], key: str, chunk_type: str, start_idx: int,
+) -> tuple[list[AgentChunk], int]:
+    """Non-empty, stripped phrases under `skill[key]` as (chunk_type, idx, text)
+    tuples, continuing the global per-type index from `start_idx`. Returns
+    (chunks, next_idx)."""
+    out: list[AgentChunk] = []
+    idx = start_idx
+    for phrase in skill.get(key) or []:
+        text = (phrase or "").strip()
+        if text:
+            out.append((chunk_type, idx, text))
+            idx += 1
+    return out, idx
