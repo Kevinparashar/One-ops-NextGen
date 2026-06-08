@@ -213,8 +213,10 @@ _GENERIC_SLOTS: dict[str, str] = {
 # ── value formatting ────────────────────────────────────────────────────
 
 
+# Groups are non-capturing — `.match()` is used only as a bool (the captures
+# were never read), which also keeps the regex complexity down (sonar S5843).
 _ISO_DATE_PATTERN = re.compile(
-    r"^\d{4}-\d{2}-\d{2}([Tt ]\d{2}:\d{2}(:\d{2})?(\.\d+)?([Zz]|[+-]\d{2}:?\d{2})?)?$"
+    r"^\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:[Zz]|[+-]\d{2}:?\d{2})?)?$"
 )
 
 
