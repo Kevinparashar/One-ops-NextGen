@@ -199,6 +199,190 @@ def _kb_search_text(query: str) -> str:
     return cleaned or query
 
 
+def _search_kb_config() -> tuple[int, float, int]:
+    """Env-tunable retrieval knobs → (per_side, min_answer_relevance, max_results).
+    Retrieve broad per branch, then the relevance gate + top_k narrow."""
+    try:
+        per_side = max(1, int(os.getenv("UC03_RETRIEVE_PER_SIDE", "25")))
+    except ValueError:
+        per_side = 25
+    try:
+        min_score = float(os.getenv("UC03_MIN_ANSWER_RELEVANCE_SCORE", "0.50"))
+    except ValueError:
+        min_score = 0.50
+    try:
+        top_k = int(os.getenv("UC03_MAX_RESULTS", "3"))
+    except ValueError:
+        top_k = 3
+    return per_side, min_score, top_k
+
+
+async def _compose_kb_answer(
+    query: str, hits: list[dict[str, Any]], context: dict[str, Any], *,
+    tenant_id: str, force_deterministic: bool,
+) -> dict[str, Any]:
+    """Grounded-answer compose for the gate-passing articles. Degraded mode
+    forces the deterministic list composer (no synthesis on un-verified
+    relevance). Code-enforced contract: articles that passed the gate MUST be
+    surfaced even if the LLM composer emitted a false no-match."""
+    composer = (DeterministicComposer() if force_deterministic
+                else get_kb_answer_composer() or DeterministicComposer())
+    try:
+        grounded = await composer.compose(
+            query=query, articles=[dict(h) for h in hits],
+            tenant_id=tenant_id,
+            user_id=str(context.get("user_id") or ""),
+            request_id=str(context.get("request_id") or ""))
+    except Exception as exc:                          # noqa: BLE001 — boundary
+        _log.warning("uc03.search_kb.compose_failed", error=str(exc)[:200])
+        grounded = ""
+
+    if not hits:
+        # Defensive — should be unreachable after the gate. CASE B template.
+        return _search(
+            "no_match",
+            grounded or ("No published knowledge-base article matched "
+                         "that query."))
+    # The LLM composer writes phrasing only; if it emitted a false no-match
+    # despite present articles, render them deterministically.
+    if _composer_wrongly_said_no_match(grounded):
+        _log.warning("uc03.search_kb.composer_no_match_override",
+                     articles=len(hits))
+        grounded = await _render_present_articles(query, hits, context)
+
+    articles = tuple(_preview(h) for h in hits)
+    return _search(
+        "found",
+        grounded or f"Found {len(articles)} knowledge-base article(s).",
+        articles)
+
+
+def _score_fts_only(
+    hits: list[dict[str, Any]], query_vec: list[float],
+    stored_embeddings: dict[str, list[float]],
+) -> None:
+    """For FTS-only candidates (no cosine_full from the vector branch), compute
+    cosine vs the query vector from their stored embedding (0.0 when missing —
+    the gate then drops them). Mutates each hit's cosine_full / _score_source."""
+    import math
+    qn = math.sqrt(sum(x * x for x in query_vec)) or 1.0
+    for h in hits:
+        if "cosine_full" in h:
+            continue                                    # vector-branch already scored
+        emb = stored_embeddings.get(h.get("kb_id", ""))
+        if not emb or len(emb) != len(query_vec):
+            h["cosine_full"] = 0.0
+            h["_score_source"] = "fts_only_no_embedding"
+            continue
+        en = math.sqrt(sum(x * x for x in emb)) or 1.0
+        dot = sum(qx * ex for qx, ex in zip(query_vec, emb, strict=False))
+        h["cosine_full"] = float(max(-1.0, min(1.0, dot / (qn * en))))
+        h["_score_source"] = "fetched_for_fts_only"
+
+
+async def _relevance_gate(
+    hits: list[dict[str, Any]], query_vec: list[float], store: Any, *,
+    tenant_id: str, min_score: float, top_k: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Full-content cosine relevance gate → (hits, force_deterministic_composer).
+
+    Degraded mode (no query embedding) → pass the RRF top-K straight through
+    with force_deterministic=True (honest list-style answer, never a silent
+    no-match on an LLM outage). Otherwise score every candidate against the
+    query vector (re-using stored embeddings for FTS-only candidates via one
+    batched fetch — same embedding distribution ⇒ one threshold is valid),
+    keep those >= min_score (top-K), and stamp a 1-100 relevance_score. An
+    EMPTY return list = no passing candidate (caller surfaces no_match)."""
+    if not query_vec and hits:
+        _log.warning("uc03.search_kb.gate_bypass_degraded",
+                     tenant_id=tenant_id, reason="no_query_embedding",
+                     retrieved=len(hits))
+        return hits[:top_k], True
+
+    fts_only_ids = [h.get("kb_id", "") for h in hits
+                    if "cosine_full" not in h and h.get("kb_id")]
+    stored_embeddings: dict[str, list[float]] = {}
+    if fts_only_ids and hasattr(store, "fetch_embeddings_by_ids"):
+        try:
+            stored_embeddings = await store.fetch_embeddings_by_ids(
+                tenant_id=tenant_id, kb_ids=fts_only_ids)
+        except Exception as exc:
+            _log.warning("uc03.search_kb.fetch_embeddings_failed",
+                         error=str(exc)[:160])
+            stored_embeddings = {}
+    _score_fts_only(hits, query_vec, stored_embeddings)
+
+    scored = sorted(hits, key=lambda d: d.get("cosine_full", 0.0), reverse=True)
+    passing = [h for h in scored if h.get("cosine_full", 0.0) >= min_score]
+    passing = passing[:max(1, top_k)]
+    per_candidate = [
+        {
+            "kb_id": h.get("kb_id"),
+            "score": round(float(h.get("cosine_full", 0.0)), 4),
+            "source": h.get("_score_source", "unknown"),
+            "passed": float(h.get("cosine_full", 0.0)) >= min_score,
+        }
+        for h in scored
+    ]
+    _log.info("uc03.search_kb.relevance_gate",
+              tenant_id=tenant_id, threshold=min_score, top_k=top_k,
+              retrieved=len(hits), passed=len(passing), candidates=per_candidate)
+    if not passing:
+        return [], False
+    out: list[dict[str, Any]] = []
+    for h in passing:
+        row = dict(h)
+        row["relevance_score"] = max(1, min(100, int(h["cosine_full"] * 100)))
+        out.append(row)
+    return out, False
+
+
+async def _embed_query(
+    embed_fn: Any, query: str, *, tenant_id: str, user_id: str,
+) -> list[float]:
+    """Embed the query once (serves the semantic branch AND the relevance
+    gate). Empty list on no embedder / failure — both downstream uses then
+    degrade gracefully (semantic → [], gate → bypass)."""
+    if embed_fn is None:
+        return []
+    try:
+        return await embed_fn(query, tenant_id=tenant_id, user_id=user_id)
+    except Exception as exc:                  # noqa: BLE001
+        _log.warning("uc03.search_kb.query_embed_failed", error=str(exc)[:160])
+        return []
+
+
+def _rrf_fuse(
+    fts_hits: list[dict[str, Any]], sem_hits: list[dict[str, Any]], *,
+    min_fused_score: float, top_k: int,
+) -> list[dict[str, Any]]:
+    """Reciprocal-Rank-Fusion of the lexical + semantic lists (rank-only, k=60
+    — sidesteps the FTS-rank vs cosine-distance scale mismatch). Preserves any
+    cosine_full the semantic branch attached. Returns the top-K fused
+    candidates above `min_fused_score`, each carrying _fused_score/_sources."""
+    rrf_k = 60
+    fused: dict[str, dict[str, Any]] = {}
+    for src, lst in (("fts", fts_hits), ("sem", sem_hits)):
+        for rank, h in enumerate(lst, start=1):
+            kb_id = h.get("kb_id") or ""
+            if not kb_id:
+                continue
+            slot = fused.setdefault(kb_id, dict(h))
+            slot.setdefault("_fused_score", 0.0)
+            slot["_fused_score"] += 1.0 / (rrf_k + rank)
+            slot.setdefault("_sources", []).append(src)
+            # Copy a both-branches candidate's semantic score across.
+            if src == "sem" and "cosine_full" in h and "cosine_full" not in slot:
+                slot["cosine_full"] = h["cosine_full"]
+                slot["_score_source"] = "vector_branch"
+            if src == "fts" and "relevance_score" in h:
+                slot.setdefault("relevance_score", h["relevance_score"])
+    ranked = sorted(fused.values(),
+                    key=lambda d: d.get("_fused_score", 0.0), reverse=True)
+    ranked = [d for d in ranked if d.get("_fused_score", 0.0) >= min_fused_score]
+    return ranked[:top_k]
+
+
 async def search_kb(
     arguments: dict[str, Any], context: dict[str, Any]
 ) -> dict[str, Any]:
@@ -224,16 +408,12 @@ async def search_kb(
     # composer's prompt; truncation never happens — we cap per-article
     # content length, never the result-set count to a hard 0.
     import asyncio as _asyncio
-    import math as _math
     embed_fn = get_kb_embed_fn()
     # Candidate pool per branch (lexical / semantic) before RRF + the relevance
     # gate. Research consensus: retrieve BROAD, then narrow — a thin pool drops
     # the right article before the gate ever sees it. Env-tunable (not hardcoded);
     # the gate + top_k still narrow the final answer set.
-    try:
-        PER_SIDE = max(1, int(os.getenv("UC03_RETRIEVE_PER_SIDE", "25")))
-    except ValueError:
-        PER_SIDE = 25
+    PER_SIDE, min_score, top_k = _search_kb_config()
     MIN_FUSED_SCORE = 0.012
     FUSE_TOP_K = 5
 
@@ -242,16 +422,9 @@ async def search_kb(
     # candidates whose stored embedding will be cosined against this
     # vector). If embedding fails or is unwired, both downstream uses
     # degrade gracefully — semantic returns [], gate enters bypass.
-    query_vec: list[float] = []
-    if embed_fn is not None:
-        try:
-            query_vec = await embed_fn(
-                query, tenant_id=tenant_id,
-                user_id=str(context.get("user_id") or ""))
-        except Exception as exc:
-            _log.warning("uc03.search_kb.query_embed_failed",
-                         error=str(exc)[:160])
-            query_vec = []
+    query_vec = await _embed_query(
+        embed_fn, query, tenant_id=tenant_id,
+        user_id=str(context.get("user_id") or ""))
 
     async def _semantic() -> list[dict[str, Any]]:
         if not query_vec:
@@ -270,34 +443,8 @@ async def search_kb(
     # the semantic branch — fusion is rank-only and never overwrites
     # data. FTS-only candidates have no `cosine_full` until step 4's
     # batch-fetch fills it from the stored vector.
-    RRF_K = 60
-    fused: dict[str, dict[str, Any]] = {}
-    for src, lst in (("fts", fts_hits), ("sem", sem_hits)):
-        for rank, h in enumerate(lst, start=1):
-            kb_id = h.get("kb_id") or ""
-            if not kb_id:
-                continue
-            slot = fused.setdefault(kb_id, dict(h))
-            slot.setdefault("_fused_score", 0.0)
-            slot["_fused_score"] += 1.0 / (RRF_K + rank)
-            slot.setdefault("_sources", []).append(src)
-            # If THIS row carries cosine_full (semantic branch row) and
-            # the slot doesn't yet, copy it across so a candidate that
-            # surfaced in both branches keeps its semantic score.
-            if src == "sem" and "cosine_full" in h and "cosine_full" not in slot:
-                slot["cosine_full"] = h["cosine_full"]
-                slot["_score_source"] = "vector_branch"
-            if src == "fts" and "relevance_score" in h:
-                # Don't clobber semantic's bucketed score if both
-                # branches return the row.
-                slot.setdefault("relevance_score", h["relevance_score"])
-
-    ranked = sorted(fused.values(),
-                    key=lambda d: d.get("_fused_score", 0.0),
-                    reverse=True)
-    ranked = [d for d in ranked
-              if d.get("_fused_score", 0.0) >= MIN_FUSED_SCORE]
-    hits = ranked[:FUSE_TOP_K]
+    hits = _rrf_fuse(fts_hits, sem_hits,
+                     min_fused_score=MIN_FUSED_SCORE, top_k=FUSE_TOP_K)
     if hits:
         _log.info("uc03.search_kb.hybrid_fused",
                   tenant_id=tenant_id, fts_n=len(fts_hits),
@@ -323,144 +470,20 @@ async def search_kb(
     # honest list-style fallback instead of a silent CASE B on every
     # query. The fix for "LiteLLM outage silently turns every KB query
     # into 'no match found'" found during code review 2026-05-27.
-    import os as _os
-    try:
-        min_score = float(
-            _os.getenv("UC03_MIN_ANSWER_RELEVANCE_SCORE", "0.50"))
-    except ValueError:
-        min_score = 0.50
-    try:
-        top_k = int(_os.getenv("UC03_MAX_RESULTS", "3"))
-    except ValueError:
-        top_k = 3
-
-    degraded_mode = (not query_vec) and bool(hits)
-    if degraded_mode:
-        _log.warning(
-            "uc03.search_kb.gate_bypass_degraded",
-            tenant_id=tenant_id, reason="no_query_embedding",
-            retrieved=len(hits))
-        # Pass top-K straight through; force the deterministic
-        # composer downstream so the user gets a list-style answer
-        # (no synthesis, no fabrication) rather than a CASE B.
-        hits = hits[:top_k]
-        force_deterministic_composer = True
-    else:
-        force_deterministic_composer = False
-        # Resolve `cosine_full` for FTS-only candidates by fetching
-        # their stored embeddings in one batched SQL call.
-        fts_only_ids = [h.get("kb_id", "")
-                        for h in hits
-                        if "cosine_full" not in h and h.get("kb_id")]
-        stored_embeddings: dict[str, list[float]] = {}
-        if fts_only_ids and hasattr(store, "fetch_embeddings_by_ids"):
-            try:
-                stored_embeddings = await store.fetch_embeddings_by_ids(
-                    tenant_id=tenant_id, kb_ids=fts_only_ids)
-            except Exception as exc:
-                _log.warning(
-                    "uc03.search_kb.fetch_embeddings_failed",
-                    error=str(exc)[:160])
-                stored_embeddings = {}
-        qn = _math.sqrt(sum(x * x for x in query_vec)) or 1.0
-        for h in hits:
-            if "cosine_full" in h:
-                continue                                    # vector-branch already scored
-            emb = stored_embeddings.get(h.get("kb_id", ""))
-            if not emb or len(emb) != len(query_vec):
-                # No stored embedding for this id — record 0.0 so the
-                # gate drops it cleanly. (Should be unreachable in
-                # practice; every published row has an embedding.)
-                h["cosine_full"] = 0.0
-                h["_score_source"] = "fts_only_no_embedding"
-                continue
-            en = _math.sqrt(sum(x * x for x in emb)) or 1.0
-            dot = sum(qx * ex for qx, ex in zip(query_vec, emb, strict=False))
-            cosine = dot / (qn * en)
-            if cosine > 1.0: cosine = 1.0
-            if cosine < -1.0: cosine = -1.0
-            h["cosine_full"] = float(cosine)
-            h["_score_source"] = "fetched_for_fts_only"
-
-        scored = sorted(hits, key=lambda d: d.get("cosine_full", 0.0),
-                        reverse=True)
-        passing = [h for h in scored if h.get("cosine_full", 0.0) >= min_score]
-        passing = passing[:max(1, top_k)]
-        # Per-candidate structured log — feeds threshold calibration.
-        # Every candidate's score, source, pass/fail, and the threshold
-        # are captured so the data is clean for empirical recalibration.
-        per_candidate = [
-            {
-                "kb_id": h.get("kb_id"),
-                "score": round(float(h.get("cosine_full", 0.0)), 4),
-                "source": h.get("_score_source", "unknown"),
-                "passed": float(h.get("cosine_full", 0.0)) >= min_score,
-            }
-            for h in scored
-        ]
-        _log.info(
-            "uc03.search_kb.relevance_gate",
-            tenant_id=tenant_id, threshold=min_score, top_k=top_k,
-            retrieved=len(hits), passed=len(passing),
-            candidates=per_candidate,
-        )
-        if not passing:
-            return _search(
-                "no_match",
-                f"No matching knowledge-base article was found for "
-                f"\"{query}\". Try rephrasing it (use different terms or "
-                f"more specific symptoms), or contact your IT support "
-                f"team for help.")
-        hits = []
-        for h in passing:
-            row = dict(h)
-            row["relevance_score"] = max(1, min(100,
-                                                int(h["cosine_full"] * 100)))
-            hits.append(row)
-
-    # Grounded answer composer. CASE B was already handled by the
-    # gate above. In degraded-mode bypass the LLM composer is
-    # intentionally NOT used — a synthesis built without confidence
-    # scoring would feel authoritative but rest on un-verified
-    # relevance. Use the deterministic list-style composer instead so
-    # the user gets honest article surfacing without invented prose.
-    if force_deterministic_composer:
-        composer = DeterministicComposer()
-    else:
-        composer = get_kb_answer_composer() or DeterministicComposer()
-    try:
-        grounded = await composer.compose(
-            query=query, articles=[dict(h) for h in hits],
-            tenant_id=tenant_id,
-            user_id=str(context.get("user_id") or ""),
-            request_id=str(context.get("request_id") or ""))
-    except Exception as exc:                          # noqa: BLE001 — boundary
-        _log.warning("uc03.search_kb.compose_failed",
-                     error=str(exc)[:200])
-        grounded = ""
-
+    hits, force_deterministic_composer = await _relevance_gate(
+        hits, query_vec, store,
+        tenant_id=tenant_id, min_score=min_score, top_k=top_k)
     if not hits:
-        # Defensive — should be unreachable after the gate above. Keep
-        # the CASE B template for the no-scorer / empty-retrieval path.
         return _search(
             "no_match",
-            grounded or ("No published knowledge-base article matched "
-                         "that query."))
+            f"No matching knowledge-base article was found for "
+            f"\"{query}\". Try rephrasing it (use different terms or "
+            f"more specific symptoms), or contact your IT support "
+            f"team for help.")
 
-    # CODE-ENFORCED CONTRACT (same as search_kb_by_ticket): articles passed the
-    # relevance gate → the user MUST see them. The LLM composer writes phrasing
-    # only; if it emitted empty/no-match despite present articles, render them
-    # deterministically rather than show a false "no match".
-    if _composer_wrongly_said_no_match(grounded):
-        _log.warning("uc03.search_kb.composer_no_match_override",
-                     articles=len(hits))
-        grounded = await _render_present_articles(query, hits, context)
-
-    articles = tuple(_preview(h) for h in hits)
-    return _search(
-        "found",
-        grounded or f"Found {len(articles)} knowledge-base article(s).",
-        articles)
+    return await _compose_kb_answer(
+        query, hits, context, tenant_id=tenant_id,
+        force_deterministic=force_deterministic_composer)
 
 
 async def _check_kb_access(
