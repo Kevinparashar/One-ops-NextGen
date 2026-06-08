@@ -166,6 +166,27 @@ _WHOLE_RECORD_BAIL = re.compile(
 )
 
 
+def _match_synonyms(
+    user_message: str, available_set: dict[str, str],
+) -> tuple[list[str], list[str]]:
+    """Walk the synonym patterns in declaration order. Returns
+    `(matched, asked_aliases)`: `matched` = canonical labels that exist on the
+    schema (first existing candidate per pattern, order-preserving, no dups);
+    `asked_aliases` = the synonym surface-forms the user actually typed."""
+    matched: list[str] = []
+    asked_aliases: list[str] = []
+    for pattern, candidates in _SYNONYMS:
+        m = pattern.search(user_message)
+        if not m:
+            continue
+        asked_aliases.append(m.group(0))
+        for cand in candidates:
+            if cand in available_set and cand not in matched:
+                matched.append(cand)
+                break
+    return matched, asked_aliases
+
+
 def _try_deterministic_extract(
     user_message: str, available_labels: list[str],
 ) -> FieldReadIntent | None:
@@ -189,17 +210,7 @@ def _try_deterministic_extract(
     if _WHOLE_RECORD_BAIL.search(user_message):
         return None
     available_set = {lbl: lbl for lbl in available_labels}
-    matched: list[str] = []
-    asked_aliases: list[str] = []           # synonym hits the user typed
-    for pattern, candidates in _SYNONYMS:
-        m = pattern.search(user_message)
-        if not m:
-            continue
-        asked_aliases.append(m.group(0))
-        for cand in candidates:
-            if cand in available_set and cand not in matched:
-                matched.append(cand)
-                break
+    matched, asked_aliases = _match_synonyms(user_message, available_set)
     if not matched:
         # The user clearly asked for a specific field (synonym hit) but
         # NO candidate label exists on the focus record's schema. Tell
