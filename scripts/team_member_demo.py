@@ -156,22 +156,31 @@ async def main() -> int:
     i = 0
     try:
         for team, members in TEAMS.items():
-            print(f"\n### {team}   members: {', '.join(members)}")
-            for q in DEMO[team]:
-                i += 1
-                verdict, chosen, why = await sel.select(q, members)
-                if verdict == "SELECT":
-                    line = f"  {q!r:<42} → manager SELECTS {'+'.join(chosen)}"
-                    if args.execute:
-                        ex, st, snip = _dispatch(q, i, chosen)
-                        match = "MATCH" if set(chosen) & set(ex) else f"exec={ex}"
-                        line += f"\n        executed → {ex or '[]'} [{match}] status={st}  «{snip}»"
-                    print(line)
-                else:
-                    print(f"  {q!r:<42} → manager {verdict}  ({why[:70]})")
+            i = await _run_team(team, members, sel, i, args.execute)
     finally:
         await pool.close()
     return 0
+
+
+async def _run_team(team: str, members: list[str], sel, start_i: int,
+                    execute: bool) -> int:
+    """Run every demo query for one team, printing each manager verdict.
+    Returns the running case counter after this team."""
+    print(f"\n### {team}   members: {', '.join(members)}")
+    i = start_i
+    for q in DEMO[team]:
+        i += 1
+        verdict, chosen, why = await sel.select(q, members)
+        if verdict != "SELECT":
+            print(f"  {q!r:<42} → manager {verdict}  ({why[:70]})")
+            continue
+        line = f"  {q!r:<42} → manager SELECTS {'+'.join(chosen)}"
+        if execute:
+            ex, st, snip = _dispatch(q, i, chosen)
+            match = "MATCH" if set(chosen) & set(ex) else f"exec={ex}"
+            line += f"\n        executed → {ex or '[]'} [{match}] status={st}  «{snip}»"
+        print(line)
+    return i
 
 
 if __name__ == "__main__":

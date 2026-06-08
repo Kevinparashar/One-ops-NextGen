@@ -142,10 +142,25 @@ def _load_cards() -> dict:
     return cards
 
 
+def _collect_row_evidence(r: dict, agent_id: str, cards: dict,
+                          seen: set, ev: list[dict]) -> None:
+    """Append one evidence entry per correct agent this row names, deduped by
+    `(query, correct_agent)`. Mutates `seen` and `ev` in place."""
+    for c in (r.get("expected") or []):
+        if c == agent_id or c not in cards:
+            continue
+        key = (r["query"], c)
+        if key in seen:
+            continue
+        seen.add(key)
+        ev.append({"query": r["query"], "correct_agent": c,
+                   "correct_description": cards[c]["description"]})
+
+
 def _evidence_for(agent_id: str, dump: dict, cards: dict) -> list[dict]:
     """Queries where THIS agent wrongly outranked the correct one."""
     ev: list[dict] = []
-    seen = set()
+    seen: set = set()
     rows = list(dump.get("hard_negatives") or [])
     rows += list(dump.get("misses") or [])
     for r in rows:
@@ -153,15 +168,7 @@ def _evidence_for(agent_id: str, dump: dict, cards: dict) -> list[dict]:
             or [a for a, _ in (r.get("top5") or [])]
         if agent_id not in outrankers:
             continue
-        for c in (r.get("expected") or []):
-            if c == agent_id or c not in cards:
-                continue
-            key = (r["query"], c)
-            if key in seen:
-                continue
-            seen.add(key)
-            ev.append({"query": r["query"], "correct_agent": c,
-                       "correct_description": cards[c]["description"]})
+        _collect_row_evidence(r, agent_id, cards, seen, ev)
     return ev
 
 
@@ -204,11 +211,7 @@ async def main() -> None:
         "use_when": me["use_when"], "current_not_when": me["not_when"],
         "evidence": evidence, "known_agent_ids": sorted(active_ids)},
         ensure_ascii=False))
-    proposed = [c for c in (gen.get("clauses") or [])
-                if (c.get("text") or "").strip()
-                and c.get("targets") in active_ids
-                and f"(route to {c.get('targets')})" in (c.get("text") or "")
-                and c["text"].strip() not in me["not_when"]]
+    proposed = _filter_proposed(gen, me, active_ids)
     print(f"\nproposed clauses: {len(proposed)}")
     for c in proposed:
         print(f"  + {c['text']}\n      covers: {c.get('covers','')}")
@@ -221,10 +224,7 @@ async def main() -> None:
         "existing_not_when": me["not_when"], "proposed_clauses": proposed,
         "evidence": evidence, "known_agent_ids": sorted(active_ids)},
         ensure_ascii=False))
-    proposed_texts = {c["text"].strip() for c in proposed}
-    accepted = [a for a in (judged.get("accepted") or [])
-                if (a.get("text") or "").strip() in proposed_texts
-                and a.get("targets") in active_ids][:_MAX_NEW]
+    accepted = _filter_accepted(judged, proposed, active_ids)
     verdict = str(judged.get("verdict") or "no_improvement")
     print(f"\n=== LLM-as-judge ({judge_model}) ===  verdict={verdict}  score={judged.get('score')}")
     print(f"  rationale: {judged.get('rationale','')}")
@@ -235,16 +235,43 @@ async def main() -> None:
         print(f"    ❌ {r.get('text','')}  — {r.get('reason','')}")
 
     # 3. APPLY (gated)
+    _apply_accepted(me, accepted, verdict, args.apply)
+
+
+def _filter_proposed(gen: dict, me: dict, active_ids: set) -> list[dict]:
+    """Valid proposed not_when clauses: non-empty text, targeting an active
+    agent, carrying the `(route to X)` marker, and not already present."""
+    return [c for c in (gen.get("clauses") or [])
+            if (c.get("text") or "").strip()
+            and c.get("targets") in active_ids
+            and f"(route to {c.get('targets')})" in (c.get("text") or "")
+            and c["text"].strip() not in me["not_when"]]
+
+
+def _filter_accepted(judged: dict, proposed: list[dict],
+                     active_ids: set) -> list[dict]:
+    """Judge-accepted clauses restricted to the proposed set + active targets,
+    capped at `_MAX_NEW`."""
+    proposed_texts = {c["text"].strip() for c in proposed}
+    return [a for a in (judged.get("accepted") or [])
+            if (a.get("text") or "").strip() in proposed_texts
+            and a.get("targets") in active_ids][:_MAX_NEW]
+
+
+def _apply_accepted(me: dict, accepted: list[dict], verdict: str,
+                    apply_flag: bool) -> None:
+    """Gated write-back: append accepted clauses to the card's not_when iff the
+    judge said 'better' and there is something accepted. Prints the outcome."""
     ok = verdict == "better" and bool(accepted)
-    print(f"\n=== gate ===  {'PASS' if ok else 'HOLD'}  (apply={'on' if args.apply else 'off/dry-run'})")
-    if args.apply and ok:
+    print(f"\n=== gate ===  {'PASS' if ok else 'HOLD'}  (apply={'on' if apply_flag else 'off/dry-run'})")
+    if apply_flag and ok:
         me["skill"]["not_when"] = me["not_when"] + [a["text"].strip() for a in accepted]
         me["path"].write_text(json.dumps(me["card"], indent=2, ensure_ascii=False) + "\n")
         print(f"  ✏  appended {len(accepted)} not_when clause(s) to {me['path'].name} "
               f"(now {len(me['skill']['not_when'])})")
         print("  next: .venv/bin/python database/agent/sync.py  → content_hash flips, "
               "embeddings UNCHANGED (not_when isn't embedded); then routing_eval to verify")
-    elif args.apply and not ok:
+    elif apply_flag and not ok:
         print("  judge did not approve — nothing written.")
     else:
         print("  dry-run — nothing written. Re-run with --apply once you're happy.")
