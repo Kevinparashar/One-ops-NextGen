@@ -219,12 +219,13 @@ def _search_kb_config() -> tuple[int, float, int]:
 
 async def _compose_kb_answer(
     query: str, hits: list[dict[str, Any]], context: dict[str, Any], *,
-    tenant_id: str, force_deterministic: bool,
+    tenant_id: str, force_deterministic: bool, found_fallback: str | None = None,
 ) -> dict[str, Any]:
     """Grounded-answer compose for the gate-passing articles. Degraded mode
     forces the deterministic list composer (no synthesis on un-verified
     relevance). Code-enforced contract: articles that passed the gate MUST be
-    surfaced even if the LLM composer emitted a false no-match."""
+    surfaced even if the LLM composer emitted a false no-match. `found_fallback`
+    overrides the bare-count message on the found path (linked-by-ticket path)."""
     composer = (DeterministicComposer() if force_deterministic
                 else get_kb_answer_composer() or DeterministicComposer())
     try:
@@ -253,7 +254,8 @@ async def _compose_kb_answer(
     articles = tuple(_preview(h) for h in hits)
     return _search(
         "found",
-        grounded or f"Found {len(articles)} knowledge-base article(s).",
+        grounded or found_fallback
+        or f"Found {len(articles)} knowledge-base article(s).",
         articles)
 
 
@@ -617,6 +619,111 @@ async def kb_backstop_answer(message: str, context: dict[str, Any]) -> str:
     return ""
 
 
+async def _symptom_fallback(
+    ticket_id: str, tenant_id: str, user_query: str, context: dict[str, Any],
+) -> dict[str, Any]:
+    """No KB is *linked* to this ticket (the NORMAL case in the production KB
+    model — KB carries no incident reference). Match by MEANING on the ticket's
+    own SYMPTOMS (title/description/category — the technical terms the hybrid
+    retriever keys on), falling back to the user's topic words only when the
+    ticket can't be fetched. Runs through search_kb's full hybrid+gate stack."""
+    symptom_q = await _ticket_symptom_text(ticket_id, tenant_id)
+    user_topic = _kb_search_text(user_query)
+    content_q = symptom_q or user_topic
+    if content_q:
+        _log.info("uc03.search_kb_by_ticket.semantic_on_symptoms",
+                  ticket_id=ticket_id, query=content_q[:80],
+                  source=("symptoms" if symptom_q else "user_topic"))
+        fb = await search_kb({"query": content_q}, context)
+        # search_kb has its own relevance gate — only return on a genuine match.
+        if isinstance(fb, dict) and fb.get("outcome") == "found":
+            return fb
+    return _search(
+        "no_match",
+        f"No knowledge-base article matches the symptoms of {ticket_id}.")
+
+
+async def _linked_relevance_query(
+    ticket_id: str, tenant_id: str, user_query: str,
+) -> str:
+    """The relevance query for the linked-article gate: the focus record's
+    title (strongest semantic signal) when cheaply fetchable, else the user
+    query. Best-effort — any lookup failure falls back to the user query."""
+    try:
+        from oneops.router.entity_id import EntityIdNormalizer
+        from oneops.use_cases._shared.ticket_store import get_ticket_store
+        extracted = EntityIdNormalizer.from_registry_file().extract(ticket_id)
+        if extracted.entities:
+            e = extracted.entities[0]
+            tstore = get_ticket_store()
+            if tstore is not None:
+                record = await tstore.get(
+                    ticket_id=e.entity_id, service_id=e.service_id,
+                    tenant_id=tenant_id)
+                if record:
+                    return (record.get("title")
+                            or record.get("short_description") or "") or user_query
+    except Exception as exc:                          # noqa: BLE001
+        _log.info("uc03.linked_to.focus_title_lookup_skipped",
+                  error=str(exc)[:120])
+    return user_query
+
+
+async def _score_linked_hits(
+    hits: list[dict[str, Any]], *, ticket_id: str, tenant_id: str,
+    user_query: str, context: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Semantic relevance gate for tag-joined linked articles. Scores each
+    against the relevance query, keeps those >= min_score (top-K). Fail-OPEN:
+    no scorer / scorer error / shape mismatch → keep all candidates. Returns
+    (hits, no_match_result_or_None)."""
+    _, min_score, top_k = _search_kb_config()
+    from oneops.use_cases.uc03_kb_lookup.kb_embed import get_kb_relevance_scorer
+    scorer = get_kb_relevance_scorer()
+    if scorer is None or not hits:
+        return hits, None
+    rel_query = await _linked_relevance_query(ticket_id, tenant_id, user_query)
+    doc_texts = [
+        " ".join(filter(None, [
+            str(h.get("title") or ""),
+            str(h.get("summary") or ""),
+            str(h.get("content") or "")[:1500],
+        ])).strip()
+        for h in hits
+    ]
+    try:
+        scores = await scorer(rel_query, doc_texts, tenant_id=tenant_id,
+                              user_id=str(context.get("user_id") or ""))
+    except Exception as exc:                          # noqa: BLE001
+        _log.warning("uc03.linked_to.relevance_gate.error", error=str(exc)[:200])
+        scores = []
+    if not (scores and len(scores) == len(hits)):
+        return hits, None
+    for h, s in zip(hits, scores, strict=False):
+        h["relevance_cosine"] = float(s)
+    per_candidate = [
+        {"kb_id": h.get("kb_id"),
+         "score": round(float(h.get("relevance_cosine") or 0.0), 4),
+         "passed": float(h.get("relevance_cosine") or 0.0) >= min_score}
+        for h in hits
+    ]
+    passing = sorted(
+        (h for h in hits if float(h.get("relevance_cosine") or 0.0) >= min_score),
+        key=lambda h: float(h.get("relevance_cosine") or 0.0), reverse=True,
+    )[:max(1, top_k)]
+    _log.info("uc03.linked_to.relevance_gate",
+              ticket_id=ticket_id, tenant_id=tenant_id, threshold=min_score,
+              top_k=top_k, retrieved=len(hits), passed=len(passing),
+              relevance_query=rel_query[:120], candidates=per_candidate)
+    if not passing:
+        return [], _search(
+            "no_match",
+            f"No knowledge-base article linked to {ticket_id} "
+            f"is topically relevant to this record. "
+            f"Try a topic search instead.")
+    return passing, None
+
+
 async def search_kb_by_ticket(
     arguments: dict[str, Any], context: dict[str, Any]
 ) -> dict[str, Any]:
@@ -649,168 +756,27 @@ async def search_kb_by_ticket(
     hits = await get_kb_store().linked_to(
         entity_id=ticket_id, tenant_id=tenant_id, audiences=_audiences_for(context))
     if not hits:
-        # No KB is *linked* to this ticket. In the production KB model this is
-        # the NORMAL case (KB carries no incident reference), so we don't
-        # dead-end: we match a KB by MEANING on the ticket's own SYMPTOMS
-        # (title + description + category) — which carry the technical terms and
-        # error codes the hybrid retriever keys on. This is the right query, not
-        # the user's vague phrasing ("find KB for the root cause"). Fall back to
-        # the user's topic words only when the ticket can't be fetched. Runs
-        # through search_kb's full hybrid → RRF → relevance-gate stack.
-        symptom_q = await _ticket_symptom_text(ticket_id, tenant_id)
-        user_topic = _kb_search_text(user_query)
-        content_q = symptom_q or user_topic
-        if content_q:
-            _log.info("uc03.search_kb_by_ticket.semantic_on_symptoms",
-                      ticket_id=ticket_id, query=content_q[:80],
-                      source=("symptoms" if symptom_q else "user_topic"))
-            fb = await search_kb({"query": content_q}, context)
-            # search_kb has its own relevance gate — only return it when it
-            # genuinely matched.
-            if isinstance(fb, dict) and fb.get("outcome") == "found":
-                return fb
-        return _search(
-            "no_match",
-            f"No knowledge-base article matches the symptoms of {ticket_id}.")
+        return await _symptom_fallback(ticket_id, tenant_id, user_query, context)
 
-    # ── Semantic relevance gate (2026-05-29) ────────────────────────────
-    # The linked_to() SQL is a HARD TAG JOIN — articles whose
-    # `related_incidents` array contains this ticket id. Tags can be
-    # over-broad in source data (an article marginally relevant to one CI
-    # ends up tagged to every incident that touches that CI). Apply the
-    # same relevance scorer the text-search path uses (kb_embed
-    # `build_relevance_scorer`) to drop tagged-but-topically-distant
-    # articles before the composer sees them.
-    #
-    # Relevance query = the focused record's TITLE when available
-    # (semantically specific) + the user's natural query (general
-    # signal). Article texts = title + summary + content. Cosine gate
-    # at the same `UC03_MIN_ANSWER_RELEVANCE_SCORE` floor (0.50 by
-    # default, env-configurable) the text-search path uses.
-    #
-    # Fail-OPEN: any scorer error → keep all candidates (current
-    # behaviour, no regression).
-    import os as _os
-    try:
-        min_score = float(_os.getenv("UC03_MIN_ANSWER_RELEVANCE_SCORE", "0.50"))
-    except ValueError:
-        min_score = 0.50
-    try:
-        top_k = int(_os.getenv("UC03_MAX_RESULTS", "3"))
-    except ValueError:
-        top_k = 3
-    from oneops.use_cases.uc03_kb_lookup.kb_embed import (
-        get_kb_relevance_scorer,
-    )
-    scorer = get_kb_relevance_scorer()
-    if scorer is not None and len(hits) > 0:
-        # Build the relevance query: focus record's title (when we can
-        # cheaply look it up) is the strongest semantic signal. Fall
-        # back to the user_query when the title isn't readily available.
-        focus_title = ""
-        try:
-            from oneops.router.entity_id import EntityIdNormalizer
-            from oneops.use_cases._shared.ticket_store import get_ticket_store
-            extracted = EntityIdNormalizer.from_registry_file().extract(ticket_id)
-            if extracted.entities:
-                e = extracted.entities[0]
-                tstore = get_ticket_store()
-                if tstore is not None:
-                    record = await tstore.get(
-                        ticket_id=e.entity_id,
-                        service_id=e.service_id,
-                        tenant_id=tenant_id)
-                    if record:
-                        focus_title = (record.get("title")
-                                       or record.get("short_description")
-                                       or "")
-        except Exception as exc:                          # noqa: BLE001
-            _log.info("uc03.linked_to.focus_title_lookup_skipped",
-                      error=str(exc)[:120])
-        rel_query = focus_title or user_query
-        doc_texts = [
-            " ".join(filter(None, [
-                str(h.get("title") or ""),
-                str(h.get("summary") or ""),
-                str(h.get("content") or "")[:1500],
-            ])).strip()
-            for h in hits
-        ]
-        try:
-            scores = await scorer(
-                rel_query, doc_texts,
-                tenant_id=tenant_id,
-                user_id=str(context.get("user_id") or ""),
-            )
-        except Exception as exc:                          # noqa: BLE001
-            _log.warning("uc03.linked_to.relevance_gate.error",
-                         error=str(exc)[:200])
-            scores = []
-        if scores and len(scores) == len(hits):
-            for h, s in zip(hits, scores, strict=False):
-                h["relevance_cosine"] = float(s)
-            per_candidate = [
-                {"kb_id": h.get("kb_id"),
-                 "score": round(float(h.get("relevance_cosine") or 0.0), 4),
-                 "passed": float(h.get("relevance_cosine") or 0.0) >= min_score}
-                for h in hits
-            ]
-            passing = sorted(
-                (h for h in hits
-                 if float(h.get("relevance_cosine") or 0.0) >= min_score),
-                key=lambda h: float(h.get("relevance_cosine") or 0.0),
-                reverse=True,
-            )[:max(1, top_k)]
-            _log.info(
-                "uc03.linked_to.relevance_gate",
-                ticket_id=ticket_id, tenant_id=tenant_id,
-                threshold=min_score, top_k=top_k,
-                retrieved=len(hits), passed=len(passing),
-                relevance_query=rel_query[:120],
-                candidates=per_candidate,
-            )
-            if not passing:
-                return _search(
-                    "no_match",
-                    f"No knowledge-base article linked to {ticket_id} "
-                    f"is topically relevant to this record. "
-                    f"Try a topic search instead.",
-                )
-            hits = passing
+    # ── Semantic relevance gate ──────────────────────────────────────────
+    # linked_to() is a HARD TAG JOIN that can be over-broad; score the tagged
+    # articles against the focus record's title (or the user query) and drop
+    # topically-distant tags before the composer sees them.
+    gated, no_match = await _score_linked_hits(
+        hits, ticket_id=ticket_id, tenant_id=tenant_id,
+        user_query=user_query, context=context)
+    if no_match is not None:
+        return no_match
+    hits = gated
 
-    # Run the grounded composer over the linked-record hits — same shape as
-    # the text-search path. Failure falls back loudly to the bare count
-    # (never silent: the deterministic composer is a real implementation,
-    # not a mock, and produces an honest article-list when LLM is down).
-    composer = get_kb_answer_composer() or DeterministicComposer()
-    try:
-        grounded = await composer.compose(
-            query=user_query, articles=[dict(h) for h in hits],
-            tenant_id=tenant_id,
-            user_id=str(context.get("user_id") or ""),
-            request_id=str(context.get("request_id") or ""))
-    except Exception as exc:                              # noqa: BLE001 — boundary
-        _log.warning("uc03.search_kb_by_ticket.compose_failed",
-                     error=str(exc)[:200])
-        grounded = ""
-
-    # CODE-ENFORCED CONTRACT: these articles are LINKED to the ticket AND passed
-    # the relevance gate — the found/no-match OUTCOME is decided here, not by the
-    # LLM. The composer writes phrasing only; it must not flip a found result to
-    # a no-match. If it emitted empty/no-match anyway (LLM disobeyed its
-    # render-linked-articles instruction on a vague query), render the present
-    # articles deterministically so the user always sees the article we found.
-    if _composer_wrongly_said_no_match(grounded):
-        _log.warning("uc03.search_kb_by_ticket.composer_no_match_override",
-                     ticket_id=ticket_id, articles=len(hits))
-        grounded = await _render_present_articles(user_query, hits, context)
-
-    articles = tuple(_preview(h) for h in hits)
-    return _search(
-        "found",
-        grounded or (f"Found {len(articles)} knowledge-base article(s) linked to "
-                     f"{ticket_id}."),
-        articles)
+    # Grounded composer over the linked hits — same contract as the text-search
+    # path (articles passed the gate → MUST be surfaced; composer writes phrasing
+    # only, never flips found→no-match).
+    return await _compose_kb_answer(
+        user_query, hits, context, tenant_id=tenant_id,
+        force_deterministic=False,
+        found_fallback=(f"Found {len(hits)} knowledge-base article(s) "
+                        f"linked to {ticket_id}."))
 
 
 __all__ = [
