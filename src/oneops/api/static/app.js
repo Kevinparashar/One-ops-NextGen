@@ -178,12 +178,12 @@
 
   $("#new-session").addEventListener("click", async () => {
     const fresh = await mintServerSession();
-    if (!fresh) {
+    if (fresh) {
+      sessionId = fresh;
+    } else {
       // Lifecycle endpoint unreachable — fall back to a transient client id
       // so the user is never stuck. The chat path also tolerates this.
       sessionId = "sess_" + Math.random().toString(36).slice(2, 14);
-    } else {
-      sessionId = fresh;
     }
     saveSessionId(sessionId);
     renderSession();
@@ -480,11 +480,6 @@
     } catch {
       return escapeHtml(src);
     }
-  }
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;",
-    }[c]));
   }
 
   function addPending({ door, text }) {
@@ -920,7 +915,7 @@
             agentName(ev.agent_id) + " agent</b> · " +
             '<span class="live-tool">' + ev.tool_id + "</span>" +
             ' <span class="live-lat">' +
-            (ev.latency_ms != null ? ev.latency_ms + " ms" : "") +
+            (ev.latency_ms == null ? "" : ev.latency_ms + " ms") +
             "</span></div>";
         }
       }
@@ -1039,7 +1034,7 @@
             agentName(ev.agent_id) + " agent</b> · " +
             '<span class="live-tool">' + ev.tool_id + "</span>" +
             ' <span class="live-lat">' +
-            (ev.latency_ms != null ? ev.latency_ms + " ms" : "") + "</span></div>";
+            (ev.latency_ms == null ? "" : ev.latency_ms + " ms") + "</span></div>";
         }
       }
     };
@@ -1133,7 +1128,7 @@
     for (const r of p.step_results || []) {
       const o = r.output || {};
       if (o.cache_hit === true) {
-        const age = (o.cache_age_s != null) ? o.cache_age_s : "?";
+        const age = (o.cache_age_s == null) ? "?" : o.cache_age_s;
         return `cache hit · age ${age}s`;
       }
       if (o.cache_hit === false) return "cache miss";
@@ -1147,7 +1142,7 @@
   function tallyTurn(p) {
     counters.turns += 1;
     if (detectCacheStatus(p)?.startsWith("cache hit")) counters.cacheHits += 1;
-    lastLatencyEl.textContent = (p.latency_ms != null ? p.latency_ms + " ms" : "—");
+    lastLatencyEl.textContent = (p.latency_ms == null ? "—" : p.latency_ms + " ms");
     renderCounters();
   }
 
