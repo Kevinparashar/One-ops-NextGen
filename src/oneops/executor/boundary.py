@@ -336,8 +336,6 @@ class LlmBoundaryResponder:
         self, *, outcome: str, reason: str, request: dict[str, Any]
     ) -> str:
         from oneops.errors import LLMGatewayError
-        from oneops.llm import LlmMessage, LlmRequest
-        from oneops.llm.models import ResponseFormat
         from oneops.policy import Profile, compose
 
         # Permission-denied paths never go through classification — they
@@ -363,52 +361,9 @@ class LlmBoundaryResponder:
         )
 
         try:
-            response = await self._gateway.call(LlmRequest(
-                # System block is the policy-composed prefix + classifier
-                # extras — large + stable. Mark for prompt cache so every
-                # subsequent non-routed turn reads it from cache.
-                messages=(LlmMessage("system", system_prompt,
-                                     cache_control=True),
-                          LlmMessage("user", user_block)),
-                model=self._model,
-                tenant_id=request.get("tenant_id") or "_unknown",
-                user_id=request.get("user_id", "") or "",
-                # temperature=0 — the scope verdict (in-domain vs out-of-
-                # scope) MUST be deterministic: the same query has to get
-                # the same routing every time. At 0.3 an identical message
-                # ("how to set vpn password") flipped between in-scope→KB
-                # and "out of scope" across runs (2026-06-02 RCA). All other
-                # routing classifiers (intent, rewriter) are already 0.0.
-                temperature=0.0, max_tokens=200,
-                response_format=ResponseFormat.JSON,
-                request_id=request.get("request_id", "")))
-            content = (response.content or "").strip()
-            category, reply = _parse_boundary_payload(content)
-            # ── Data-driven domain backstop (2026-06-02 RCA) ─────────────
-            # The LLM scope verdict mis-fires on borderline IT how-to
-            # phrasings ("configure a VPN client?" → out_of_scope while
-            # "configure a VPN client" → in-scope), and an
-            # `in_scope_kb_search` verdict only PROPOSES a search rather than
-            # running one. Both fail the user. Use the KB CORPUS ITSELF as
-            # the authoritative domain oracle: if the message matches
-            # authored IT content, surface that content. This is data-driven
-            # (the published KB defines the domain), deterministic, and needs
-            # no keyword catalog. Genuinely off-topic queries ("pizza") match
-            # nothing and fall through to OUT_OF_SCOPE_REPLY unchanged — so
-            # this never flips a real out-of-scope, it only rescues real IT
-            # questions that the scope LLM or the router mishandled.
-            if category in ("out_of_scope", "in_scope_kb_search",
-                            "in_scope_unclear"):
-                kb_answer = await self._kb_backstop(request)
-                if kb_answer:
-                    return kb_answer
-            # Server-side enforcement of the out-of-scope literal. The LLM
-            # is asked to produce this verbatim; we ignore its actual reply
-            # if classification says out_of_scope, so a hallucination of the
-            # text cannot leak.
-            if category == "out_of_scope":
-                return OUT_OF_SCOPE_REPLY
-            if reply:
+            reply = await self._classify_and_reply(
+                system_prompt, user_block, request)
+            if reply is not None:
                 return reply
         except LLMGatewayError:
             pass
@@ -416,6 +371,63 @@ class LlmBoundaryResponder:
         # gets a safe deterministic reply.
         return await self._fallback.respond(
             outcome=outcome, reason=reason, request=request)
+
+    async def _classify_and_reply(
+        self, system_prompt: str, user_block: str, request: dict[str, Any],
+    ) -> str | None:
+        """The scope-classifier LLM call + interpretation. Returns the decisive
+        user-facing reply, or None when nothing decisive came back (caller
+        degrades to the deterministic fallback). Raises LLMGatewayError on a
+        gateway failure (caller catches → fallback)."""
+        from oneops.llm import LlmMessage, LlmRequest
+        from oneops.llm.models import ResponseFormat
+        response = await self._gateway.call(LlmRequest(
+            # System block is the policy-composed prefix + classifier extras —
+            # large + stable. Mark for prompt cache so every subsequent
+            # non-routed turn reads it from cache.
+            messages=(LlmMessage("system", system_prompt,
+                                 cache_control=True),
+                      LlmMessage("user", user_block)),
+            model=self._model,
+            tenant_id=request.get("tenant_id") or "_unknown",
+            user_id=request.get("user_id", "") or "",
+            # temperature=0 — the scope verdict (in-domain vs out-of-scope)
+            # MUST be deterministic: the same query has to get the same routing
+            # every time. At 0.3 an identical message ("how to set vpn
+            # password") flipped between in-scope→KB and "out of scope" across
+            # runs (2026-06-02 RCA). All other routing classifiers (intent,
+            # rewriter) are already 0.0.
+            temperature=0.0, max_tokens=200,
+            response_format=ResponseFormat.JSON,
+            request_id=request.get("request_id", "")))
+        content = (response.content or "").strip()
+        category, reply = _parse_boundary_payload(content)
+        # ── Data-driven domain backstop (2026-06-02 RCA) ─────────────
+        # The LLM scope verdict mis-fires on borderline IT how-to phrasings
+        # ("configure a VPN client?" → out_of_scope while "configure a VPN
+        # client" → in-scope), and an `in_scope_kb_search` verdict only
+        # PROPOSES a search rather than running one. Both fail the user. Use
+        # the KB CORPUS ITSELF as the authoritative domain oracle: if the
+        # message matches authored IT content, surface that content. Data-
+        # driven (the published KB defines the domain), deterministic, no
+        # keyword catalog. Genuinely off-topic queries ("pizza") match nothing
+        # and fall through to OUT_OF_SCOPE_REPLY unchanged — so this never
+        # flips a real out-of-scope, only rescues real IT questions the scope
+        # LLM or the router mishandled.
+        if category in ("out_of_scope", "in_scope_kb_search",
+                        "in_scope_unclear"):
+            kb_answer = await self._kb_backstop(request)
+            if kb_answer:
+                return kb_answer
+        # Server-side enforcement of the out-of-scope literal. The LLM is asked
+        # to produce this verbatim; we ignore its actual reply if
+        # classification says out_of_scope, so a hallucination of the text
+        # cannot leak.
+        if category == "out_of_scope":
+            return OUT_OF_SCOPE_REPLY
+        if reply:
+            return reply
+        return None
 
 
 def _parse_boundary_payload(content: str) -> tuple[str, str]:
