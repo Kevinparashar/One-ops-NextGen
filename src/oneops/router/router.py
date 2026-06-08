@@ -449,6 +449,79 @@ class Router:
         # catches the FAIL-once-intent-known case (e.g. "summarize
         # PBM0003001" → UC-3 carried as INDETERMINATE, LLM classifies intent
         # as 'summary', re-eval drops UC-3).
+        survivors_with_verdict, policy_denied_any = await self._stage3_filter(
+            candidates, principal, signals, sq_id, diag)
+        survivors = [c for c, _v in survivors_with_verdict]
+
+        if not survivors:
+            reason = ("every candidate was denied by access policy"
+                      if policy_denied_any
+                      else "no candidate passed the activation-condition filter")
+            return _FunnelOutcome([], {}, reason, policy_denied_any)
+
+        # Stage 3.5 — deterministic single-survivor shortcut.
+        # When stage 3 narrows to exactly one candidate AND that candidate's
+        # activation evaluates to a definite PASS (not just survived as
+        # INDETERMINATE), there is nothing to disambiguate — skip the LLM.
+        # When the sole survivor evaluated as INDETERMINATE (e.g. UC-3 with
+        # an `intent_in` clause that the LLM hasn't classified yet), the
+        # LLM disambiguator MUST run: it has the option to return no_match,
+        # which is what should happen for OOS queries like "tell me a joke"
+        # that incidentally only have UC-3 surviving via INDETERMINATE.
+        # Skipping in that case lets every off-topic query silently route
+        # to UC-3 — the 2026-05-27 routing-leak bug.
+        # Single-survivor shortcut: route directly to the sole candidate,
+        # regardless of PASS vs INDETERMINATE. OOS / greetings / jokes
+        # are caught upstream by the Stage-1 control gate; by the time
+        # only one agent survives stages 1-3, that agent IS the right
+        # handler. Letting the disambiguator decline on a single-option
+        # query is the bug that produced "Are you looking to create a
+        # ticket or KB?" for `salesforce sync lag` (2026-05-27).
+        # Stage 3.4 — deterministic preroute (X6, 2026-05-28). High-confidence
+        # patterns the LLM disambiguator was found to mishandle (bare entity
+        # id → UC-1; content-noun / knowledge-verb + entity → UC-3) are
+        # routed here directly, BEFORE the single-survivor shortcut. Runs on
+        # the rewritten text. Target agent must be a registered active agent
+        # AND must have survived stages 1-3 (post-authz / post-activation).
+        preroute_outcome = self._try_preroute(
+            survivors, signals, text, normalized, original_text, sq_id, diag)
+        if preroute_outcome is not None:
+            return preroute_outcome
+
+        if len(survivors) == 1:
+            sole = survivors[0]
+            diag.append(
+                f"[{sq_id}] stage3.5: single survivor {sole.agent_id} (PASS) — "
+                "skipping disambiguation")
+            # `_chat_bind` threads the rewritten sub-query text as
+            # `user_message`/`query` so UC handlers can pick their own
+            # full-summary vs field-read path (UC-1 field_read branch,
+            # ISS-016); the step runner's data-driven tool-picker uses the
+            # parameter shape to choose the tool.
+            bound = self._chat_bind(sole.agent_id, signals, text)
+            return _FunnelOutcome([sole.agent_id], {sole.agent_id: bound},
+                                  "", False)
+
+        # Stage 4 — LLM disambiguation over survivors only.
+        return await self._stage4_disambiguate(
+            normalized, survivors, survivors_with_verdict, signals,
+            request_ctx, text, sq_id, diag)
+
+    async def _stage3_filter(
+        self,
+        candidates: list,
+        principal: Principal,
+        signals: RequestSignals,
+        sq_id: str,
+        diag: list[str],
+    ) -> tuple[list[tuple[Any, Ternary]], bool]:
+        """Stage 3 — activation-condition (three-valued) + ABAC filter.
+
+        Returns the surviving candidates each paired with their PASS /
+        INDETERMINATE verdict (carried forward as the Stage-4 tiebreaker),
+        plus a flag recording whether any candidate was denied by policy
+        (used to distinguish "denied" from "no match" in the no-survivor
+        diagnostic)."""
         survivors_with_verdict: list[tuple[Any, Ternary]] = []
         policy_denied_any = False
         with _tracer.start_as_current_span(
@@ -485,37 +558,27 @@ class Router:
                 input=[c.agent_id for c in candidates],
                 output={"survivors": [c.agent_id for c in survivors],
                         "policy_denied": policy_denied_any})
+        return survivors_with_verdict, policy_denied_any
 
-        if not survivors:
-            reason = ("every candidate was denied by access policy"
-                      if policy_denied_any
-                      else "no candidate passed the activation-condition filter")
-            return _FunnelOutcome([], {}, reason, policy_denied_any)
+    def _try_preroute(
+        self,
+        survivors: list,
+        signals: RequestSignals,
+        text: str,
+        normalized: str,
+        original_text: str | None,
+        sq_id: str,
+        diag: list[str],
+    ) -> _FunnelOutcome | None:
+        """Stage 3.4 — deterministic preroute (X6, 2026-05-28).
 
-        # Stage 3.5 — deterministic single-survivor shortcut.
-        # When stage 3 narrows to exactly one candidate AND that candidate's
-        # activation evaluates to a definite PASS (not just survived as
-        # INDETERMINATE), there is nothing to disambiguate — skip the LLM.
-        # When the sole survivor evaluated as INDETERMINATE (e.g. UC-3 with
-        # an `intent_in` clause that the LLM hasn't classified yet), the
-        # LLM disambiguator MUST run: it has the option to return no_match,
-        # which is what should happen for OOS queries like "tell me a joke"
-        # that incidentally only have UC-3 surviving via INDETERMINATE.
-        # Skipping in that case lets every off-topic query silently route
-        # to UC-3 — the 2026-05-27 routing-leak bug.
-        # Single-survivor shortcut: route directly to the sole candidate,
-        # regardless of PASS vs INDETERMINATE. OOS / greetings / jokes
-        # are caught upstream by the Stage-1 control gate; by the time
-        # only one agent survives stages 1-3, that agent IS the right
-        # handler. Letting the disambiguator decline on a single-option
-        # query is the bug that produced "Are you looking to create a
-        # ticket or KB?" for `salesforce sync lag` (2026-05-27).
-        # Stage 3.4 — deterministic preroute (X6, 2026-05-28). High-confidence
-        # patterns the LLM disambiguator was found to mishandle (bare entity
-        # id → UC-1; content-noun / knowledge-verb + entity → UC-3) are
-        # routed here directly, BEFORE the single-survivor shortcut. Runs on
-        # the rewritten text. Target agent must be a registered active agent
-        # AND must have survived stages 1-3 (post-authz / post-activation).
+        High-confidence patterns the LLM disambiguator was found to
+        mishandle (bare entity id → UC-1; content-noun / knowledge-verb +
+        entity → UC-3) route here directly, BEFORE the single-survivor
+        shortcut. Target must be a registered active agent that survived
+        stages 1-3. Returns the routed outcome, or None when no pattern
+        fires (the funnel then continues to the single-survivor shortcut /
+        Stage 4)."""
         from oneops.router.disambiguation import _deterministic_preroute
         survivor_ids = {c.agent_id for c in survivors}
         # Evaluate preroute on the ORIGINAL user text (before the rewriter
@@ -545,122 +608,122 @@ class Router:
                       normalized=normalized,
                       survivor_ids=sorted(survivor_ids),
                       preroute_target=pre_target[0] if pre_target else None)
-            if pre_target is not None:
-                agent_id, _intent, _rationale = pre_target
-                pre_span.set_attribute("oneops.router.preroute.target", agent_id)
-                pre_span.set_attribute("oneops.router.preroute.rationale",
-                                       _rationale)
-                diag.append(
-                    f"[{sq_id}] stage3.4: preroute → {agent_id} ({_rationale})")
-                agent = self._registry.agents.get_optional(agent_id)
-                bound = _bind_entities_to_fast_path(
-                    agent, {}, signals.present_entities, self._registry)
-                if text:
-                    bound = dict(bound)
-                    bound["user_message"] = text
-                    bound.setdefault("query", text)
-                return _FunnelOutcome([agent_id], {agent_id: bound}, "", False)
-
-        if len(survivors) == 1:
-            sole = survivors[0]
+            if pre_target is None:
+                return None
+            agent_id, _intent, _rationale = pre_target
+            pre_span.set_attribute("oneops.router.preroute.target", agent_id)
+            pre_span.set_attribute("oneops.router.preroute.rationale",
+                                   _rationale)
             diag.append(
-                f"[{sq_id}] stage3.5: single survivor {sole.agent_id} (PASS) — "
-                "skipping disambiguation")
-            agent = self._registry.agents.get_optional(sole.agent_id)
-            bound = _bind_entities_to_fast_path(
-                agent, {}, signals.present_entities, self._registry)
-            # Thread the rewritten sub-query text so UC handlers can
-            # decide between full-summary and field-read paths on their
-            # own (UC-1 internal field_read branch, ISS-016).
-            if text:
-                bound = dict(bound)
-                bound["user_message"] = text
-                # Generic chat → query binding. Tools that take a `query`
-                # parameter (e.g. UC-3 search_kb) read this directly; tools
-                # that don't need it ignore it. No UC-specific code here —
-                # the step runner's data-driven tool-picker (step_runner._
-                # pick_tool) uses the parameter shape to choose which tool
-                # of the agent's tool_refs to invoke.
-                bound.setdefault("query", text)
-            return _FunnelOutcome([sole.agent_id], {sole.agent_id: bound},
-                                  "", False)
+                f"[{sq_id}] stage3.4: preroute → {agent_id} ({_rationale})")
+            bound = self._chat_bind(agent_id, signals, text)
+            return _FunnelOutcome([agent_id], {agent_id: bound}, "", False)
 
-        # Stage 4 — LLM disambiguation over survivors only.
+    async def _stage4_disambiguate(
+        self,
+        normalized: str,
+        survivors: list,
+        survivors_with_verdict: list[tuple[Any, Ternary]],
+        signals: RequestSignals,
+        request_ctx: dict,
+        text: str,
+        sq_id: str,
+        diag: list[str],
+    ) -> _FunnelOutcome:
+        """Stage 4 — LLM disambiguation over survivors only, with the
+        PASS-vs-INDETERMINATE tiebreaker and the post-stage-4 intent-
+        resolved re-check.
+
+        When the disambiguator declines but exactly one survivor was a
+        definite PASS, route to it (PASS > INDETERMINATE). Otherwise bind
+        the chosen agents' parameters and return them."""
         result = await self._disambiguator.disambiguate(
             normalized, survivors, request_ctx=request_ctx)
         if not result.is_confident_match:
-            # Architectural tiebreaker (fix B, 2026-05-28): when the LLM
-            # disambiguator declines but Stage 3 had exactly one definite
-            # PASS candidate (with all other survivors as INDETERMINATE),
-            # route to the PASS candidate. PASS > INDETERMINATE is the
-            # natural fallback under the existing three-valued logic —
-            # PASS means "activation_condition definitely admits this
-            # query under current signals", INDETERMINATE means "might
-            # admit pending intent classification". When the LLM cannot
-            # decide between a definite admission and a speculative one,
-            # honour the definite one. This fixes the regression that
-            # surfaced when the abac_tags.service pre-filter was removed
-            # (Issue 2): UC-3 now correctly survives stage 3 as
-            # INDETERMINATE for ticket-entity queries, which made
-            # multi-turn field-reads ("who is it assigned to?") return
-            # clarification instead of routing to UC-1.
-            pass_candidates = [c for c, v in survivors_with_verdict
-                               if v is Ternary.PASS]
-            if len(pass_candidates) == 1:
-                sole = pass_candidates[0]
-                diag.append(
-                    f"[{sq_id}] stage4-tiebreaker: disambiguator declined, "
-                    f"routing to sole PASS candidate {sole.agent_id} "
-                    f"(other survivors were INDETERMINATE)")
-                agent = self._registry.agents.get_optional(sole.agent_id)
-                bound = _bind_entities_to_fast_path(
-                    agent, {}, signals.present_entities, self._registry)
-                if text:
-                    bound = dict(bound)
-                    bound["user_message"] = text
-                    bound.setdefault("query", text)
-                return _FunnelOutcome([sole.agent_id], {sole.agent_id: bound},
-                                      "", False)
-            return _FunnelOutcome(
-                [], {}, result.rationale or "no confident match", False)
+            return self._declined_outcome(
+                result, survivors_with_verdict, signals, text, sq_id, diag)
 
-        # Post-stage-4 guard — re-evaluate conditions with the now-known intent.
-        chosen: list[str] = []
-        if result.intents:
-            resolved = with_intents(signals, frozenset(result.intents))
-            for agent_id in result.selected_agent_ids:
-                agent = self._registry.agents.get_optional(agent_id)
-                if agent is None or not survives_filter(agent.activation_condition, resolved):
-                    diag.append(f"[{sq_id}] stage4-guard: drop {agent_id} — "
-                                "condition FAIL under classified intent")
-                    continue
-                chosen.append(agent_id)
-        else:
-            chosen = list(result.selected_agent_ids)
-
+        chosen = self._resolve_chosen(result, signals, sq_id, diag)
         if not chosen:
             return _FunnelOutcome(
                 [], {}, "selected agent(s) failed the intent-resolved check", False)
+        params = self._bind_chosen_params(chosen, result, signals, text)
+        return _FunnelOutcome(chosen, params, "", False)
 
-        # Bind extracted entities into each chosen agent's parameters. The
-        # disambiguator may have set `parameters_by_agent` directly (LLM
-        # path) — those win. For any required input field still empty, we
-        # auto-bind from `signals.present_entities` using the same shape
-        # the fast-path dispatcher uses (ticket_id ← first incident-ish
-        # entity, etc.). This makes chat ("summarize INC0001015") behave
-        # identically to button ({ticket_id: INC0001015}) — same handler,
-        # same parameter shape.
+    def _chat_bind(
+        self, agent_id: str, signals: RequestSignals, text: str,
+        base: dict[str, str] | None = None,
+    ) -> dict[str, str]:
+        """Bind a chosen agent's chat-path parameters: auto-bind present
+        entities into the fast-path shape (LLM-set `base` params win), then
+        thread the raw user text as `user_message`/`query` so handlers can
+        pick their own field-read vs full path. Returns a fresh dict."""
+        agent = self._registry.agents.get_optional(agent_id)
+        bound = _bind_entities_to_fast_path(
+            agent, dict(base or {}), signals.present_entities, self._registry)
+        if text:
+            bound = dict(bound)
+            bound["user_message"] = text
+            bound.setdefault("query", text)
+        return bound
+
+    def _declined_outcome(
+        self, result: Any, survivors_with_verdict: list[tuple[Any, Ternary]],
+        signals: RequestSignals, text: str, sq_id: str, diag: list[str],
+    ) -> _FunnelOutcome:
+        """Disambiguator declined. Tiebreaker (fix B, 2026-05-28): when Stage
+        3 had exactly one definite PASS candidate (others INDETERMINATE),
+        route to it — PASS > INDETERMINATE under the three-valued logic.
+        This recovers multi-turn field-reads ("who is it assigned to?") that
+        otherwise returned clarification after the abac_tags.service
+        pre-filter removal (Issue 2). Else: no confident match."""
+        pass_candidates = [c for c, v in survivors_with_verdict
+                           if v is Ternary.PASS]
+        if len(pass_candidates) == 1:
+            sole = pass_candidates[0]
+            diag.append(
+                f"[{sq_id}] stage4-tiebreaker: disambiguator declined, "
+                f"routing to sole PASS candidate {sole.agent_id} "
+                f"(other survivors were INDETERMINATE)")
+            bound = self._chat_bind(sole.agent_id, signals, text)
+            return _FunnelOutcome([sole.agent_id], {sole.agent_id: bound},
+                                  "", False)
+        return _FunnelOutcome(
+            [], {}, result.rationale or "no confident match", False)
+
+    def _resolve_chosen(
+        self, result: Any, signals: RequestSignals,
+        sq_id: str, diag: list[str],
+    ) -> list[str]:
+        """Post-stage-4 guard: re-evaluate activation conditions with the
+        now-classified intent, dropping any selected agent that no longer
+        survives. Pass-through when the disambiguator set no intents."""
+        if not result.intents:
+            return list(result.selected_agent_ids)
+        resolved = with_intents(signals, frozenset(result.intents))
+        chosen: list[str] = []
+        for agent_id in result.selected_agent_ids:
+            agent = self._registry.agents.get_optional(agent_id)
+            if agent is None or not survives_filter(agent.activation_condition, resolved):
+                diag.append(f"[{sq_id}] stage4-guard: drop {agent_id} — "
+                            "condition FAIL under classified intent")
+                continue
+            chosen.append(agent_id)
+        return chosen
+
+    def _bind_chosen_params(
+        self, chosen: list[str], result: Any,
+        signals: RequestSignals, text: str,
+    ) -> dict[str, dict[str, str]]:
+        """Bind each chosen agent's parameters. The disambiguator's
+        `parameters_by_agent` win; required-but-empty fields auto-bind from
+        present entities so chat ("summarize INC0001015") behaves
+        identically to the button path ({ticket_id: INC0001015})."""
         params: dict[str, dict[str, str]] = {}
         for aid in chosen:
-            agent = self._registry.agents.get_optional(aid)
-            from_llm = result.params_for(aid)
-            bound = _bind_entities_to_fast_path(
-                agent, dict(from_llm), signals.present_entities, self._registry)
-            if text:
-                bound["user_message"] = text
-                bound.setdefault("query", text)
-            params[aid] = bound
-        return _FunnelOutcome(chosen, params, "", False)
+            params[aid] = self._chat_bind(
+                aid, signals, text, base=result.params_for(aid))
+        return params
 
 
 # Entity-shaped parameter names — the closed set of registry-recognised
@@ -764,59 +827,101 @@ def _bind_entities_to_fast_path(
         return existing_params
 
     out = dict(existing_params)
+    _bind_fast_path_fields(agent, out, present_entities)
+    _bind_tool_params(agent, out, present_entities, registry)
+    return out
 
-    # Pass 1: fast-path input fields (button path; service-gated).
-    if agent.fast_path is not None:
-        agent_services = set(agent.abac_tags.service or ())
-        compatible_entity = None
-        for eid, esvc in present_entities:
-            if not agent_services or esvc in agent_services:
-                compatible_entity = (eid, esvc)
-                break
-        if compatible_entity is not None:
-            entity_id, _entity_service = compatible_entity
-            for field in agent.fast_path.input_fields:
-                if field.name in out and out[field.name]:
-                    continue                              # LLM set it
-                if field.name in _ENTITY_FIELD_NAMES:
-                    out[field.name] = entity_id
-                    continue
-                if field.auto_derive_from and field.auto_derive_from in out:
-                    derived = _derive_for_chat(
-                        field.name, out[field.auto_derive_from])
-                    if derived:
-                        out[field.name] = derived
 
-    # Pass 2: tool parameters (chat path; per-param accept-list).
-    # Iterate over each tool's parameters; for each entity-shaped param
-    # name, bind a present entity that the param accepts. Idempotent —
-    # never overrides an already-set value.
+def _bind_fast_path_fields(
+    agent: Any, out: dict[str, str],
+    present_entities: tuple[tuple[str, str], ...],
+) -> None:
+    """Pass 1 (button path; service-gated). Bind the first service-
+    compatible present entity into the agent's `fast_path.input_fields`,
+    deriving non-entity fields via `auto_derive_from`. Mutates `out`;
+    never overrides a value the LLM disambiguator already set."""
+    if agent.fast_path is None:
+        return
+    agent_services = set(agent.abac_tags.service or ())
+    compatible = _first_compatible_entity(present_entities, agent_services)
+    if compatible is None:
+        return
+    entity_id, _entity_service = compatible
+    for field in agent.fast_path.input_fields:
+        _bind_field(field, out, entity_id)
+
+
+def _first_compatible_entity(
+    present_entities: tuple[tuple[str, str], ...],
+    agent_services: set[str],
+) -> tuple[str, str] | None:
+    """First present entity whose service the agent serves (or any entity
+    when the agent declares no service scope)."""
+    for eid, esvc in present_entities:
+        if not agent_services or esvc in agent_services:
+            return (eid, esvc)
+    return None
+
+
+def _bind_field(field: Any, out: dict[str, str], entity_id: str) -> None:
+    """Bind one fast-path input field: entity-shaped fields take the entity
+    id; others derive via `auto_derive_from`. Never overrides a value the
+    LLM disambiguator already set."""
+    if field.name in out and out[field.name]:
+        return                                    # LLM set it
+    if field.name in _ENTITY_FIELD_NAMES:
+        out[field.name] = entity_id
+        return
+    if field.auto_derive_from and field.auto_derive_from in out:
+        derived = _derive_for_chat(field.name, out[field.auto_derive_from])
+        if derived:
+            out[field.name] = derived
+
+
+def _bind_tool_params(
+    agent: Any, out: dict[str, str],
+    present_entities: tuple[tuple[str, str], ...],
+    registry: Any,
+) -> None:
+    """Pass 2 (chat path; per-param accept-list). For each entity-shaped
+    parameter across the agent's tool_refs, bind a present entity the
+    parameter accepts (`_PARAM_ACCEPTS`). Tool parameter contracts live on
+    the tool record, resolved lazily via the registry. Mutates `out`;
+    idempotent — never overrides an already-bound value."""
+    if registry is None:
+        return
     for tref in (getattr(agent, "tool_refs", None) or ()):
-        # Tool lookup via the registry. The agent's tool_refs carry tool_id
-        # only; the parameter contract is on the tool record itself.
-        # We resolve lazily because the agent record alone doesn't carry
-        # parameter shapes — they live on tool registrations (registry/v2/tools).
-        if registry is None:
-            continue
-        try:
-            tool = registry.tools.get_optional(tref.tool_id)
-        except Exception:                                  # noqa: BLE001
-            tool = None
+        tool = _resolve_tool(registry, tref)
         if tool is None:
             continue
         for p in (tool.parameters or ()):
-            pname = p.name
-            if pname not in _ENTITY_FIELD_NAMES:
-                continue
-            if out.get(pname):
-                continue                                  # already bound
-            accepts = _PARAM_ACCEPTS.get(pname, frozenset())
-            for eid, esvc in present_entities:
-                if not accepts or esvc in accepts:
-                    out[pname] = eid
-                    break
+            _bind_tool_param(p, out, present_entities)
 
-    return out
+
+def _resolve_tool(registry: Any, tref: Any) -> Any:
+    """Resolve a tool record from a tool_ref via the registry; None when the
+    record is absent or lookup raises (binding is best-effort)."""
+    try:
+        return registry.tools.get_optional(tref.tool_id)
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
+def _bind_tool_param(
+    p: Any, out: dict[str, str],
+    present_entities: tuple[tuple[str, str], ...],
+) -> None:
+    """Bind one entity-shaped tool parameter to the first present entity its
+    `_PARAM_ACCEPTS` list admits. No-op for non-entity or already-bound
+    params."""
+    pname = p.name
+    if pname not in _ENTITY_FIELD_NAMES or out.get(pname):
+        return
+    accepts = _PARAM_ACCEPTS.get(pname, frozenset())
+    for eid, esvc in present_entities:
+        if not accepts or esvc in accepts:
+            out[pname] = eid
+            return
 
 
 def _derive_for_chat(target_field: str, source_value: str) -> str | None:
