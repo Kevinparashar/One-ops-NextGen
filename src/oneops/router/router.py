@@ -127,22 +127,9 @@ class Router:
             # digest + registry fingerprint (every input the funnel reads).
             cache_key = self._route_cache_key(query_text, principal, signals,
                                               history, request_ctx)
-            if self._route_cache is not None and cache_key is not None:
-                try:
-                    hit = await self._route_cache.get(
-                        tenant_id=principal.tenant_id, key=cache_key)
-                except Exception as exc:                          # noqa: BLE001
-                    hit = None
-                    _log.warning("router.route_cache_get_failed",
-                                 error=str(exc)[:160])
-                if hit is not None:
-                    result = self._result_from_cache(hit)
-                    if result is not None:
-                        increment("oneops.router.route_cache.hit")
-                        span.set_attribute("router.route_cache", "hit")
-                        return result
-                increment("oneops.router.route_cache.miss")
-                span.set_attribute("router.route_cache", "miss")
+            cached = await self._route_cache_lookup(cache_key, principal, span)
+            if cached is not None:
+                return cached
 
             # ── Stage 0a + 0b — speculative parallel execution ───────────
             # Decompose and rewrite are both LLM calls (~1.2-1.5s each).
@@ -167,23 +154,7 @@ class Router:
                 len(subqueries) == 1
                 and subqueries[0].text.strip() == (query_text or "").strip()
             )
-            if not spec_usable:
-                spec_rewrite_task.cancel()
-                try:
-                    await spec_rewrite_task
-                except _asyncio.CancelledError:
-                    # We deliberately cancelled the speculative rewrite — its
-                    # teardown CancelledError is expected and swallowed. But if
-                    # THIS coroutine is itself being cancelled, honour that and
-                    # propagate so the turn aborts cleanly (S7497).
-                    _ct = _asyncio.current_task()
-                    if _ct is not None and _ct.cancelling():
-                        raise
-                except Exception:                                # noqa: BLE001
-                    pass
-                span.set_attribute("router.spec_rewrite_used", False)
-            else:
-                span.set_attribute("router.spec_rewrite_used", True)
+            await self._cancel_speculative(spec_rewrite_task, spec_usable, span)
 
             routes: list[SubQueryRoute] = []
             unrouted: list[str] = []
@@ -191,100 +162,11 @@ class Router:
             any_policy_denied = False
 
             for sq in subqueries:
-                # ── Stage 0b — rewrite (resolve references) ──────────────
-                if spec_usable:
-                    rewrite = await spec_rewrite_task
-                else:
-                    rewrite = await self._rewriter.rewrite(
-                        sq.text, history=history, request_ctx=request_ctx)
-                # Extract entities from THIS sub-query's text (post-rewrite
-                # if applicable) and use that scoped list for routing +
-                # binding. Without scoping, a message like "summarize
-                # INC0001001 and INC0001002" produces N sub-queries that
-                # all bind to the FIRST whole-message entity. Each
-                # sub-query must see only the entities it itself names —
-                # otherwise N plan steps run with N copies of the same
-                # ticket_id.
-                from dataclasses import replace as _replace
-
-                from oneops.router.entity_id import EntityIdNormalizer
-                normalizer = EntityIdNormalizer.from_registry_file()
-                sq_text_for_extract = rewrite.text if rewrite.changed else sq.text
-                sq_extracted = normalizer.extract(sq_text_for_extract)
-                if sq_extracted.entities:
-                    sq_entities = tuple(
-                        (e.entity_id, e.service_id)
-                        for e in sq_extracted.entities)
-                    sq_signals = _replace(
-                        signals, present_entities=sq_entities)
-                    diag.append(
-                        f"[{sq.id}] stage0b: scoped entities → "
-                        f"{[e.entity_id for e in sq_extracted.entities]}")
-                else:
-                    # No entity in THIS sub-query text. STRUCTURAL FIX
-                    # (Stage 2.5, 2026-05-28): the LangGraph state's
-                    # focus is the authoritative active subject. When
-                    # focus is set AND the sub-query is a focus-bound
-                    # follow-up (no new entity in text, no explicit
-                    # KB doc-noun), use the state focus as
-                    # present_entities. This bypasses the rewriter and
-                    # disambiguator's probabilistic choices for the
-                    # common follow-up case — Stage 3 admits the focus's
-                    # owner agent on a hard structural signal.
-                    #
-                    # Replaces three earlier heuristic layers:
-                    #   • rewriter focus injection (LLM, drift-prone)
-                    #   • disambiguator focus block (prompt addition)
-                    #   • linked-record-only backstop (too narrow)
-                    #
-                    # When focus is empty (fresh session / no prior
-                    # entity), fall through to the existing path — the
-                    # disambiguator and boundary responder handle
-                    # off-domain / no-context cases per existing rules.
-                    sq_signals = _replace(signals, present_entities=())
-                    state_focus_id = (
-                        request_ctx.get("focus_entity_id") or ""
-                    ).strip()
-                    state_focus_service = (
-                        request_ctx.get("focus_service_id") or ""
-                    ).strip()
-                    # Inject the state focus as present_entities for THIS
-                    # sub-query when state focus is set and the sub-query
-                    # itself names no entity. Stage 3 then admits both
-                    # UC-1 and UC-3 as candidates with a concrete subject;
-                    # the LLM disambiguator (with focus context in its
-                    # prompt) decides which agent owns this turn. This
-                    # matches V1's architecture: the LLM is the authority
-                    # on intent; the state focus is the authority on the
-                    # active subject. No keyword regex on the routing
-                    # path — see [[poc5mw1-focus-state-channel-2026-05-28]].
-                    if state_focus_id and state_focus_service:
-                        sq_signals = _replace(
-                            signals,
-                            present_entities=((state_focus_id, state_focus_service),),
-                        )
-                        diag.append(
-                            f"[{sq.id}] stage0b: focus-bound follow-up → "
-                            f"{state_focus_id} (state authoritative)")
-                    elif _references_linked_record(sq_text_for_extract):
-                        # Belt-and-braces fallback for the linked-record
-                        # case when state focus is somehow missing —
-                        # scan history. Only fires when state focus is
-                        # empty (rare).
-                        focus = _extract_focus_from_history(
-                            history, normalizer)
-                        if focus is not None:
-                            sq_signals = _replace(
-                                signals, present_entities=(focus,))
-                            diag.append(
-                                f"[{sq.id}] stage0b: history-scan focus → "
-                                f"{focus[0]} (state focus was empty)")
-                if rewrite.changed:
-                    diag.append(f"[{sq.id}] stage0b: rewritten -> {rewrite.text!r}")
-
-                outcome = await self._funnel(
-                    rewrite.text, principal, sq_signals, request_ctx,
-                    sq.id, diag, original_text=sq.text)
+                outcome = await self._route_subquery(
+                    sq, spec_rewrite_task=spec_rewrite_task,
+                    spec_usable=spec_usable, signals=signals,
+                    request_ctx=request_ctx, history=history,
+                    diag=diag, principal=principal)
 
                 if outcome.agent_ids:
                     routes.append(SubQueryRoute(
@@ -300,36 +182,161 @@ class Router:
                     any_policy_denied = any_policy_denied or outcome.policy_denied
                     diag.append(f"[{sq.id}] unrouted: {outcome.reason}")
 
-            # ── Merge ────────────────────────────────────────────────────
-            if not routes:
-                # With a single sub-query, surface its specific reason so the
-                # boundary responder can be precise; with several, summarise.
-                if len(subqueries) == 1 and fail_reasons:
-                    reason = fail_reasons[0]
-                else:
-                    reason = "no sub-query produced a confident route"
-                outcome = "policy_denied" if any_policy_denied else "no_match"
-                await self._route_cache_store(
-                    cache_key, principal, outcome=outcome,
-                    routes=[], unrouted=[], reason=reason)
-                if any_policy_denied:
-                    return RouteResult.policy_denied(reason, diag)
-                return RouteResult.no_match(reason, diag)
-
-            await self._route_cache_store(
-                cache_key, principal, outcome="routed",
-                routes=routes, unrouted=unrouted, reason="")
-            plan = assemble_plan(routes, self._registry)
-            span.set_attribute("router.plan_steps", len(plan.steps))
-            span.set_attribute("router.unrouted", len(unrouted))
-            diag.append(f"plan: {len(plan.steps)} step(s) -> {list(plan.agent_ids)}")
-            set_langfuse_io(
-                span, input=query_text,
-                output={"agents": list(plan.agent_ids),
-                        "steps": len(plan.steps), "unrouted": len(unrouted)})
-            return RouteResult.routed(plan, diag, unrouted)
+            return await self._finalize_route(
+                routes=routes, unrouted=unrouted, fail_reasons=fail_reasons,
+                any_policy_denied=any_policy_denied, subqueries=subqueries,
+                cache_key=cache_key, principal=principal, span=span,
+                diag=diag, query_text=query_text)
 
     # ── route-decision cache helpers ─────────────────────────────────────
+
+    async def _cancel_speculative(
+        self, spec_rewrite_task: Any, spec_usable: bool, span: Any,
+    ) -> None:
+        """Resolve the speculative whole-message rewrite. Usable (single
+        sub-query == whole message) → keep it. Otherwise cancel it and swallow
+        the teardown CancelledError — but re-raise if THIS coroutine is itself
+        being cancelled, so the turn aborts cleanly (S7497)."""
+        import asyncio
+        if spec_usable:
+            span.set_attribute("router.spec_rewrite_used", True)
+            return
+        spec_rewrite_task.cancel()
+        try:
+            await spec_rewrite_task
+        except asyncio.CancelledError:
+            ct = asyncio.current_task()
+            if ct is not None and ct.cancelling():
+                raise
+        except Exception:                                # noqa: BLE001
+            pass
+        span.set_attribute("router.spec_rewrite_used", False)
+
+    async def _finalize_route(
+        self, *, routes: list, unrouted: list, fail_reasons: list,
+        any_policy_denied: bool, subqueries: list, cache_key: str | None,
+        principal: Principal, span: Any, diag: list[str], query_text: str,
+    ) -> RouteResult:
+        """Merge the per-sub-query outcomes into the final RouteResult: cache +
+        return the no_match/policy_denied verdict when nothing routed, else
+        assemble the plan and cache the routed decision."""
+        if not routes:
+            # Single sub-query → surface its specific reason (precise boundary
+            # response); several → summarise.
+            if len(subqueries) == 1 and fail_reasons:
+                reason = fail_reasons[0]
+            else:
+                reason = "no sub-query produced a confident route"
+            outcome = "policy_denied" if any_policy_denied else "no_match"
+            await self._route_cache_store(
+                cache_key, principal, outcome=outcome,
+                routes=[], unrouted=[], reason=reason)
+            if any_policy_denied:
+                return RouteResult.policy_denied(reason, diag)
+            return RouteResult.no_match(reason, diag)
+
+        await self._route_cache_store(
+            cache_key, principal, outcome="routed",
+            routes=routes, unrouted=unrouted, reason="")
+        plan = assemble_plan(routes, self._registry)
+        span.set_attribute("router.plan_steps", len(plan.steps))
+        span.set_attribute("router.unrouted", len(unrouted))
+        diag.append(f"plan: {len(plan.steps)} step(s) -> {list(plan.agent_ids)}")
+        set_langfuse_io(
+            span, input=query_text,
+            output={"agents": list(plan.agent_ids),
+                    "steps": len(plan.steps), "unrouted": len(unrouted)})
+        return RouteResult.routed(plan, diag, unrouted)
+
+    async def _route_subquery(
+        self, sq: Any, *, spec_rewrite_task: Any, spec_usable: bool,
+        signals: RequestSignals, request_ctx: dict, history: list,
+        diag: list[str], principal: Principal,
+    ) -> Any:
+        """Process one sub-query: rewrite (speculative whole-message result when
+        usable, else per-sub-query), scope signals to the sub-query's own
+        entities/focus, then run the funnel. Returns the funnel outcome."""
+        if spec_usable:
+            rewrite = await spec_rewrite_task
+        else:
+            rewrite = await self._rewriter.rewrite(
+                sq.text, history=history, request_ctx=request_ctx)
+        sq_signals = self._scope_subquery_signals(
+            sq, rewrite, signals, request_ctx, history, diag)
+        if rewrite.changed:
+            diag.append(f"[{sq.id}] stage0b: rewritten -> {rewrite.text!r}")
+        return await self._funnel(
+            rewrite.text, principal, sq_signals, request_ctx,
+            sq.id, diag, original_text=sq.text)
+
+    def _scope_subquery_signals(
+        self, sq: Any, rewrite: Any, signals: RequestSignals,
+        request_ctx: dict, history: list, diag: list[str],
+    ) -> RequestSignals:
+        """Scope routing signals to the entities THIS sub-query names
+        (post-rewrite), so "summarize INC1 and INC2" doesn't bind every step to
+        the first entity. When the sub-query names no entity, inject the
+        LangGraph state focus as the authoritative subject (the structural fix
+        that replaced rewriter/disambiguator focus heuristics); as a rare
+        fallback, a history-scanned focus for explicit linked-record refs."""
+        from dataclasses import replace as _replace
+
+        from oneops.router.entity_id import EntityIdNormalizer
+        normalizer = EntityIdNormalizer.from_registry_file()
+        sq_text_for_extract = rewrite.text if rewrite.changed else sq.text
+        sq_extracted = normalizer.extract(sq_text_for_extract)
+        if sq_extracted.entities:
+            sq_entities = tuple(
+                (e.entity_id, e.service_id) for e in sq_extracted.entities)
+            diag.append(
+                f"[{sq.id}] stage0b: scoped entities → "
+                f"{[e.entity_id for e in sq_extracted.entities]}")
+            return _replace(signals, present_entities=sq_entities)
+
+        state_focus_id = (request_ctx.get("focus_entity_id") or "").strip()
+        state_focus_service = (request_ctx.get("focus_service_id") or "").strip()
+        if state_focus_id and state_focus_service:
+            diag.append(
+                f"[{sq.id}] stage0b: focus-bound follow-up → "
+                f"{state_focus_id} (state authoritative)")
+            return _replace(
+                signals,
+                present_entities=((state_focus_id, state_focus_service),))
+        if _references_linked_record(sq_text_for_extract):
+            # Belt-and-braces fallback when state focus is somehow missing —
+            # scan history. Only fires when state focus is empty (rare).
+            focus = _extract_focus_from_history(history, normalizer)
+            if focus is not None:
+                diag.append(
+                    f"[{sq.id}] stage0b: history-scan focus → "
+                    f"{focus[0]} (state focus was empty)")
+                return _replace(signals, present_entities=(focus,))
+        return _replace(signals, present_entities=())
+
+    async def _route_cache_lookup(
+        self, cache_key: str | None, principal: Principal, span: Any,
+    ) -> RouteResult | None:
+        """Route-decision cache get → a rebuilt RouteResult on a usable hit,
+        else None (cache disabled / miss / malformed entry). The plan is
+        reassembled fresh against the current registry downstream; a cache
+        failure must never break routing."""
+        if self._route_cache is None or cache_key is None:
+            return None
+        try:
+            hit = await self._route_cache.get(
+                tenant_id=principal.tenant_id, key=cache_key)
+        except Exception as exc:                          # noqa: BLE001
+            _log.warning("router.route_cache_get_failed", error=str(exc)[:160])
+            hit = None
+        if hit is not None:
+            result = self._result_from_cache(hit)
+            if result is not None:
+                increment("oneops.router.route_cache.hit")
+                span.set_attribute("router.route_cache", "hit")
+                return result
+        increment("oneops.router.route_cache.miss")
+        span.set_attribute("router.route_cache", "miss")
+        return None
 
     def _route_cache_key(
         self, query_text: str, principal: Principal,
