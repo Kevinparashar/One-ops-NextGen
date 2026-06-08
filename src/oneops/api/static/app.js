@@ -333,54 +333,62 @@
     }
   }
 
+  // Per-chip descriptor builders — each returns {label, state, value}. Split
+  // out of loadStatusStrip so each chip's state/value logic stays small (S3776).
+  function cacheChip(cfg) {
+    return {
+      label: "Cache",
+      state: cfg.cache.enabled ? "on" : "off",
+      value: cfg.cache.backend.replace(/^In/, "").replace(/SummaryCacheStore$/, ""),
+    };
+  }
+  function otelChip(cfg) {
+    let state = "off";
+    if (cfg.otel.in_memory_spans) state = cfg.otel.enabled ? "on" : "warn";
+    let value = cfg.otel.in_memory_spans ? "in-memory only" : "off";
+    if (cfg.otel.endpoint) value = "exporter live";
+    return { label: "OTel", state, value };
+  }
+  function llmChip(cfg) {
+    let state = "off";
+    if (cfg.llm_gateway.summarizer_wired) state = "on";
+    else if (cfg.llm_gateway.configured) state = "warn";
+    let value = "not configured";
+    if (cfg.llm_gateway.summarizer_wired) value = "wired";
+    else if (cfg.llm_gateway.configured) value = "gateway up · summarizer pending";
+    return { label: "LLM", state, value };
+  }
+  function dbChip(cfg) {
+    let state = "off";
+    if (cfg.postgres.configured) {
+      state = cfg.postgres.backend_in_use.startsWith("Postgres") ? "on" : "warn";
+    }
+    return { label: "DB", state, value: cfg.postgres.backend_in_use };
+  }
+  function natsChip(cfg) {
+    let state = "off";
+    if (cfg.nats.configured) state = cfg.nats.wired_into_ingress ? "on" : "warn";
+    let value = "not configured";
+    if (cfg.nats.wired_into_ingress) value = "wired";
+    else if (cfg.nats.configured) value = "configured · ingress in-process";
+    return { label: "NATS", state, value };
+  }
+  function sessionChip(cfg) {
+    let value = "not wired";
+    if (cfg.session?.wired) {
+      value = cfg.session.durable_across_reload
+        ? "durable · " + cfg.session.backend.replace(/^In/, "")
+        : cfg.session.backend;
+    }
+    return { label: "Session", state: cfg.session?.wired ? "on" : "off", value };
+  }
+
   async function loadStatusStrip() {
     try {
       const cfg = await fetch("/api/config").then((r) => r.json());
       statusStrip.innerHTML = "";
-      addChip({
-        label: "Cache",
-        state: cfg.cache.enabled ? "on" : "off",
-        value: cfg.cache.backend.replace(/^In/, "").replace(/SummaryCacheStore$/, ""),
-      });
-      // States/values computed with if/else (no nested ternaries; S3358).
-      let otelState = "off";
-      if (cfg.otel.in_memory_spans) otelState = cfg.otel.enabled ? "on" : "warn";
-      let otelValue = cfg.otel.in_memory_spans ? "in-memory only" : "off";
-      if (cfg.otel.endpoint) otelValue = "exporter live";
-      addChip({ label: "OTel", state: otelState, value: otelValue });
-
-      let llmState = "off";
-      if (cfg.llm_gateway.summarizer_wired) llmState = "on";
-      else if (cfg.llm_gateway.configured) llmState = "warn";
-      let llmValue = "not configured";
-      if (cfg.llm_gateway.summarizer_wired) llmValue = "wired";
-      else if (cfg.llm_gateway.configured) llmValue = "gateway up · summarizer pending";
-      addChip({ label: "LLM", state: llmState, value: llmValue });
-
-      let dbState = "off";
-      if (cfg.postgres.configured) {
-        dbState = cfg.postgres.backend_in_use.startsWith("Postgres") ? "on" : "warn";
-      }
-      addChip({ label: "DB", state: dbState, value: cfg.postgres.backend_in_use });
-
-      let natsState = "off";
-      if (cfg.nats.configured) natsState = cfg.nats.wired_into_ingress ? "on" : "warn";
-      let natsValue = "not configured";
-      if (cfg.nats.wired_into_ingress) natsValue = "wired";
-      else if (cfg.nats.configured) natsValue = "configured · ingress in-process";
-      addChip({ label: "NATS", state: natsState, value: natsValue });
-
-      let sessionValue = "not wired";
-      if (cfg.session?.wired) {
-        sessionValue = cfg.session.durable_across_reload
-          ? "durable · " + cfg.session.backend.replace(/^In/, "")
-          : cfg.session.backend;
-      }
-      addChip({
-        label: "Session",
-        state: cfg.session?.wired ? "on" : "off",
-        value: sessionValue,
-      });
+      [cacheChip, otelChip, llmChip, dbChip, natsChip, sessionChip]
+        .forEach((mk) => addChip(mk(cfg)));
     } catch (err) {
       statusStrip.innerHTML = `<span class="status-chip off">status load failed: ${err}</span>`;
     }
@@ -629,66 +637,35 @@
     return details;
   }
 
-  function renderSingleStep(payload, step) {
-    const wrapper = document.createElement("div");
-    wrapper.className = "response-card";
-    const out = step.output || {};
-
-    // ── error / denial / handler-outcome path ─────────────────────────
-    // When the step failed OR the handler returned a non-success outcome,
-    // the engine's `final_response` already carries the friendly message
-    // (built by `friendly_step_response` in the aggregator). Render it
-    // verbatim — no empty Summary / Key Details sections.
-    const stepStatus = (step.status || "").toLowerCase();
-    const handlerOutcome = out?.outcome ? String(out.outcome).toLowerCase() : "";
-    const isSuccessfulSummary =
-      stepStatus === "success" &&
+  // A transparent markdown bubble — the canonical "rendered text" element
+  // used by every text path in renderSingleStep (error message, display_text,
+  // summary paragraph, plain message).
+  function appendMarkdownBubble(wrapper, md) {
+    const p = document.createElement("div");
+    p.className = "summary-text bubble md";
+    p.style.background = "transparent";
+    p.style.border = "0";
+    p.style.padding = "0";
+    p.innerHTML = renderMarkdown(md);
+    wrapper.appendChild(p);
+  }
+  function appendSectionTitle(wrapper, text) {
+    const h = document.createElement("div");
+    h.className = "section-title";
+    h.textContent = text;
+    wrapper.appendChild(h);
+  }
+  // A successful summary (vs an error/denial/handler-outcome that already
+  // carries a friendly final_response). When false, render the message
+  // verbatim — no empty Summary / Key Details sections.
+  function isSuccessfulSummary(stepStatus, handlerOutcome) {
+    return stepStatus === "success" &&
       handlerOutcome !== "not_found" &&
       handlerOutcome !== "invalid_request" &&
       handlerOutcome !== "llm_unavailable" &&
       handlerOutcome !== "denied";
-    if (!isSuccessfulSummary) {
-      // Prefer the per-step message so multi-step turns don't duplicate
-      // the entire aggregated final_response on every card.
-      const stepMessage = out?.message || payload.final_response || "(no response)";
-      const p = document.createElement("div");
-      p.className = "summary-text bubble md";
-      p.style.background = "transparent";
-      p.style.border = "0";
-      p.style.padding = "0";
-      p.innerHTML = renderMarkdown(stepMessage);
-      wrapper.appendChild(p);
-      return wrapper;
-    }
-
-    // ── success path ── display_text first (canonical chat-ready string) ─
-    // Any UC tool whose response shape is opinionated (UC-2 ranked similar
-    // tickets, UC-3 KB answer composed verbatim, future UCs) emits
-    // `out.display_text`. The frontend renders it as markdown and stops —
-    // the tool already composed the user-facing text and we surface it
-    // verbatim. Matches the executor's `friendly_step_response` contract
-    // (see oneops.executor.nodes — display_text takes precedence over the
-    // UC-1-specific Summary/Key Details blocks).
-    if (typeof out.display_text === "string" && out.display_text.trim()) {
-      const p = document.createElement("div");
-      p.className = "summary-text bubble md";
-      p.style.background = "transparent";
-      p.style.border = "0";
-      p.style.padding = "0";
-      p.innerHTML = renderMarkdown(out.display_text);
-      wrapper.appendChild(p);
-      return wrapper;
-    }
-
-    // ── success path — render Summary + Key Details (UC-1 shape) ──────
-    const summaryBlock = out.summary || null;
-    const record = out.record || summaryBlock?.record || null;
-    const keyDetails =
-      summaryBlock?.key_details ||
-      out.key_details ||
-      null;
-
-    // ── entity header (if we have a record) ──────────────────────────
+  }
+  function appendEntityHeader(wrapper, record, step, out, summaryBlock) {
     const entityId = record?.incident_id || record?.request_id ||
                      record?.problem_id || record?.change_id ||
                      record?.asset_id || record?.ci_id || record?.kb_id;
@@ -696,76 +673,26 @@
                         record?.ci_name || record?.summary;
     const serviceId = step.parameters?.service_id || out.service_id ||
                       summaryBlock?.service_id;
-    if (entityId || entityTitle) {
-      const header = document.createElement("div");
-      header.className = "entity-header";
-      if (entityId) {
-        const e = document.createElement("span");
-        e.className = "entity-id";
-        e.textContent = entityId;
-        header.appendChild(e);
-      }
-      if (entityTitle) {
-        const t = document.createElement("span");
-        t.className = "entity-title";
-        t.textContent = entityTitle;
-        header.appendChild(t);
-      }
-      if (serviceId) {
-        const s = document.createElement("span");
-        s.className = "entity-service";
-        s.textContent = serviceId;
-        header.appendChild(s);
-      }
-      wrapper.appendChild(header);
-    }
-
-    // ── summary paragraph (LLM-generated, rendered as markdown) ─────
-    const summaryText = (typeof summaryBlock === "string")
-      ? summaryBlock
-      : summaryBlock?.summary;
-    if (summaryText) {
-      // Field-read responses are one-line answers; the "Summary" header
-      // is misleading and the Key Details box below would just repeat
-      // the same value. Render as a plain answer line.
-      if (handlerOutcome !== "field_read") {
-        const h = document.createElement("div");
-        h.className = "section-title";
-        h.textContent = "Summary";
-        wrapper.appendChild(h);
-      }
-      const p = document.createElement("div");
-      p.className = "summary-text bubble md";
-      p.style.background = "transparent";
-      p.style.border = "0";
-      p.style.padding = "0";
-      p.innerHTML = renderMarkdown(summaryText);
-      wrapper.appendChild(p);
-    } else if (out?.message) {
-      const h = document.createElement("div");
-      h.className = "section-title";
-      h.textContent = "Response";
-      wrapper.appendChild(h);
-      const p = document.createElement("div");
-      p.className = "summary-text bubble md";
-      p.style.background = "transparent";
-      p.style.border = "0";
-      p.style.padding = "0";
-      p.innerHTML = renderMarkdown(out.message);
-      wrapper.appendChild(p);
-    }
-
-    // ── key details (every field of the record, human-readable) ──────
-    // Preferred: the LLM summariser already produced `key_details` with
-    // service-aware labels (e.g. "Incident ID", "Assigned Group"). Fall
-    // back to raw record + naive humanisation when the LLM half hasn't
-    // populated yet (e.g. cache miss with gateway down).
-    //
-    // For the full-summary outcome we deliberately HIDE this raw key/value
-    // list: the user sees only the compact grounded summary (status line +
-    // narrative + dated bullets), which already weaves in the relevant
-    // fields. Other outcomes (field-read, other UCs) are unaffected — they
-    // either carry no key_details or rely on this block for their display.
+    if (!(entityId || entityTitle)) return;
+    const header = document.createElement("div");
+    header.className = "entity-header";
+    const part = (cls, val) => {
+      if (!val) return;
+      const span = document.createElement("span");
+      span.className = cls;
+      span.textContent = val;
+      header.appendChild(span);
+    };
+    part("entity-id", entityId);
+    part("entity-title", entityTitle);
+    part("entity-service", serviceId);
+    wrapper.appendChild(header);
+  }
+  // Build the key/value map for the Key Details block. The full-summary
+  // outcome deliberately HIDES the raw list (the compact grounded summary
+  // already weaves in the fields); otherwise prefer the LLM's labelled
+  // key_details, falling back to a humanised projection of the raw record.
+  function computeKeyDetails(record, keyDetails, handlerOutcome) {
     let kv = (handlerOutcome === "summarized") ? null : keyDetails;
     if (!kv && record && handlerOutcome !== "summarized") {
       kv = {};
@@ -776,28 +703,65 @@
         kv[humanise(k)] = v;
       }
     }
-    if (kv && Object.keys(kv).length) {
-      const h = document.createElement("div");
-      h.className = "section-title";
-      h.textContent = "Key Details";
-      wrapper.appendChild(h);
-      const dl = document.createElement("dl");
-      dl.className = "key-details";
-      for (const [k, v] of Object.entries(kv)) {
-        const dt = document.createElement("dt");
-        dt.textContent = humanise(k);
-        dl.appendChild(dt);
-        const dd = document.createElement("dd");
-        dd.appendChild(renderValue(v));
-        dl.appendChild(dd);
-      }
-      wrapper.appendChild(dl);
+    return kv;
+  }
+  function appendKeyDetails(wrapper, kv) {
+    if (!(kv && Object.keys(kv).length)) return;
+    appendSectionTitle(wrapper, "Key Details");
+    const dl = document.createElement("dl");
+    dl.className = "key-details";
+    for (const [k, v] of Object.entries(kv)) {
+      const dt = document.createElement("dt");
+      dt.textContent = humanise(k);
+      dl.appendChild(dt);
+      const dd = document.createElement("dd");
+      dd.appendChild(renderValue(v));
+      dl.appendChild(dd);
+    }
+    wrapper.appendChild(dl);
+  }
+
+  function renderSingleStep(payload, step) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "response-card";
+    const out = step.output || {};
+    const stepStatus = (step.status || "").toLowerCase();
+    const handlerOutcome = out?.outcome ? String(out.outcome).toLowerCase() : "";
+
+    // Error / denial / non-success outcome → render the friendly message
+    // verbatim (preferring the per-step message over the aggregated one).
+    if (!isSuccessfulSummary(stepStatus, handlerOutcome)) {
+      appendMarkdownBubble(
+        wrapper, out?.message || payload.final_response || "(no response)");
+      return wrapper;
+    }
+    // Canonical chat-ready string (UC-2 ranked list, UC-3 composed answer, …)
+    // takes precedence over the UC-1 Summary/Key Details shape.
+    if (typeof out.display_text === "string" && out.display_text.trim()) {
+      appendMarkdownBubble(wrapper, out.display_text);
+      return wrapper;
     }
 
-    // (No inline action chips — fast-path buttons live in the workspace
-    // header, not under every assistant message. Keeps the conversation
-    // readable.)
+    // Success path — Summary + Key Details (UC-1 shape).
+    const summaryBlock = out.summary || null;
+    const record = out.record || summaryBlock?.record || null;
+    const keyDetails = summaryBlock?.key_details || out.key_details || null;
 
+    appendEntityHeader(wrapper, record, step, out, summaryBlock);
+
+    const summaryText = (typeof summaryBlock === "string")
+      ? summaryBlock : summaryBlock?.summary;
+    if (summaryText) {
+      // Field-read answers are one-liners — the "Summary" header is
+      // misleading, so omit it for that outcome.
+      if (handlerOutcome !== "field_read") appendSectionTitle(wrapper, "Summary");
+      appendMarkdownBubble(wrapper, summaryText);
+    } else if (out?.message) {
+      appendSectionTitle(wrapper, "Response");
+      appendMarkdownBubble(wrapper, out.message);
+    }
+
+    appendKeyDetails(wrapper, computeKeyDetails(record, keyDetails, handlerOutcome));
     return wrapper;
   }
 
@@ -856,6 +820,52 @@
   // Shared live-streaming turn driver — used by BOTH the chat door and the
   // fast-path buttons. Renders a live "working" panel whose rows light up as
   // each agent/tool runs (Claude-style), then the final answer + trace panel.
+  // ── shared live-stream helpers (streamTurnInto + oneopsLiveStream) ──────
+  const liveAgentName = (id) => String(id || "")
+    .replace(/^uc\d+_/, "").replaceAll("_", " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
+  const liveKeyOf = (ev) => ev.step_id || (ev.agent_id + "::" + ev.tool_id);
+  function toolStartHtml(ev) {
+    return '<div class="live-line1"><span class="live-spin">⏳</span> <b>' +
+      liveAgentName(ev.agent_id) + " agent</b> is running " +
+      '<span class="live-tool">' + (ev.tool_id || "tool") + "</span></div>" +
+      (ev.action ? '<div class="live-action">↳ ' + ev.action + "…</div>" : "");
+  }
+  function toolDoneHtml(ev) {
+    const ok = ev.status === "success";
+    return '<div class="live-line1">' + (ok ? "✓" : "✗") + " <b>" +
+      liveAgentName(ev.agent_id) + " agent</b> · " +
+      '<span class="live-tool">' + ev.tool_id + "</span>" +
+      ' <span class="live-lat">' +
+      (ev.latency_ms == null ? "" : ev.latency_ms + " ms") +
+      "</span></div>";
+  }
+  // Read an NDJSON stream line-by-line; dispatch each non-final event to
+  // onEvent; return the `final` payload (or null).
+  async function readNdjsonStream(res, onEvent) {
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    let finalPayload = null;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (line) {
+          let ev;
+          try { ev = JSON.parse(line); } catch { continue; }
+          if (ev.type === "final") finalPayload = ev.payload;
+          else onEvent(ev);
+        }
+      }
+    }
+    return finalPayload;
+  }
+
   async function streamTurnInto({ url, body, door, statusLabel }) {
     const pending = addPending({ door, text: "Working on it…" });
     setStatus(statusLabel || "Working…", "busy");
@@ -885,38 +895,21 @@
     const panelStart = performance.now();
     const MIN_PANEL_MS = 1100;
 
-    const agentName = (id) => String(id || "")
-      .replace(/^uc\d+_/, "").replaceAll("_", " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
     const rows = {};
-    const keyOf = (ev) => ev.step_id || (ev.agent_id + "::" + ev.tool_id);
-
     const onEvent = (ev) => {
       if (ev.type === "tool_start") {
         if (!routingCleared) { routingRow.remove(); routingCleared = true; }
         const li = document.createElement("li");
         li.className = "live-row running";
-        // Name the real agent AND the real tool that is executing now.
-        li.innerHTML =
-          '<div class="live-line1"><span class="live-spin">⏳</span> <b>' +
-          agentName(ev.agent_id) + " agent</b> is running " +
-          '<span class="live-tool">' + (ev.tool_id || "tool") + "</span></div>" +
-          (ev.action ? '<div class="live-action">↳ ' + ev.action + "…</div>" : "");
+        li.innerHTML = toolStartHtml(ev);
         list.appendChild(li);
-        rows[keyOf(ev)] = li;
+        rows[liveKeyOf(ev)] = li;
         conv.scrollTop = conv.scrollHeight;
       } else if (ev.type === "tool_done") {
-        const li = rows[keyOf(ev)];
-        const ok = ev.status === "success";
+        const li = rows[liveKeyOf(ev)];
         if (li) {
-          li.className = "live-row " + (ok ? "done" : "failed");
-          li.innerHTML =
-            '<div class="live-line1">' + (ok ? "✓" : "✗") + " <b>" +
-            agentName(ev.agent_id) + " agent</b> · " +
-            '<span class="live-tool">' + ev.tool_id + "</span>" +
-            ' <span class="live-lat">' +
-            (ev.latency_ms == null ? "" : ev.latency_ms + " ms") +
-            "</span></div>";
+          li.className = "live-row " + (ev.status === "success" ? "done" : "failed");
+          li.innerHTML = toolDoneHtml(ev);
         }
       }
     };
@@ -934,26 +927,8 @@
         setStatus("Turn failed.", "error");
         return null;
       }
-      // Read the NDJSON stream line-by-line, updating the live panel.
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "";
-      let finalPayload = null;
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let nl;
-        while ((nl = buf.indexOf("\n")) >= 0) {
-          const line = buf.slice(0, nl).trim();
-          buf = buf.slice(nl + 1);
-          if (!line) continue;
-          let ev;
-          try { ev = JSON.parse(line); } catch { continue; }
-          if (ev.type === "final") finalPayload = ev.payload;
-          else onEvent(ev);
-        }
-      }
+      // Read the NDJSON stream, updating the live panel as events arrive.
+      const finalPayload = await readNdjsonStream(res, onEvent);
       // Hold the live panel briefly so the working phase is always seen.
       const shownFor = performance.now() - panelStart;
       if (shownFor < MIN_PANEL_MS) {
@@ -1007,34 +982,20 @@
     list.appendChild(routingRow);
     let routingCleared = false;
 
-    const agentName = (id) => String(id || "")
-      .replace(/^uc\d+_/, "").replaceAll("_", " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
     const rows = {};
-    const keyOf = (ev) => ev.step_id || (ev.agent_id + "::" + ev.tool_id);
     const onEvent = (ev) => {
       if (ev.type === "tool_start") {
         if (!routingCleared) { routingRow.remove(); routingCleared = true; }
         const li = document.createElement("li");
         li.className = "live-row running";
-        li.innerHTML =
-          '<div class="live-line1"><span class="live-spin">⏳</span> <b>' +
-          agentName(ev.agent_id) + " agent</b> is running " +
-          '<span class="live-tool">' + (ev.tool_id || "tool") + "</span></div>" +
-          (ev.action ? '<div class="live-action">↳ ' + ev.action + "…</div>" : "");
+        li.innerHTML = toolStartHtml(ev);
         list.appendChild(li);
-        rows[keyOf(ev)] = li;
+        rows[liveKeyOf(ev)] = li;
       } else if (ev.type === "tool_done") {
-        const li = rows[keyOf(ev)];
-        const ok = ev.status === "success";
+        const li = rows[liveKeyOf(ev)];
         if (li) {
-          li.className = "live-row " + (ok ? "done" : "failed");
-          li.innerHTML =
-            '<div class="live-line1">' + (ok ? "✓" : "✗") + " <b>" +
-            agentName(ev.agent_id) + " agent</b> · " +
-            '<span class="live-tool">' + ev.tool_id + "</span>" +
-            ' <span class="live-lat">' +
-            (ev.latency_ms == null ? "" : ev.latency_ms + " ms") + "</span></div>";
+          li.className = "live-row " + (ev.status === "success" ? "done" : "failed");
+          li.innerHTML = toolDoneHtml(ev);
         }
       }
     };
@@ -1048,24 +1009,7 @@
         head.textContent = "Request failed (" + res.status + ")";
         return null;
       }
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let nl;
-        while ((nl = buf.indexOf("\n")) >= 0) {
-          const ln = buf.slice(0, nl).trim();
-          buf = buf.slice(nl + 1);
-          if (!ln) continue;
-          let ev;
-          try { ev = JSON.parse(ln); } catch { continue; }
-          if (ev.type === "final") finalPayload = ev.payload;
-          else onEvent(ev);
-        }
-      }
+      finalPayload = await readNdjsonStream(res, onEvent);
     } catch (err) {
       head.textContent = "Error: " + err;
       return null;

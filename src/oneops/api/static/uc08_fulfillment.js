@@ -266,6 +266,42 @@
           </span>
         </div>`}
 
+        ${matchCatalogCardHtml(chosen, m, confPct, confLabel, confTone, judgeTone, judgePct)}
+
+        ${matchAlternatesHtml(m)}
+
+        ${isPreview ? "" : renderEnrichmentForm(sr, chosen, e)}
+
+        <div class="uc08-actions">
+          <button type="button" class="ghost" id="uc08-back">← Back</button>
+          ${isPreview ? `
+          <button type="button" class="primary" id="uc08-promote">
+            ✨ Create SR &amp; proceed
+          </button>` : `
+          <button type="button" class="primary" id="uc08-proceed">
+            ✅ Proceed with these values
+          </button>`}
+        </div>
+
+        <div id="uc08-error" class="uc08-error hidden"></div>
+      </div>
+    `;
+
+    $("#uc08-back").addEventListener("click", () => {
+      state.step = "compose"; render();
+    });
+    if (isPreview) {
+      $("#uc08-promote").addEventListener("click", onPromotePreviewToSr);
+    } else {
+      $("#uc08-proceed").addEventListener("click", onProceed);
+    }
+  }
+
+  // Hero catalog card for the chosen match — extracted from renderMatch so its
+  // inline conditionals (description, rerank reasoning, judge verdict) don't
+  // pile onto renderMatch's cognitive complexity (S3776).
+  function matchCatalogCardHtml(chosen, m, confPct, confLabel, confTone, judgeTone, judgePct) {
+    return `
         <!-- ── Catalog card (hero) ───────────────────────────── -->
         <div class="uc08-catalog-card uc08-catalog-hero">
           <div class="uc08-cat-header">
@@ -313,11 +349,14 @@
             </div>
             <div class="uc08-judge-reason">${escapeHtml(m.judge_reasoning || "")}</div>
           </div>` : ""}
-        </div>
+        </div>`;
+  }
 
-        ${(m.candidates || []).length > 1 ? (() => {
-          const alts = m.candidates.slice(1, 4);   // top 3 alternates only
-          return `
+  // "Other top matches" disclosure (top 3 alternates). "" when there are none.
+  function matchAlternatesHtml(m) {
+    if ((m.candidates || []).length <= 1) return "";
+    const alts = m.candidates.slice(1, 4);   // top 3 alternates only
+    return `
         <details class="uc08-alts">
           <summary>
             <span class="uc08-alts-summary-text">Other top matches</span>
@@ -349,33 +388,7 @@
               </div>
             `;}).join("")}
           </div>
-        </details>`;})() : ""}
-
-        ${isPreview ? "" : renderEnrichmentForm(sr, chosen, e)}
-
-        <div class="uc08-actions">
-          <button type="button" class="ghost" id="uc08-back">← Back</button>
-          ${isPreview ? `
-          <button type="button" class="primary" id="uc08-promote">
-            ✨ Create SR &amp; proceed
-          </button>` : `
-          <button type="button" class="primary" id="uc08-proceed">
-            ✅ Proceed with these values
-          </button>`}
-        </div>
-
-        <div id="uc08-error" class="uc08-error hidden"></div>
-      </div>
-    `;
-
-    $("#uc08-back").addEventListener("click", () => {
-      state.step = "compose"; render();
-    });
-    if (isPreview) {
-      $("#uc08-promote").addEventListener("click", onPromotePreviewToSr);
-    } else {
-      $("#uc08-proceed").addEventListener("click", onProceed);
-    }
+        </details>`;
   }
 
   // Preview → real SR. Calls /create-sr with the text the user originally
