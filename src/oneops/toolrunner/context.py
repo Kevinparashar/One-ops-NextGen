@@ -182,7 +182,7 @@ class ToolContext(BaseModel):
         authz_payload = request.get("authz")
         if authz_payload:
             effect = Effect(authz_payload.get("effect", "allow"))
-            reasons = tuple(authz_payload.get("reasons") or ())
+            reasons = authz_payload.get("reasons") or ()
             authz = (
                 AuthzDecision.allow() if effect is Effect.ALLOW
                 else AuthzDecision.deny(list(reasons) or ["unspecified"])

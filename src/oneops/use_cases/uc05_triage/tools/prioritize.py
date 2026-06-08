@@ -306,11 +306,12 @@ def _derive_impact(
     cat_key = (suggested_category or "").lower().strip()
     raw_impact = vip_override if vip_flag else impact_map.get(cat_key, impact_default)
     impact: Impact = raw_impact if raw_impact in _VALID_IMPACTS else _SAFE_DEFAULT_IMPACT  # type: ignore[assignment]
-    impact_basis = (
-        "vip_override" if vip_flag
-        else f"catalog_category[{cat_key}]" if cat_key in impact_map
-        else "default_when_unmatched"
-    )
+    if vip_flag:
+        impact_basis = "vip_override"
+    elif cat_key in impact_map:
+        impact_basis = f"catalog_category[{cat_key}]"
+    else:
+        impact_basis = "default_when_unmatched"
     return impact, impact_basis
 
 

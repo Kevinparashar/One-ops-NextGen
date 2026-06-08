@@ -24,7 +24,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import FastAPI, HTTPException, Path, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -1936,7 +1936,9 @@ def build_app() -> FastAPI:
                         # OTel context; the WS connection's scope provides
                         # the same. We pass a small shim that exposes
                         # `app.state` so the helper stays unchanged.
-                        _RequestShim(ws.app), envelope, door="chat",
+                        # _RequestShim duck-types the bits _run reads (.app);
+                        # cast keeps the type-checker honest (sonar S5655).
+                        cast(Request, _RequestShim(ws.app)), envelope, door="chat",
                         thread_id=request_id, session_id=session_id)
                 except Exception as exc:                  # noqa: BLE001
                     _log.warning("oneops.ws.turn_failed", error=str(exc)[:200])

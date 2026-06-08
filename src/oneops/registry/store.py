@@ -23,7 +23,7 @@ import tempfile
 import threading
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Protocol
 
 from pydantic import BaseModel, ValidationError
 
@@ -34,7 +34,9 @@ from oneops.errors import (
 )
 from oneops.registry.models import RecordStatus
 
-RecordT = TypeVar("RecordT", bound=BaseModel)
+# RecordT is the class-scoped PEP 695 type parameter on `VersionedStore`
+# (`class VersionedStore[RecordT: BaseModel]` below). No module-level TypeVar
+# is needed — the methods bind to the class parameter (sonar S6796).
 
 
 # ── Backend abstraction ──────────────────────────────────────────────────

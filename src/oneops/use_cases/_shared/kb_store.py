@@ -163,7 +163,7 @@ class InMemoryKbStore:
     def _searchable(article: dict[str, Any]) -> set[str]:
         parts = [article.get("title", ""), article.get("summary", ""),
                  article.get("content", "")]
-        parts.extend(str(t) for t in article.get("tags", []) or [])
+        parts.extend(str(t) for t in article.get("tags") or [])
         return _tokens(" ".join(parts))
 
     async def search(
