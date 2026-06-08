@@ -50,7 +50,10 @@ _AI_UC08_FULFILL_FAILED_TOTAL = "ai.uc08.fulfill.failed.total"
 
 _log = get_logger("oneops.api.uc08")
 
-router = APIRouter(prefix="/api/uc08", tags=["uc08-fulfillment"])
+router = APIRouter(
+    prefix="/api/uc08", tags=["uc08-fulfillment"],
+    responses={401: {"description": "Missing or invalid identity headers"},
+               403: {"description": "Role not permitted for this endpoint"}})
 
 # Strong refs to fire-and-forget background tasks so the event loop can't GC
 # them mid-flight (sonar S7502 — "save this task in a variable").

@@ -48,7 +48,10 @@ _ONEOPS_ROLE = "oneops.role"
 _ONEOPS_TENANT_ID = "oneops.tenant_id"
 _ONEOPS_USER_ID = "oneops.user_id"
 
-router = APIRouter(prefix="/api/uc05", tags=["uc05-triage"])
+router = APIRouter(
+    prefix="/api/uc05", tags=["uc05-triage"],
+    responses={401: {"description": "Missing or invalid identity headers"},
+               403: {"description": "Role not permitted for this endpoint"}})
 
 # Default store path — JSON fixture inside the UC-5 folder
 _DEFAULT_FIXTURE_PATH = (
@@ -273,7 +276,10 @@ async def propose_stream(payload: ProposeRequest, request: Request):
         media_type="application/x-ndjson")
 
 
-@router.post("/propose")
+@router.post("/propose", responses={
+    404: {"description": "Ticket not found in this tenant"},
+    409: {"description": "Ticket already fully triaged"},
+    503: {"description": "Executor propose runner not wired"}})
 async def propose(
     payload: ProposeRequest,
     request: Request,
@@ -359,7 +365,10 @@ async def _propose_impl(*, payload, tenant, user, role, store):
         raise
 
 
-@router.post("/decide")
+@router.post("/decide", responses={
+    404: {"description": "Proposal or ticket not found / expired"},
+    409: {"description": "Conflict applying the decision"},
+    422: {"description": "Invalid decision payload"}})
 async def decide(
     payload: DecideRequest,
     request: Request,

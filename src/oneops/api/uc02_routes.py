@@ -52,7 +52,10 @@ _AI_AGENT_RUNS_TOTAL = "ai.agent.runs.total"
 
 _log = get_logger("oneops.api.uc02")
 
-router = APIRouter(prefix="/api/uc02", tags=["uc02-similar-tickets"])
+router = APIRouter(
+    prefix="/api/uc02", tags=["uc02-similar-tickets"],
+    responses={401: {"description": "Missing or invalid identity headers"},
+               403: {"description": "Role not permitted for this endpoint"}})
 
 # Same role set as UC-5 — service-desk-grade and above can run similarity.
 # end_user can call too but the SQL RBAC predicate filters their results
