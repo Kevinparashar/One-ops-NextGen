@@ -161,6 +161,36 @@ def _parse_response(
         return None, unresolved, False
 
 
+def _record_time_filter_span(
+    span: Any, tf: TimeFilter | None, unresolved: str | None, year_inferred: bool,
+) -> None:
+    """Operator-visibility span events/attributes for one extraction: an
+    unresolved relative phrase, a future-date year roll-back, and the outcome
+    (none/present + the filter's own otel attrs)."""
+    if unresolved:
+        span.add_event(
+            "time_filter.unresolved_reference",
+            attributes={"phrase": unresolved[:80]},
+        )
+        span.set_attribute("router.time_filter.unresolved", True)
+    if year_inferred and tf is not None:
+        span.add_event(
+            "time_filter.year_inferred_past",
+            attributes={
+                "start_date": tf.start_date.isoformat() if tf.start_date else "",
+                "end_date": tf.end_date.isoformat() if tf.end_date else "",
+                "label": (tf.label or "")[:80],
+            },
+        )
+    if tf is None:
+        span.set_attribute(_ROUTER_TIME_FILTER_OUTCOME, "none")
+    else:
+        span.set_attribute(_ROUTER_TIME_FILTER_OUTCOME, "present")
+        for k, v in tf.otel_attrs().items():
+            if v is not None:
+                span.set_attribute(k, v)
+
+
 class TimeFilterExtractor:
     """Small LLM-driven extractor with Dragonfly caching.
 
@@ -187,18 +217,9 @@ class TimeFilterExtractor:
         ck = _cache_key(message, today)
 
         # ── Cache fast-path ────────────────────────────────────────────
-        if self._cache is not None:
-            try:
-                cached_raw = await self._cache.get(ck)
-                if cached_raw == b"NULL" or cached_raw == "NULL":
-                    return None
-                if isinstance(cached_raw, (str, bytes)) and cached_raw:
-                    decoded = (cached_raw.decode("utf-8")
-                               if isinstance(cached_raw, bytes) else cached_raw)
-                    cached_doc = json.loads(decoded)
-                    return TimeFilter(**cached_doc)
-            except Exception:                                          # noqa: BLE001
-                pass
+        hit, cached_tf = await self._cache_lookup(ck)
+        if hit:
+            return cached_tf
 
         with _tracer.start_as_current_span(
             "router.time_filter.extract",
@@ -231,45 +252,40 @@ class TimeFilterExtractor:
                 return None
 
             # ── Span events (operator visibility) ────────────────────
-            if unresolved:
-                span.add_event(
-                    "time_filter.unresolved_reference",
-                    attributes={"phrase": unresolved[:80]},
-                )
-                span.set_attribute("router.time_filter.unresolved", True)
-            if year_inferred and tf is not None:
-                span.add_event(
-                    "time_filter.year_inferred_past",
-                    attributes={
-                        "start_date": tf.start_date.isoformat()
-                        if tf.start_date else "",
-                        "end_date": tf.end_date.isoformat()
-                        if tf.end_date else "",
-                        "label": (tf.label or "")[:80],
-                    },
-                )
-            if tf is None:
-                span.set_attribute(_ROUTER_TIME_FILTER_OUTCOME, "none")
-            else:
-                span.set_attribute(_ROUTER_TIME_FILTER_OUTCOME, "present")
-                for k, v in tf.otel_attrs().items():
-                    if v is not None:
-                        span.set_attribute(k, v)
+            _record_time_filter_span(span, tf, unresolved, year_inferred)
 
             # ── Cache write (null and present both cached) ───────────
-            if self._cache is not None:
-                try:
-                    if tf is None:
-                        await self._cache.set(ck, "NULL", ttl=_CACHE_TTL_S)
-                    else:
-                        await self._cache.set(
-                            ck,
-                            tf.model_dump_json(),
-                            ttl=_CACHE_TTL_S,
-                        )
-                except Exception:                                      # noqa: BLE001
-                    pass
+            await self._cache_write(ck, tf)
             return tf
+
+    async def _cache_lookup(self, ck: str) -> tuple[bool, TimeFilter | None]:
+        """Cache fast-path → (hit, value). hit=True means use `value` directly
+        (None for a cached NULL); hit=False = miss/decode-error, proceed to LLM."""
+        if self._cache is None:
+            return False, None
+        try:
+            cached_raw = await self._cache.get(ck)
+            if cached_raw in (b"NULL", "NULL"):
+                return True, None
+            if isinstance(cached_raw, (str, bytes)) and cached_raw:
+                decoded = (cached_raw.decode("utf-8")
+                           if isinstance(cached_raw, bytes) else cached_raw)
+                return True, TimeFilter(**json.loads(decoded))
+        except Exception:                                          # noqa: BLE001
+            pass
+        return False, None
+
+    async def _cache_write(self, ck: str, tf: TimeFilter | None) -> None:
+        """Cache the result (both NULL and present are cached). Best-effort."""
+        if self._cache is None:
+            return
+        try:
+            if tf is None:
+                await self._cache.set(ck, "NULL", ttl=_CACHE_TTL_S)
+            else:
+                await self._cache.set(ck, tf.model_dump_json(), ttl=_CACHE_TTL_S)
+        except Exception:                                          # noqa: BLE001
+            pass
 
 
 __all__ = ["TimeFilterExtractor"]
