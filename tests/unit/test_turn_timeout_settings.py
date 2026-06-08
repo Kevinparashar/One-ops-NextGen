@@ -3,7 +3,7 @@
 The previously hard-coded timeout literals (60 / 65 / 90 s) are now typed Settings
 fields. This locks two things: (1) the DEFAULTS equal the old literals, so behaviour
 is unchanged unless an operator overrides; (2) env overrides actually flow through.
-See docs/change-log.md Batch C-6.
+See docs/history/change-log.md Batch C-6.
 """
 from __future__ import annotations
 

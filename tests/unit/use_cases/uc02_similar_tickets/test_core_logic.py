@@ -15,7 +15,7 @@ from oneops.use_cases.uc02_similar_tickets import core as uc02_core
 # ── Composite weight constants ───────────────────────────────────────────────
 
 def test_composite_weights_match_spec():
-    """ai-service-use-cases.md §UC-2: 0.60 + 0.25 + 0.15 = 1.0."""
+    """docs/product/ai-service-use-cases.md §UC-2: 0.60 + 0.25 + 0.15 = 1.0."""
     assert pytest.approx(0.60) == uc02_core._W_SEMANTIC
     assert pytest.approx(0.25) == uc02_core._W_METADATA
     assert pytest.approx(0.15) == uc02_core._W_RECENCY

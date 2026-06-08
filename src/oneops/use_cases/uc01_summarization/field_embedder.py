@@ -152,13 +152,19 @@ _msg_cache: dict[str, list[float]] = {}                  # msg-hash → vec
 _field_vec_lock = asyncio.Lock()
 
 
+# A vector magnitude at or below this is treated as a zero vector: cosine is
+# undefined and dividing by it is numerically unstable. Using an epsilon (not
+# an exact `== 0.0`) also guards against denormal/near-zero norms (S1244).
+_ZERO_NORM_EPSILON = 1e-12
+
+
 def _cosine(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
     dot = sum(x * y for x, y in zip(a, b, strict=False))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
-    if na == 0.0 or nb == 0.0:
+    if na <= _ZERO_NORM_EPSILON or nb <= _ZERO_NORM_EPSILON:
         return 0.0
     return dot / (na * nb)
 

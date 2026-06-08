@@ -1,4 +1,4 @@
-"""Enforces the live-activity contract (CONVENTIONS.md "Live activity stream").
+"""Enforces the live-activity contract (docs/architecture/CONVENTIONS.md "Live activity stream").
 
 The executor's step boundary MUST publish `tool_start` / `tool_done` events
 for every step, so every UC on the standard path inherits the live "which

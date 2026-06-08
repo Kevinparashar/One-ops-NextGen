@@ -251,6 +251,21 @@ _RESERVED_SUMMARY_KEYS = frozenset({
     "cache_hit", "cache_age_s",
 })
 
+# Search/embedding substrate columns that travel ON the record but are NOT
+# business fields any downstream step binds to — the FTS vector, per-chunk
+# content hashes, and the (string-serialised) embedding array + its provenance.
+# They pass the scalar filter below as strings, so they must be name-excluded;
+# otherwise every summary's bindable surface carries a multi-thousand-element
+# embedding blob for no consumer. Same intent as field_labels._HIDDEN, but kept
+# separate because bindable INTENTIONALLY keeps title/description (chainable)
+# which _HIDDEN drops from the user-facing grid.
+_BINDABLE_NOISE_KEYS = frozenset({
+    "search_tsv", "content_tsv",
+    "content_hash", "content_hash_symptom", "content_hash_diagnosis",
+    "content_hash_kb",
+    "embedding", "embedding_model", "embedding_version", "embedded_at",
+})
+
 
 def _record_bindable_fields(record: dict[str, Any] | None) -> dict[str, Any]:
     """The record's OWN scalar fields, surfaced as the summary's bindable output
@@ -261,10 +276,16 @@ def _record_bindable_fields(record: dict[str, Any] | None) -> dict[str, Any]:
     or delete a field in the data/schema and the bindable surface follows
     automatically. A binding to a field that no longer exists simply omits at
     runtime (planner bindings are optional), so field churn never breaks a turn.
+
+    Search/embedding substrate columns (`_BINDABLE_NOISE_KEYS`) are excluded —
+    they are not chainable business fields and would otherwise bloat every
+    response with the embedding array.
     """
     out: dict[str, Any] = {}
     for k, v in (record or {}).items():
-        if k in _RESERVED_SUMMARY_KEYS:
+        if k in _RESERVED_SUMMARY_KEYS or k in _BINDABLE_NOISE_KEYS:
+            continue
+        if k.startswith("_"):                       # internal bookkeeping (e.g. _updated_at)
             continue
         if isinstance(v, (str, int, float, bool)) and str(v).strip():
             out[k] = v
@@ -517,13 +538,11 @@ async def summarize_entity(
             linked_outcome = await _resolve_linked_field_read(
                 focus_humanised=humanised,
                 via_link=intent.via_link,
-                target_labels=list(intent.labels),
                 tenant_id=tenant_id,
                 user_id=str(context.get("user_id") or ""),
                 role=role,
                 model=model,
                 focus_ticket_id=ticket_id,
-                focus_service_id=service_id,
                 user_message=user_message,
             )
             if linked_outcome is not None:
@@ -588,13 +607,11 @@ async def _resolve_linked_field_read(
     *,
     focus_humanised: dict[str, Any],
     via_link: str,
-    target_labels: list[str],
     tenant_id: str,
     user_id: str,
     role: str,
     model: str,
     focus_ticket_id: str,
-    focus_service_id: str,
     user_message: str,
 ) -> dict[str, Any] | None:
     """Two-hop traversal for "X of the linked Y" / "owner of the related

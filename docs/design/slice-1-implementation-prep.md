@@ -129,7 +129,7 @@ Comfortably inside the 1-sprint budget. Buffer is real, not nominal.
 - 3 manifest edits, 1 seed script edit, 1 JSON catalog edit.
 - Pre/post 70-batch numbers recorded in a closeout doc at `docs/findings/slice-1-catalog-cleanup-closeout.md`.
 - 4 ISS files updated where appropriate: ISS-012 status confirmed `fixed` and ledger linked; ISS-013/014/008 unchanged (still active / deferred per their files).
-- `phase-status.md` row count for `uc_capabilities` updated.
+- `docs/planning/phase-status.md` row count for `uc_capabilities` updated.
 - This file moved to `docs/findings/` (or annotated as "completed") to reflect that prep is consumed.
 
 ---

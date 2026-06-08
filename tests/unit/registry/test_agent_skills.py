@@ -3,7 +3,7 @@
 The `Skill` model + `AgentRecord.skills` are ADDITIVE and NOT-yet-wired into
 routing. These tests lock: the schema validates, agents WITHOUT skills still parse
 (backward compatible), and the active UCs carry well-formed skill cards. See
-docs/agent-skills-spec.md.
+docs/architecture/agent-skills-spec.md.
 """
 from __future__ import annotations
 

@@ -3,6 +3,7 @@
   "id": "uc05_triage",
   "versions": {
     "1": {
+      "domain": "itsm",
       "abac_tags": {
         "audience": [
           "service_desk_agent",
@@ -13,7 +14,10 @@
           "admin"
         ],
         "data_classification": "confidential",
-        "service": ["incident", "request"],
+        "service": [
+          "incident",
+          "request"
+        ],
         "tier": "action"
       },
       "activation_condition": {
@@ -21,7 +25,9 @@
         "negate": false,
         "operator": "leaf",
         "signal": "role_in",
-        "values": ["__uc05_api_only_never_matches__"]
+        "values": [
+          "__uc05_api_only_never_matches__"
+        ]
       },
       "compound_of": [],
       "created_at": "2026-05-29T16:30:00.000000+00:00",
@@ -31,7 +37,9 @@
       "excludes": [],
       "hooks": {
         "after_invocation": [],
-        "before_invocation": ["builtin:authz_recheck"]
+        "before_invocation": [
+          "builtin:authz_recheck"
+        ]
       },
       "id": "uc05_triage",
       "intent_family": "triage_write",
@@ -45,27 +53,38 @@
         {
           "id": "triage_ticket",
           "name": "Triage a ticket",
-          "description": "Classify, prioritize, near-duplicate-check, and recommend assignment for an incident or request. Use when the user wants the ticket categorized/prioritized/assigned. Action-tier: applying changes requires confirmation.",
+          "description": "Classify, prioritize, near-duplicate-check, and recommend assignment for an open incident or request - proposing values for the UC-5-owned fields (category, subcategory, impact, urgency, priority, assignment_group, assigned_to). Action-tier: proposals require operator confirmation before they are applied. Operator-/API-driven only (queue surface and NATS subjects); not reachable from the conversational chat router. NOT for summarizing the ticket, fetching KB/how-to articles, or finding similar tickets as an end goal.",
           "use_when": [
-            "triage this ticket",
-            "classify / categorize / prioritize / assign this",
-            "what priority / category / assignment group should this have"
+            "the operator wants a ticket classified, categorized, or sub-categorized",
+            "the operator wants impact, urgency, or priority assessed for a ticket",
+            "the operator wants a recommended assignment group or assignee for a ticket",
+            "the operator wants a triage proposal assembled for review and decision",
+            "the operator wants a near-duplicate check as part of triaging a ticket"
           ],
           "not_when": [
-            "just summarize the ticket (summary agent)",
-            "find KB / docs (knowledge agent)"
+            "the user wants the ticket's existing facts, fields, or timeline (route to uc01_summarization)",
+            "the user wants knowledge, documentation, how-to, or KB articles (route to uc03_kb_lookup)",
+            "the user wants other tickets similar to or duplicates of this one as an end goal (route to uc02_similar_tickets)",
+            "the user wants to create or fulfil a new request (route to an action/fulfilment agent)",
+            "the request arrives from the conversational chat router (this agent is API/operator-only)",
+            "the user seeks guidance or solutions for resolving an incident or request (route to uc03_kb_lookup)"
           ],
           "tags": [
             "triage",
             "classification",
+            "prioritization",
+            "assignment",
             "action",
             "incident",
             "request"
           ],
           "examples": [
             "triage INC0001001",
-            "what priority should this incident be",
-            "who should this be assigned to"
+            "what category and priority should this incident be",
+            "recommend an assignment group for this request",
+            "assemble a triage proposal for INC0001021",
+            "who should this incident be assigned to",
+            "assess impact and urgency for this ticket"
           ]
         }
       ],

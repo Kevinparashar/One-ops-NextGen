@@ -6,7 +6,7 @@ or any DB lookup, the reference must be canonicalised to one form.
 
 This is **one normalizer for the whole platform** — entity-ID prefixes are
 platform vocabulary, not use-case vocabulary. The prefix → service map is
-*data*, read from `registries/service-schema.json` (`id_prefix` +
+*data*, read from `registries/v2/platform/service-schema.json` (`id_prefix` +
 `alias_prefixes`). Adding a service later = one registry row, no code change
 (thumb rule #2 — registry-driven, never a hardcoded list).
 
@@ -29,7 +29,7 @@ from oneops.observability import get_logger
 
 _log = get_logger("oneops.router.entity_id")
 
-_DEFAULT_SCHEMA = "registries/service-schema.json"
+_DEFAULT_SCHEMA = "registries/v2/platform/service-schema.json"
 
 # Canonical id body width across every service (INC0001234, KB0005010, …).
 # Anything 1-2 digits is too short to be a real id (REJECTED). 3-6 digits is

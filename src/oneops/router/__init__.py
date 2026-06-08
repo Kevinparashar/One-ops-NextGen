@@ -48,6 +48,7 @@ from oneops.router.plan import (
 from oneops.router.retrieval import (
     Candidate,
     CandidateRetriever,
+    GatewayEmbedder,
     LexicalRetriever,
     PgVectorRetriever,
 )
@@ -78,6 +79,7 @@ __all__ = [
     "survives_filter",
     "Candidate",
     "CandidateRetriever",
+    "GatewayEmbedder",
     "LexicalRetriever",
     "PgVectorRetriever",
     "Disambiguation",

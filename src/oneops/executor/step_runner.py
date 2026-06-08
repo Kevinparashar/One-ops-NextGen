@@ -29,6 +29,9 @@ from oneops.observability import get_logger, get_tracer, set_langfuse_io
 from oneops.observability.event_sink import publish as _publish_event
 from oneops.observability.metrics import increment as _metric_inc
 
+# Telemetry literals → constants (sonar S1192).
+_STEP_STATUS = "step.status"
+
 
 def _tool_action(tool: Any) -> str:
     """A one-line, human 'what this tool does' phrase for the live UI —
@@ -395,7 +398,7 @@ class HandlerStepExecutor:
             except TimeoutError:
                 latency_ms = int((time.monotonic() - t0) * 1000)
                 span.set_attribute("error", True)
-                span.set_attribute("step.status", "timeout")
+                span.set_attribute(_STEP_STATUS, "timeout")
                 _log.warning("executor.step.timeout",
                              agent_id=agent_id, tool_id=tool_id,
                              timeout_s=timeout_s)
@@ -411,7 +414,7 @@ class HandlerStepExecutor:
             except Exception as exc:                      # noqa: BLE001 — boundary
                 latency_ms = int((time.monotonic() - t0) * 1000)
                 span.set_attribute("error", True)
-                span.set_attribute("step.status", "failed")
+                span.set_attribute(_STEP_STATUS, "failed")
                 _log.warning("executor.step.handler_raised",
                              agent_id=agent_id, tool_id=tool_id,
                              error=str(exc)[:200])
@@ -424,7 +427,7 @@ class HandlerStepExecutor:
                     error=f"handler raised {type(exc).__name__}: {exc}",
                     tool_id=tool_id, latency_ms=latency_ms)
             latency_ms = int((time.monotonic() - t0) * 1000)
-            span.set_attribute("step.status", "success")
+            span.set_attribute(_STEP_STATUS, "success")
             span.set_attribute("step.latency_ms", latency_ms)
             # Langfuse: tool OUTPUT (redacted, content-gated).
             set_langfuse_io(span, output=output, observation_type="span")

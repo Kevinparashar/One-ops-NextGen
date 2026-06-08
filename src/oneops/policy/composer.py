@@ -271,7 +271,7 @@ def compose(
         if cached is not None:
             return cached
 
-    ctx = {k: "" for k in USER_CONTEXT_KEYS}
+    ctx = dict.fromkeys(USER_CONTEXT_KEYS, "")
     if context:
         for k, v in context.items():
             ctx[k] = "" if v is None else str(v)

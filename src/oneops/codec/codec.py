@@ -5,7 +5,7 @@ an `Envelope` carrying a typed payload. This module is the *only* place that
 serialises or deserialises that contract — no module hand-rolls protobuf calls
 or falls back to ad-hoc JSON on a boundary.
 
-Schema-version window (the N / N-1 rule, MIGRATION.md P2):
+Schema-version window (the N / N-1 rule, docs/history/MIGRATION.md P2):
   * `CURRENT_SCHEMA_VERSION` — what this build emits.
   * `MIN_SUPPORTED_SCHEMA_VERSION` — the oldest version this build still
     accepts. A rolling deploy always has at most two versions live, so the
@@ -57,7 +57,7 @@ class DecodedEnvelope:
 
 def _now_ms() -> int:
     """Server time, milliseconds. Client timestamps are never trusted for
-    ordering (ARCHITECTURE.md §6)."""
+    ordering (docs/architecture/ARCHITECTURE.md §6)."""
     return int(time.time() * 1000)
 
 

@@ -31,6 +31,10 @@ from oneops.policy.composer import Profile, compose
 
 _tracer = get_tracer("oneops.uc05_triage.adapters")
 
+# Repeated literals → constants (sonar S1192).
+_ONEOPS_TENANT_ID = "oneops.tenant_id"
+_UC05_PROPOSE_OUTCOME = "uc05.propose.outcome"
+
 # Default models — match what UC-3 already uses against LiteLLM
 DEFAULT_EMBED_MODEL = "text-embedding-3-large"
 DEFAULT_EMBED_DIMENSIONS = 1536
@@ -99,7 +103,7 @@ def make_tiebreak_fn(
                         ticket_row: dict[str, Any]) -> str | None:
         with _tracer.start_as_current_span(
             "uc05.adapter.tiebreak",
-            attributes={"oneops.tenant_id": tenant_id, "uc05.field": field,
+            attributes={_ONEOPS_TENANT_ID: tenant_id, "uc05.field": field,
                         "uc05.candidate_count": len(candidates)},
         ):
             cand_block = "\n".join(
@@ -172,7 +176,7 @@ def make_propose_fn(
         with _tracer.start_as_current_span(
             "uc05.adapter.propose",
             attributes={
-                "oneops.tenant_id": tenant_id,
+                _ONEOPS_TENANT_ID: tenant_id,
                 "uc05.field": field,
                 "uc05.pool_size": len(pool),
             },
@@ -206,10 +210,10 @@ def make_propose_fn(
                 conf_str = (doc.get("confidence") or "low").strip().lower()
                 rationale = (doc.get("rationale") or "").strip()
                 if not value:
-                    span.set_attribute("uc05.propose.outcome", "empty_value")
+                    span.set_attribute(_UC05_PROPOSE_OUTCOME, "empty_value")
                     return None
                 confidence = _CONFIDENCE_STR_TO_FLOAT.get(conf_str, 0.30)
-                span.set_attribute("uc05.propose.outcome", "ok")
+                span.set_attribute(_UC05_PROPOSE_OUTCOME, "ok")
                 span.set_attribute("uc05.propose.value", value[:60])
                 span.set_attribute("uc05.propose.confidence", confidence)
                 return {
@@ -218,7 +222,7 @@ def make_propose_fn(
                     "rationale": rationale[:180],
                 }
             except Exception as exc:                                # noqa: BLE001
-                span.set_attribute("uc05.propose.outcome", "error")
+                span.set_attribute(_UC05_PROPOSE_OUTCOME, "error")
                 span.set_attribute("uc05.propose.error", str(exc)[:160])
                 return None
 
@@ -256,7 +260,7 @@ def make_tag_fn(
                    candidate_pool: list[str]) -> list[str]:
         with _tracer.start_as_current_span(
             "uc05.adapter.tag",
-            attributes={"oneops.tenant_id": tenant_id,
+            attributes={_ONEOPS_TENANT_ID: tenant_id,
                         "uc05.pool_size": len(candidate_pool)},
         ):
             nb = "\n".join(f"  • {t}" for t in neighbour_titles[:5])
@@ -324,7 +328,7 @@ def make_infer_fn(
                      vip_flag: bool = False) -> dict[str, str]:
         with _tracer.start_as_current_span(
             "uc05.adapter.prioritize",
-            attributes={"oneops.tenant_id": tenant_id,
+            attributes={_ONEOPS_TENANT_ID: tenant_id,
                         "uc05.service_id": service_id,
                         "uc05.vip": vip_flag},
         ):

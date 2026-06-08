@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,6 +39,14 @@ from oneops.use_cases.uc05_triage.queue import (
 )
 from oneops.use_cases.uc05_triage.stores.base import TicketStore
 from oneops.use_cases.uc05_triage.stores.json_store import JsonFixtureStore
+
+# Telemetry/HTTP literals → constants (sonar S1192).
+_AI_AGENT_RUNS_TOTAL = "ai.agent.runs.total"
+_AI_REQUEST = "ai.request"
+_ONEOPS_ENDPOINT = "oneops.endpoint"
+_ONEOPS_ROLE = "oneops.role"
+_ONEOPS_TENANT_ID = "oneops.tenant_id"
+_ONEOPS_USER_ID = "oneops.user_id"
 
 router = APIRouter(prefix="/api/uc05", tags=["uc05-triage"])
 
@@ -148,18 +156,18 @@ _proposal_cache: dict[str, Proposal] = {}
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
-@router.get("/queue-summary", response_model=QueueSummaryResponse)
+@router.get("/queue-summary")
 async def queue_summary(
     request: Request,
-    store: TicketStore = Depends(get_ticket_store),
+    store: Annotated[TicketStore, Depends(get_ticket_store)],
 ) -> QueueSummaryResponse:
     tenant, user, role = _principal(request)
     _require_triage_role(role)
 
-    with span("ai.request",
-              **{"oneops.endpoint": "uc05.queue_summary",
-                 "oneops.tenant_id": tenant, "oneops.user_id": user,
-                 "oneops.role": role}):
+    with span(_AI_REQUEST,
+              **{_ONEOPS_ENDPOINT: "uc05.queue_summary",
+                 _ONEOPS_TENANT_ID: tenant, _ONEOPS_USER_ID: user,
+                 _ONEOPS_ROLE: role}):
         inc_rows = await store.list_all(service_id="incident", tenant_id=tenant)  # type: ignore[attr-defined]
         req_rows = await store.list_all(service_id="request", tenant_id=tenant)  # type: ignore[attr-defined]
     return QueueSummaryResponse(
@@ -172,19 +180,19 @@ async def queue_summary(
     )
 
 
-@router.get("/queue", response_model=list[QueueItem])
+@router.get("/queue")
 async def queue(
     request: Request,
-    service_id: ServiceId = Query(...),
-    store: TicketStore = Depends(get_ticket_store),
+    service_id: Annotated[ServiceId, Query()],
+    store: Annotated[TicketStore, Depends(get_ticket_store)],
 ) -> list[QueueItem]:
     tenant, user, role = _principal(request)
     _require_triage_role(role)
 
-    with span("ai.request",
-              **{"oneops.endpoint": "uc05.queue",
-                 "oneops.tenant_id": tenant, "oneops.user_id": user,
-                 "oneops.role": role, "uc05.service_id": service_id}):
+    with span(_AI_REQUEST,
+              **{_ONEOPS_ENDPOINT: "uc05.queue",
+                 _ONEOPS_TENANT_ID: tenant, _ONEOPS_USER_ID: user,
+                 _ONEOPS_ROLE: role, "uc05.service_id": service_id}):
         rows = await store.list_all(service_id=service_id, tenant_id=tenant)  # type: ignore[attr-defined]
     out: list[QueueItem] = []
     id_field = f"{service_id}_id"
@@ -265,19 +273,19 @@ async def propose_stream(payload: ProposeRequest, request: Request):
         media_type="application/x-ndjson")
 
 
-@router.post("/propose", response_model=Proposal)
+@router.post("/propose")
 async def propose(
     payload: ProposeRequest,
     request: Request,
-    store: TicketStore = Depends(get_ticket_store),
+    store: Annotated[TicketStore, Depends(get_ticket_store)],
 ) -> Proposal:
     tenant, user, role = _principal(request)
     _require_triage_role(role)
 
-    _sp_cm = span("ai.request",
-                   **{"oneops.endpoint": "uc05.propose",
-                      "oneops.tenant_id": tenant, "oneops.user_id": user,
-                      "oneops.role": role, "uc05.ticket_id": payload.ticket_id,
+    _sp_cm = span(_AI_REQUEST,
+                   **{_ONEOPS_ENDPOINT: "uc05.propose",
+                      _ONEOPS_TENANT_ID: tenant, _ONEOPS_USER_ID: user,
+                      _ONEOPS_ROLE: role, "uc05.ticket_id": payload.ticket_id,
                       "uc05.service_id": payload.service_id})
     _sp_cm.__enter__()
     import time as _time
@@ -300,7 +308,7 @@ async def propose(
 
 
 async def _propose_impl(*, payload, tenant, user, role, store):
-    _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+    _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                 tenant_id=tenant, operation="propose",
                 status="started")
     try:
@@ -332,7 +340,7 @@ async def _propose_impl(*, payload, tenant, user, role, store):
             role=role,
         )
         _proposal_cache[proposal.proposal_id] = proposal
-        _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+        _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="propose",
                     status="success")
         return proposal
@@ -340,30 +348,30 @@ async def _propose_impl(*, payload, tenant, user, role, store):
         # 4xx and similar are deliberate refusals (ticket not found,
         # already triaged, role denied). They are NOT worker failures
         # and must not pollute the success-ratio denominator.
-        _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+        _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="propose",
                     status="refused")
         raise
     except Exception:
-        _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+        _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="propose",
                     status="failed")
         raise
 
 
-@router.post("/decide", response_model=Outcome)
+@router.post("/decide")
 async def decide(
     payload: DecideRequest,
     request: Request,
-    store: TicketStore = Depends(get_ticket_store),
+    store: Annotated[TicketStore, Depends(get_ticket_store)],
 ) -> Outcome:
     tenant, user, role = _principal(request)
     _require_triage_role(role)
 
-    _sp_cm = span("ai.request",
-                   **{"oneops.endpoint": "uc05.decide",
-                      "oneops.tenant_id": tenant, "oneops.user_id": user,
-                      "oneops.role": role,
+    _sp_cm = span(_AI_REQUEST,
+                   **{_ONEOPS_ENDPOINT: "uc05.decide",
+                      _ONEOPS_TENANT_ID: tenant, _ONEOPS_USER_ID: user,
+                      _ONEOPS_ROLE: role,
                       "uc05.proposal_id": payload.proposal_id,
                       "uc05.choice": payload.choice})
     _sp_cm.__enter__()
@@ -384,7 +392,7 @@ async def decide(
 
 
 async def _decide_impl(*, payload, tenant, user, store):
-    _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+    _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                 tenant_id=tenant, operation="decide",
                 status="started")
     try:
@@ -392,12 +400,12 @@ async def _decide_impl(*, payload, tenant, user, store):
                                           user=user, store=store)
     except HTTPException:
         # Deliberate refusal — does not represent a worker failure.
-        _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+        _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="decide",
                     status="refused")
         raise
     except Exception:
-        _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+        _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="decide",
                     status="failed")
         raise
@@ -452,7 +460,7 @@ async def _decide_impl_inner(*, payload, tenant, user, store):
 
     # Evict the proposal — single-use
     _proposal_cache.pop(payload.proposal_id, None)
-    _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+    _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                 tenant_id=tenant, operation="decide",
                 status="success")
     return outcome

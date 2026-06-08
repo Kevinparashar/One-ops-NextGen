@@ -42,6 +42,9 @@ from oneops.use_cases.uc08_fulfillment.errors import (
     RequestNotFoundError,
 )
 
+# Telemetry/HTTP literals → constants (sonar S1192).
+_ONEOPS_TENANT_ID = "oneops.tenant_id"
+
 ConnectionProvider = Callable[[], Awaitable[asyncpg.Connection]]
 
 _tracer = trace.get_tracer("oneops.uc08.db")
@@ -74,7 +77,7 @@ async def load_catalog_template(
     with _tracer.start_as_current_span(
         "uc08.db.load_catalog_template",
         attributes={
-            "oneops.tenant_id": tenant_id,
+            _ONEOPS_TENANT_ID: tenant_id,
             "uc08.catalog_item_id": catalog_item_id,
         },
     ):
@@ -182,7 +185,7 @@ async def insert_request_item(
     with _tracer.start_as_current_span(
         "uc08.db.insert_request_item",
         attributes={
-            "oneops.tenant_id": tenant_id,
+            _ONEOPS_TENANT_ID: tenant_id,
             "oneops.request_id": request_id,
             "uc08.catalog_item_id": catalog_item_id,
         },
@@ -239,7 +242,7 @@ async def insert_tasks(
     with _tracer.start_as_current_span(
         "uc08.db.insert_tasks",
         attributes={
-            "oneops.tenant_id": tenant_id,
+            _ONEOPS_TENANT_ID: tenant_id,
             "uc08.ritm_id": ritm_id,
             "uc08.task_count": len(plan.tasks),
         },
@@ -310,7 +313,7 @@ async def get_status(
     and by the chat status tool."""
     with _tracer.start_as_current_span(
         "uc08.db.get_status",
-        attributes={"oneops.tenant_id": tenant_id, "uc08.ritm_id": ritm_id},
+        attributes={_ONEOPS_TENANT_ID: tenant_id, "uc08.ritm_id": ritm_id},
     ):
         ritm = await conn.fetchrow(
             """

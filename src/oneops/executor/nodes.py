@@ -41,12 +41,18 @@ from oneops.observability import (
 from oneops.registry.models import ExecutionTier
 from oneops.registry.service import RegistryService
 from oneops.router.entity_id import EntityIdNormalizer
-from oneops.router.plan import RouteOutcome
+from oneops.router.plan import RouteOutcome, SubQueryRoute, assemble_plan
 from oneops.router.rewrite import ConversationTurn
 from oneops.router.router import Router
 from oneops.router.signals import RequestSignals
 from oneops.session.backend import ConversationEvent
 from oneops.session.store import SessionEventStore
+
+# Telemetry literals → constants (sonar S1192).
+_AI_ROUTER_OUTCOME_TOTAL = "ai.router.outcome.total"
+_EXECUTOR_ROUTE_OUTCOME = "executor.route_outcome"
+_ONEOPS_TENANT_ID = "oneops.tenant_id"
+_SESSION_ID = "session.id"
 
 _log = get_logger("oneops.executor.nodes")
 _tracer = get_tracer("oneops.executor.nodes")
@@ -423,9 +429,9 @@ class ExecutorNodes:
             return {"conversation_history": []}
         with _tracer.start_as_current_span(
             "executor.load_session",
-            attributes={"oneops.tenant_id": tenant_id,
+            attributes={_ONEOPS_TENANT_ID: tenant_id,
                         "oneops.user_id": state.get("user_id", ""),
-                        "session.id": session_id},
+                        _SESSION_ID: session_id},
         ) as span:
             events = await self._session_store.recent(tenant_id, session_id)
             history = [{"role": e.turn_role, "content": e.content} for e in events]
@@ -486,8 +492,8 @@ class ExecutorNodes:
         from oneops.router.entity_id import EntityIdNormalizer
         with _tracer.start_as_current_span(
             "executor.update_focus",
-            attributes={"oneops.tenant_id": state.get("tenant_id", ""),
-                        "session.id": state.get("session_id", "")},
+            attributes={_ONEOPS_TENANT_ID: state.get("tenant_id", ""),
+                        _SESSION_ID: state.get("session_id", "")},
         ) as span:
             normalizer = EntityIdNormalizer.from_registry_file()
             message = state.get("message", "") or ""
@@ -562,8 +568,42 @@ class ExecutorNodes:
         with _tracer.start_as_current_span(
             "executor.route",
             attributes={"oneops.request_id": state.get("request_id", ""),
-                        "oneops.tenant_id": state.get("tenant_id", "")},
+                        _ONEOPS_TENANT_ID: state.get("tenant_id", "")},
         ) as span:
+            # ── Pre-routed dispatch (forced-agent path) ──────────────────
+            # A caller already selected the agent(s) (a team manager's member-
+            # selector, a button/HTTP route, the /propose fast-path). Build the
+            # plan directly and SKIP the LLM router — first-class, not a fallback.
+            # Drop ids with no active record (never invent); none left → no-match.
+            requested = list(state.get("forced_agent_ids") or [])
+            if requested:
+                forced = [a for a in requested
+                          if self._registry.agents.get_optional(a) is not None]
+                span.set_attribute("executor.forced_dispatch", True)
+                span.set_attribute("executor.forced_agents", ",".join(forced))
+                if not forced:
+                    span.set_attribute(_EXECUTOR_ROUTE_OUTCOME, "no_confident_match")
+                    increment(_AI_ROUTER_OUTCOME_TOTAL, outcome="no_confident_match",
+                              tenant_id=state.get("tenant_id", ""))
+                    return {
+                        "route_outcome": "no_confident_match",
+                        "boundary_reason": "forced agents have no active registry record",
+                        "route_diagnostics": [f"forced dispatch: none of {requested} active"],
+                        "unrouted": [], "plan": [], "entity_clarification": "",
+                        "time_filter": {},
+                    }
+                plan = assemble_plan(
+                    [SubQueryRoute(sub_query_id="sq_forced", agent_ids=forced)],
+                    self._registry)
+                span.set_attribute(_EXECUTOR_ROUTE_OUTCOME, "routed")
+                increment(_AI_ROUTER_OUTCOME_TOTAL, outcome="routed",
+                          tenant_id=state.get("tenant_id", ""))
+                return {
+                    "route_outcome": "routed",
+                    "plan": serialise_plan(plan),
+                    "route_diagnostics": [f"forced dispatch: {forced}"],
+                    "unrouted": [], "entity_clarification": "", "time_filter": {},
+                }
             principal = Principal(
                 tenant_id=state.get("tenant_id", ""),
                 user_id=state.get("user_id", "") or "unknown",
@@ -587,8 +627,8 @@ class ExecutorNodes:
             # one to act on — the turn's answer IS the correction request.
             # Short-circuit before the router: there is nothing to route.
             if extraction.malformed and not extraction.entities:
-                span.set_attribute("executor.route_outcome", "entity_clarification")
-                increment("ai.router.outcome.total", outcome="entity_clarification",
+                span.set_attribute(_EXECUTOR_ROUTE_OUTCOME, "entity_clarification")
+                increment(_AI_ROUTER_OUTCOME_TOTAL, outcome="entity_clarification",
                           tenant_id=principal.tenant_id)
                 return {
                     "route_outcome": "entity_clarification",
@@ -610,13 +650,13 @@ class ExecutorNodes:
             result = await self._router.route(
                 state.get("message", ""), principal=principal, signals=signals,
                 conversation_history=history, request_ctx=_envelope(state))
-            span.set_attribute("executor.route_outcome", result.outcome.value)
+            span.set_attribute(_EXECUTOR_ROUTE_OUTCOME, result.outcome.value)
             set_langfuse_io(
                 span, input=state.get("message", ""),
                 output={"outcome": result.outcome.value,
                         "agents": (list(result.plan.agent_ids)
                                    if result.plan else [])})
-            increment("ai.router.outcome.total", outcome=result.outcome.value,
+            increment(_AI_ROUTER_OUTCOME_TOTAL, outcome=result.outcome.value,
                       tenant_id=principal.tenant_id)
 
             update: dict[str, Any] = {
@@ -920,7 +960,7 @@ class ExecutorNodes:
                          key=lambda r: order.get(r.get("step_id"), 10**6))
 
         # Per-agent run metric — every step, every status (drives the
-        # per-agent error-rate dashboard, ARCHITECTURE.md §7).
+        # per-agent error-rate dashboard, docs/architecture/ARCHITECTURE.md §7).
         for r in ordered:
             increment("ai.agent.runs.total", agent_id=r.get("agent_id", ""),
                       status=r.get("status", "unknown"))
@@ -1065,13 +1105,13 @@ class ExecutorNodes:
                 "Please send it again, e.g. \"INC0001234\".")
             with _tracer.start_as_current_span(
                 "executor.boundary",
-                attributes={"executor.route_outcome": outcome},
+                attributes={_EXECUTOR_ROUTE_OUTCOME: outcome},
             ):
                 return {"final_status": "clarification",
                         "final_response": clarification}
         with _tracer.start_as_current_span(
             "executor.boundary",
-            attributes={"executor.route_outcome": outcome},
+            attributes={_EXECUTOR_ROUTE_OUTCOME: outcome},
         ):
             text = await self._boundary.respond(
                 outcome=outcome, reason=reason, request=_envelope(state))
@@ -1098,9 +1138,9 @@ class ExecutorNodes:
 
         with _tracer.start_as_current_span(
             "executor.persist",
-            attributes={"oneops.tenant_id": tenant_id,
+            attributes={_ONEOPS_TENANT_ID: tenant_id,
                         "oneops.user_id": state.get("user_id", ""),
-                        "session.id": session_id},
+                        _SESSION_ID: session_id},
         ):
             if message:
                 await self._session_store.append(tenant_id, session_id, ConversationEvent(

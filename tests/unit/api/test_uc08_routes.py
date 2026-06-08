@@ -328,6 +328,8 @@ def test_devil_cross_tenant_attack_isolated(client):
     asyncio.run(_verify())
 
 
+@pytest.mark.stress  # 5 concurrent real-embed calls saturate the single local
+# LiteLLM gateway → not hermetic; runs in the stress lane, not the `-m unit` gate.
 def test_devil_concurrent_5way_route_calls_stable(client):
     """Five HTTP calls in quick succession, all unseen queries."""
     queries = [

@@ -9,7 +9,7 @@ fields so:
   • The structured fields stay available for richer follow-ups
     ("filter to resolved", "show me the second one in detail").
 
-Output shape mirrors ai-service-use-cases.md §UC-2 "Output Format":
+Output shape mirrors docs/product/ai-service-use-cases.md §UC-2 "Output Format":
 
     Found 5 similar tickets (showing top 3):
 

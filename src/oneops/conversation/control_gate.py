@@ -149,7 +149,7 @@ _RESPONSES: dict[str, str] = {
 _PUNCT_ONLY_RE = re.compile(r"^[\W_]+$", re.UNICODE)
 # Pure-emoji detection — any glyph in common emoji ranges, no letters/digits.
 _EMOJI_ONLY_RE = re.compile(
-    r"^[\s\U0001F300-\U0001FAFF\U00002600-\U000027BF✀-➿]+$",
+    r"^[\s\U0001F300-\U0001FAFF\U00002600-\U000027BF]+$",
     re.UNICODE,
 )
 # Canonical-ID shape — generic prefix+digit pattern; matches every entity

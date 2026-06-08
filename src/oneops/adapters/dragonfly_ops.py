@@ -35,6 +35,10 @@ from oneops.observability import get_logger, histogram, increment
 
 _log = get_logger("oneops.adapters.dragonfly_ops")
 
+# Telemetry literals (single source — sonar S1192).
+_CACHE_DRAGONFLY_ERROR_TOTAL = "cache.dragonfly.error.total"
+_CACHE_DRAGONFLY_LATENCY_MS = "cache.dragonfly.latency_ms"
+
 # Refuse to cache values larger than this. A pathologically large LLM
 # output (e.g. a runaway reranker response) should not be stored — it
 # bloats Dragonfly memory and slows every GET on that key. 256 KiB is
@@ -55,14 +59,14 @@ async def cache_get(*, key: str, keyspace: str) -> bytes | None:
         raw = await client.get(key)
         latency_ms = int((time.monotonic() - t0) * 1000)
         increment("cache.dragonfly.get.total", keyspace=keyspace)
-        histogram("cache.dragonfly.latency_ms", value=latency_ms, keyspace=keyspace, op="get")
+        histogram(_CACHE_DRAGONFLY_LATENCY_MS, value=latency_ms, keyspace=keyspace, op="get")
         if raw is None:
             increment("cache.dragonfly.miss.total", keyspace=keyspace)
             return None
         increment("cache.dragonfly.hit.total", keyspace=keyspace)
         return raw
     except Exception as exc:  # noqa: BLE001 — cache must never break the request
-        increment("cache.dragonfly.error.total", keyspace=keyspace, op="get")
+        increment(_CACHE_DRAGONFLY_ERROR_TOTAL, keyspace=keyspace, op="get")
         _log.warning("cache.dragonfly.get_failed", keyspace=keyspace, error=str(exc))
         return None
 
@@ -74,7 +78,7 @@ async def cache_set(*, key: str, value: bytes, ttl_seconds: int, keyspace: str) 
     is a producer bug; caching it would penalise every future read.
     """
     if len(value) > _MAX_VALUE_BYTES:
-        increment("cache.dragonfly.error.total", keyspace=keyspace, op="set_oversized")
+        increment(_CACHE_DRAGONFLY_ERROR_TOTAL, keyspace=keyspace, op="set_oversized")
         _log.warning(
             "cache.dragonfly.set_value_too_large",
             keyspace=keyspace, size_bytes=len(value), limit=_MAX_VALUE_BYTES,
@@ -86,10 +90,10 @@ async def cache_set(*, key: str, value: bytes, ttl_seconds: int, keyspace: str) 
         await client.set(key, value, ex=max(1, int(ttl_seconds)))
         latency_ms = int((time.monotonic() - t0) * 1000)
         increment("cache.dragonfly.set.total", keyspace=keyspace)
-        histogram("cache.dragonfly.latency_ms", value=latency_ms, keyspace=keyspace, op="set")
+        histogram(_CACHE_DRAGONFLY_LATENCY_MS, value=latency_ms, keyspace=keyspace, op="set")
         return True
     except Exception as exc:  # noqa: BLE001 — cache write must never break the response
-        increment("cache.dragonfly.error.total", keyspace=keyspace, op="set")
+        increment(_CACHE_DRAGONFLY_ERROR_TOTAL, keyspace=keyspace, op="set")
         _log.warning("cache.dragonfly.set_failed", keyspace=keyspace, error=str(exc))
         return False
 
@@ -102,10 +106,10 @@ async def cache_delete(*, key: str, keyspace: str) -> bool:
         await client.delete(key)
         latency_ms = int((time.monotonic() - t0) * 1000)
         increment("cache.dragonfly.delete.total", keyspace=keyspace)
-        histogram("cache.dragonfly.latency_ms", value=latency_ms, keyspace=keyspace, op="delete")
+        histogram(_CACHE_DRAGONFLY_LATENCY_MS, value=latency_ms, keyspace=keyspace, op="delete")
         return True
     except Exception as exc:  # noqa: BLE001
-        increment("cache.dragonfly.error.total", keyspace=keyspace, op="delete")
+        increment(_CACHE_DRAGONFLY_ERROR_TOTAL, keyspace=keyspace, op="delete")
         _log.warning("cache.dragonfly.delete_failed", keyspace=keyspace, error=str(exc))
         return False
 
@@ -129,7 +133,7 @@ async def acquire_lock(*, lock_key: str, ttl_seconds: int, keyspace: str) -> boo
         )
         return bool(acquired)
     except Exception as exc:  # noqa: BLE001 — lock failure must not break the request
-        increment("cache.dragonfly.error.total", keyspace=keyspace, op="lock")
+        increment(_CACHE_DRAGONFLY_ERROR_TOTAL, keyspace=keyspace, op="lock")
         _log.warning("cache.dragonfly.lock_failed", keyspace=keyspace, error=str(exc))
         # Fail-open: behave as if we acquired the lock so the caller computes
         # rather than waiting forever. Worst case = a redundant compute.

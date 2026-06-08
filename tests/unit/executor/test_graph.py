@@ -114,7 +114,7 @@ async def test_dependent_steps_both_run(tmp_path):
 
 # ── GOLDEN characterization (scheduler-refactor oracle, review #1 Phase 0) ────
 # These lock scheduler behavior the planned wave-loop refactor must preserve
-# identically. See docs/scheduler-refactor-scope.md §6 invariants.
+# identically. See docs/planning/scheduler-refactor-scope.md §6 invariants.
 
 
 async def test_diamond_dag_converges(tmp_path):

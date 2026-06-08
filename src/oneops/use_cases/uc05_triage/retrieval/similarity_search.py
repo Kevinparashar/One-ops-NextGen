@@ -34,7 +34,6 @@ OTel spans:
 from __future__ import annotations
 
 import math
-import os
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -43,16 +42,6 @@ from oneops.use_cases.uc05_triage.contracts import ScoredNeighbour
 from oneops.use_cases.uc05_triage.retrieval.schema_loader import (
     load_retrieval_schema,
 )
-
-
-def _use_new_substrate() -> bool:
-    """Feature flag for P3. 'new' reads from ai.embeddings_<service> filtered
-    by chunk_type='symptom_anchor'. 'legacy' reads the inline column on the
-    source table — the path UC-5 used pre-2026-05-30. Default 'new' as of
-    2026-05-30 once side-by-side verification confirmed bit-identical UC-5
-    proposals; set UC05_EMBEDDING_SOURCE=legacy to roll back without code
-    change while the legacy `itsm.*.embedding` column still exists."""
-    return os.getenv("UC05_EMBEDDING_SOURCE", "new").strip().lower() == "new"
 
 # ── Tunables (same shape as UC-3) ─────────────────────────────────────────────
 
@@ -101,53 +90,26 @@ def _build_fts_sql(schema: dict[str, Any]) -> str:
 
 
 def _build_vector_sql(schema: dict[str, Any]) -> str:
-    """Build the vector-search SQL.
-
-    Two shapes share one entry point:
-
-      • legacy — read inline `embedding` column on the source table directly.
-        Single-table scan; matches the pre-2026-05-30 path bit-identically.
-
-      • new (P3) — read from `ai.embeddings_<service>` filtered by
-        chunk_type='symptom_anchor', JOIN-ed to the source table to hydrate
-        neighbour columns (title/category/CI etc.) needed by the reranker.
-        The HNSW ORDER BY runs on the narrow embeddings table; the source
-        join is lookup-by-PK.
-
-    The selection is made by UC05_EMBEDDING_SOURCE env flag at call time, so
-    flipping back to legacy requires no redeploy.
-    """
-    cols = ", ".join(schema["neighbour_columns"])
+    """Vector-search SQL over `ai.embeddings_<service>` (chunk_type=
+    'symptom_anchor'), JOIN-ed to the source table to hydrate the neighbour
+    columns (title/category/CI…) the reranker needs. The HNSW ORDER BY runs on
+    the narrow embeddings table; the source join is lookup-by-PK."""
     src = schema["table"]
     idc = schema["id_column"]
-
-    if _use_new_substrate():
-        emb_tbl = schema["embedding_table_v2"]
-        chunk = schema["embedding_chunk_type"]
-        cols_qualified = ", ".join(f"i.{c}" for c in schema["neighbour_columns"])
-        return (
-            f"SELECT i.{idc} AS id, {cols_qualified}, "
-            f"1 - (e.embedding <=> $1::vector) AS vec_score "
-            f"FROM {emb_tbl} e "
-            f"JOIN {src} i "
-            f"  ON i.{idc} = e.entity_id AND i.tenant_id = e.tenant_id "
-            f"WHERE e.tenant_id = $2 "
-            f"  AND e.chunk_type = '{chunk}' "
-            f"  AND i.status = ANY($3::text[]) "
-            f"  AND i.created_at > now() - make_interval(days => $4) "
-            f"ORDER BY e.embedding <=> $1::vector "
-            f"LIMIT $5"
-        )
-
+    emb_tbl = schema["embedding_table_v2"]
+    chunk = schema["embedding_chunk_type"]
+    cols_qualified = ", ".join(f"i.{c}" for c in schema["neighbour_columns"])
     return (
-        f"SELECT {idc} AS id, {cols}, "
-        f"1 - ({schema['embedding_column']} <=> $1::vector) AS vec_score "
-        f"FROM {src} "
-        f"WHERE tenant_id = $2 "
-        f"  AND status = ANY($3::text[]) "
-        f"  AND created_at > now() - make_interval(days => $4)"
-        f"  AND {schema['embedding_column']} IS NOT NULL "
-        f"ORDER BY {schema['embedding_column']} <=> $1::vector "
+        f"SELECT i.{idc} AS id, {cols_qualified}, "
+        f"1 - (e.embedding <=> $1::vector) AS vec_score "
+        f"FROM {emb_tbl} e "
+        f"JOIN {src} i "
+        f"  ON i.{idc} = e.entity_id AND i.tenant_id = e.tenant_id "
+        f"WHERE e.tenant_id = $2 "
+        f"  AND e.chunk_type = '{chunk}' "
+        f"  AND i.status = ANY($3::text[]) "
+        f"  AND i.created_at > now() - make_interval(days => $4) "
+        f"ORDER BY e.embedding <=> $1::vector "
         f"LIMIT $5"
     )
 

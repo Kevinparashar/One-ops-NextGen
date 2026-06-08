@@ -10,7 +10,7 @@ ONLY when the operator explicitly opts in:
 
 Prerequisites the operator must satisfy first:
   * a **dedicated test database** (never a shared/production DB);
-  * `migrations/0001_conversation_events.sql` applied to it;
+  * `migrations/conversation/conversation_event_log.sql` applied to it;
   * a Dragonfly/Redis instance reachable at the test URL.
 
 Without `RUN_SESSION_INTEGRATION=1` the whole module is skipped at collection

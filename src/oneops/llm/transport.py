@@ -117,10 +117,29 @@ class LiteLLMTransport:
         self._timeout_s = timeout_s
         # Lazy client — only built when needed so import time is cheap
         # (FaaS cold-start friendly). One client per process; httpx's
-        # AsyncClient is safe for concurrent use.
+        # AsyncClient is safe for concurrent use. The client is bound to the
+        # event loop it is created on, so we also remember that loop and
+        # rebuild if we are ever called from a different/closed loop.
         self._client: Any | None = None
+        self._client_loop: Any | None = None
 
     async def _get_client(self) -> Any:
+        import asyncio
+        loop = asyncio.get_running_loop()
+        # An httpx.AsyncClient is pinned to the event loop it was built on.
+        # Under uvicorn there is a single long-lived loop, so the client is
+        # created once and reused (connection pooling preserved). But some
+        # callers — notably the Starlette TestClient — drive each request on a
+        # fresh, short-lived loop; reusing a client bound to a now-closed loop
+        # raises "Event loop is closed". Detect a loop change and rebuild on the
+        # current loop rather than reuse a dead client.
+        # Only rebuild a client WE created (i.e. `_client_loop` is recorded) when
+        # the loop has changed. A client injected directly (e.g. tests set
+        # `t._client = fake`, leaving `_client_loop` None) is honoured as-is.
+        if (self._client is not None and self._client_loop is not None
+                and self._client_loop is not loop):
+            self._client = None          # stale client's loop is gone; drop the
+            self._client_loop = None     # reference (cannot aclose on a dead loop)
         if self._client is None:
             import httpx
             self._client = httpx.AsyncClient(
@@ -131,12 +150,14 @@ class LiteLLMTransport:
                     "content-type": "application/json",
                 },
             )
+            self._client_loop = loop
         return self._client
 
     async def aclose(self) -> None:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+            self._client_loop = None
 
     async def complete(self, request: LlmRequest) -> TransportResult:
         client = await self._get_client()

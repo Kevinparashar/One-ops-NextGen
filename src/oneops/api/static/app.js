@@ -26,7 +26,6 @@
   //   * Server slides a 30-min idle TTL on every chat turn.
   const LS_KEY = "oneops.session_id";
   let sessionId = "";                       // resolved in bootstrap()
-  let fastPathSpecs = [];                   // populated by loadFastPathActions
   let counters = { turns: 0, cacheHits: 0 };
   bootstrap();
 
@@ -1161,7 +1160,6 @@
       const specs = await Promise.all(
         ucs.map((id) => fetch(`/api/fast/${encodeURIComponent(id)}/spec`)
                          .then((r) => r.json())));
-      fastPathSpecs = specs;
       fastPathActions.innerHTML = "";
       specs.forEach((spec) => {
         const btn = document.createElement("button");

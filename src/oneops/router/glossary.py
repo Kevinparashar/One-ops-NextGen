@@ -4,7 +4,7 @@ Domain vocabulary varies ("pwd", "passwd", "pass word" all mean *password*).
 The `Glossary` collapses synonyms to a canonical term *before* semantic
 retrieval, so retrieval scores against stable vocabulary rather than every
 spelling a user might pick. This is the Parlant glossary pattern — a
-first-class **data** file (`registries/v2/glossary.json`), not code.
+first-class **data** file (`registries/v2/platform/glossary.json`), not code.
 
 Deterministic: whole-word / whole-phrase, case-insensitive replacement; longer
 synonyms are applied first so a multi-word synonym wins over a single-word one.
@@ -21,7 +21,7 @@ from oneops.observability import get_logger
 
 _log = get_logger("oneops.router.glossary")
 
-_DEFAULT_GLOSSARY = "registries/v2/glossary.json"
+_DEFAULT_GLOSSARY = "registries/v2/platform/glossary.json"
 
 
 class Glossary:

@@ -45,9 +45,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from oneops.observability import get_logger
 from oneops.observability.metrics import increment as _metric_inc
 
+# Telemetry/HTTP literals → constants (sonar S1192).
+_AI_UC08_FULFILL_FAILED_TOTAL = "ai.uc08.fulfill.failed.total"
+
 _log = get_logger("oneops.api.uc08")
 
 router = APIRouter(prefix="/api/uc08", tags=["uc08-fulfillment"])
+
+# Strong refs to fire-and-forget background tasks so the event loop can't GC
+# them mid-flight (sonar S7502 — "save this task in a variable").
+_BACKGROUND_TASKS: set = set()
 
 # RBAC: catalog-match is broad (any authenticated user can browse).
 # Fulfillment is tighter — only roles that can request provisioning.
@@ -242,7 +249,7 @@ class CreateSrResponse(BaseModel):
     judge_reasoning: str       # one-sentence rationale
 
 
-@router.post("/create-sr", response_model=CreateSrResponse)
+@router.post("/create-sr", responses={400: {"description": "Invalid request"}, 502: {"description": "Upstream error"}, 503: {"description": "Service unavailable"}})
 async def create_sr(
     payload: CreateSrRequest,
     request: Request,
@@ -448,7 +455,7 @@ async def match_catalog_stream(payload: MatchRequest, request: Request):
         media_type="application/x-ndjson")
 
 
-@router.post("/match", response_model=MatchResponse)
+@router.post("/match", responses={502: {"description": "Upstream error"}, 503: {"description": "Service unavailable"}})
 async def match_catalog(
     payload: MatchRequest,
     request: Request,
@@ -685,7 +692,7 @@ async def match_catalog(
 # ── POST /api/uc08/fulfill ─────────────────────────────────────────────
 
 
-@router.post("/fulfill", response_model=FulfillResponse)
+@router.post("/fulfill", responses={404: {"description": "Not found"}, 409: {"description": "Conflict"}})
 async def fulfill(
     payload: FulfillRequest,
     request: Request,
@@ -731,15 +738,15 @@ async def fulfill(
     try:
         outcome = await core_fulfill(req, connection_provider=_cp)
     except RequestNotFoundError as exc:
-        _metric_inc("ai.uc08.fulfill.failed.total", 1,
+        _metric_inc(_AI_UC08_FULFILL_FAILED_TOTAL, 1,
                     tenant_id=tenant_id, reason="request_not_found")
         raise HTTPException(404, detail=str(exc))
     except CatalogItemNotFoundError as exc:
-        _metric_inc("ai.uc08.fulfill.failed.total", 1,
+        _metric_inc(_AI_UC08_FULFILL_FAILED_TOTAL, 1,
                     tenant_id=tenant_id, reason="catalog_not_found")
         raise HTTPException(404, detail=str(exc))
     except DuplicateRequestError as exc:
-        _metric_inc("ai.uc08.fulfill.failed.total", 1,
+        _metric_inc(_AI_UC08_FULFILL_FAILED_TOTAL, 1,
                     tenant_id=tenant_id, reason="duplicate")
         raise HTTPException(409, detail=str(exc))
 
@@ -795,9 +802,11 @@ async def fulfill(
                              tenant_id=tenant_id, ritm_id=ritm_id,
                              error=str(exc)[:200])
 
-        _asyncio.create_task(_kick(
+        _bg_task = _asyncio.create_task(_kick(
             outcome.ritm_id, tenant_id, outcome.trace_id,
         ))
+        _BACKGROUND_TASKS.add(_bg_task)
+        _bg_task.add_done_callback(_BACKGROUND_TASKS.discard)
 
     _metric_inc("ai.uc08.fulfill.total", 1,
                 tenant_id=tenant_id, outcome=outcome.outcome.value,
@@ -818,7 +827,7 @@ async def fulfill(
 # ── GET /api/uc08/status/{ritm_id} ─────────────────────────────────────
 
 
-@router.get("/status/{ritm_id}")
+@router.get("/status/{ritm_id}", responses={404: {"description": "Not found"}})
 async def status(ritm_id: str, request: Request) -> dict[str, Any]:
     """Read-only status. Tenant-bound."""
     tenant_id, _, role = _principal(request)

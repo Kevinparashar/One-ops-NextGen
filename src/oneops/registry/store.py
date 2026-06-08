@@ -7,7 +7,7 @@ Design influences:
     re-activating a prior version. The runtime never edits a record.
   * 5-year horizon — the store talks to a `RegistryBackend` Protocol. The
     file backend here is the honest P1 implementation; a Dragonfly-hot /
-    Postgres-cold backend (MIGRATION.md target) drops in without touching
+    Postgres-cold backend (docs/history/MIGRATION.md target) drops in without touching
     `VersionedStore` or any caller. Vendor exit is a backend swap.
 
 Concurrency: the file backend writes atomically (temp file + os.replace) and
@@ -43,7 +43,7 @@ RecordT = TypeVar("RecordT", bound=BaseModel)
 class RegistryBackend(Protocol):
     """Persistence contract. The store depends only on this — never on a
     concrete store technology. Implementations: `FileBackend` (P1),
-    `PostgresBackend` (later, MIGRATION.md P1 target shape)."""
+    `PostgresBackend` (later, docs/history/MIGRATION.md P1 target shape)."""
 
     def read(self, kind: str, record_id: str) -> dict | None:
         """Return the stored envelope for (kind, id), or None if absent."""

@@ -2,7 +2,7 @@
 
 Production-grade properties:
   • The matrix is loaded ONCE at module import from
-    `registries/service-schema.json` (single source of truth).
+    `registries/v2/platform/service-schema.json` (single source of truth).
   • Closed enums — `Impact`, `Urgency`, `Priority` literal types prevent
     typos and silent drift between code and data.
   • Deterministic. Same inputs always yield the same priority.
@@ -31,8 +31,13 @@ Urgency = Literal["Low", "Medium", "High", "Urgent"]
 PriorityCanonical = Literal["Low", "Medium", "High", "Urgent"]
 PriorityPLetter = Literal["P1", "P2", "P3", "P4"]
 
+# Impact enum values → typed constants (sonar S1192; Literal type stays intact).
+_IMP_ON_USERS: Impact = "On Users"
+_IMP_ON_DEPARTMENT: Impact = "On Department"
+_IMP_ON_BUSINESS: Impact = "On Business"
+
 VALID_IMPACTS: Final[frozenset[str]] = frozenset(
-    ("Low", "On Users", "On Department", "On Business"),
+    ("Low", _IMP_ON_USERS, _IMP_ON_DEPARTMENT, _IMP_ON_BUSINESS),
 )
 VALID_URGENCIES: Final[frozenset[str]] = frozenset(
     ("Low", "Medium", "High", "Urgent"),
@@ -59,21 +64,21 @@ P_TO_CANONICAL: Final[dict[str, str]] = {
 
 def _project_root() -> str:
     """Resolve the repository root regardless of cwd. The schema file is
-    at <root>/registries/service-schema.json."""
+    at <root>/registries/v2/platform/service-schema.json."""
     here = os.path.dirname(os.path.abspath(__file__))
     # src/oneops/use_cases/uc08_fulfillment → root is 4 levels up
     return os.path.normpath(os.path.join(here, "..", "..", "..", ".."))
 
 
 def _load_matrix_from_disk() -> dict[str, dict[str, str]]:
-    """Read the 4x4 priority matrix from registries/service-schema.json.
+    """Read the 4x4 priority matrix from registries/v2/platform/service-schema.json.
 
     Production-grade: this runs once at import. Walks the document to
     find the first `priority_matrix.matrix` block (currently under
     `services[0]`).
     """
     schema_path = os.path.join(
-        _project_root(), "registries", "service-schema.json",
+        _project_root(), "registries", "v2", "platform", "service-schema.json",
     )
     if not os.path.exists(schema_path):
         raise RuntimeError(
@@ -124,22 +129,22 @@ PRIORITY_MATRIX: Final[dict[str, dict[str, str]]] = _load_matrix_from_disk()
 # the env override below; this is the production default.
 _CATEGORY_TO_IMPACT_DEFAULT: Final[dict[str, str]] = {
     # broad-effect requests
-    "onboarding":   "On Users",
-    "platform":     "On Department",
-    "cmdb":         "On Department",
-    "database":     "On Department",
+    "onboarding":   _IMP_ON_USERS,
+    "platform":     _IMP_ON_DEPARTMENT,
+    "cmdb":         _IMP_ON_DEPARTMENT,
+    "database":     _IMP_ON_DEPARTMENT,
     # individual / desk-side
-    "hardware":     "On Users",
-    "endpoint":     "On Users",
-    "email":        "On Users",
-    "access":       "On Users",
-    "network":      "On Users",
-    "software":     "On Users",
-    "application":  "On Users",
-    "integration":  "On Users",
+    "hardware":     _IMP_ON_USERS,
+    "endpoint":     _IMP_ON_USERS,
+    "email":        _IMP_ON_USERS,
+    "access":       _IMP_ON_USERS,
+    "network":      _IMP_ON_USERS,
+    "software":     _IMP_ON_USERS,
+    "application":  _IMP_ON_USERS,
+    "integration":  _IMP_ON_USERS,
     "knowledge":    "Low",
     "itsm":         "Low",
-    "security":     "On Department",
+    "security":     _IMP_ON_DEPARTMENT,
 }
 
 
@@ -163,7 +168,7 @@ def derive_impact_for_request(
         return base  # type: ignore[return-value]
 
     # VIP escalation — bump one band, clamped at 'On Business'.
-    bands = ["Low", "On Users", "On Department", "On Business"]
+    bands = ["Low", _IMP_ON_USERS, _IMP_ON_DEPARTMENT, _IMP_ON_BUSINESS]
     idx = bands.index(base)
     return bands[min(idx + 1, len(bands) - 1)]  # type: ignore[return-value]
 

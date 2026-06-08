@@ -24,7 +24,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Path, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,6 +56,9 @@ from oneops.router.router import Router
 from oneops.session import InMemoryEventLog, InMemoryHotWindow, SessionEventStore
 from oneops.session.profile_store import get_user_profile_store  # noqa: F401 - eager-load
 from oneops.toolrunner.resolver import HandlerResolver
+
+# Telemetry/HTTP literals → constants (sonar S1192).
+_APPLICATION_X_NDJSON = "application/x-ndjson"
 
 _log = get_logger("oneops.api")
 _tracer = get_tracer("oneops.api")
@@ -115,8 +118,7 @@ def _build_llm_gateway():
     base_url = os.getenv("LLM_GATEWAY_URL", "").strip()
     if not base_url:
         return None
-    # Canonical env var names (match `.env.example` — see docs/runbooks/
-    # configuration.md when it lands). Production deployments configure
+    # Canonical env var names (match `.env`). Production deployments configure
     # these via the secret manager; no per-application aliases.
     api_key = os.getenv("LLM_GATEWAY_API_KEY", "").strip()
     try:
@@ -321,6 +323,11 @@ def _summarizer_is_wired() -> bool:
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4_000)
     session_id: str | None = None
+    # Pre-routed dispatch: when a caller (e.g. a team manager's member-selector)
+    # has already chosen the agent(s), the executor SKIPS the LLM router and runs
+    # them directly. Bounded to cap the surface; ids with no active record are
+    # dropped downstream (never invent). None/empty → normal routing.
+    forced_agent_ids: list[str] | None = Field(default=None, max_length=16)
 
 
 # Bounds on the free-form fast-path `inputs` dict. Real fast-path inputs are a
@@ -463,11 +470,60 @@ async def _lifespan(app: FastAPI):
     from oneops.router.glossary import Glossary
     from oneops.router.retrieval import LexicalRetriever
     retriever = LexicalRetriever(registry)
+    # Stage-2 retriever selection. Default = lexical (reads the file registry,
+    # zero infra). Flag ONEOPS_ROUTER_RETRIEVER=pgvector switches to DB-backed
+    # kNN over ai.embeddings_agent (retrieve-then-decide). Additive + reversible:
+    # any setup failure logs the reason and falls back to lexical, never blocking
+    # startup (§2.7). Query is embedded through the gateway (§2.5).
+    app.state.router_retriever_pool = None
+    # Default = pgvector (DB-backed agent embeddings) — proven non-regressive vs
+    # lexical and ~2.4x better on unseen/paraphrased queries; required for ITOM
+    # scale. Falls back to lexical automatically if the DB/gateway is absent
+    # (set ONEOPS_ROUTER_RETRIEVER=lexical to force the in-process retriever).
+    if os.getenv("ONEOPS_ROUTER_RETRIEVER", "pgvector").strip().lower() in ("pgvector", "db"):
+        try:
+            if gateway is None:
+                raise RuntimeError("ONEOPS_ROUTER_RETRIEVER=pgvector requires the LLM gateway")
+            import asyncpg as _asyncpg
+
+            from oneops.router.retrieval import (
+                GatewayEmbedder,
+                PgVectorRetriever,
+                configure_hnsw_connection,
+            )
+            # init= tunes pgvector HNSW (iterative_scan + ef_search) on every
+            # pooled connection so the filtered ANN query is correct at scale.
+            _emb_pool = await _asyncpg.create_pool(
+                os.environ["POSTGRES_URL"], min_size=1, max_size=4,
+                init=configure_hnsw_connection)
+            app.state.router_retriever_pool = _emb_pool
+            from oneops.router.route_cache import build_query_embedding_cache
+            _emb_cache = build_query_embedding_cache()
+            retriever = PgVectorRetriever(
+                registry,
+                embedder=GatewayEmbedder(gateway, cache=_emb_cache),
+                pool=_emb_pool)
+            _log.info("oneops.api.router_retriever", kind="pgvector",
+                      table="ai.embeddings_agent")
+        except Exception as exc:                                   # noqa: BLE001
+            _log.warning("oneops.api.router_retriever_fallback",
+                         error=str(exc)[:160], note="falling back to lexical retriever")
+            retriever = LexicalRetriever(registry)
+    else:
+        _log.info("oneops.api.router_retriever", kind="lexical")
     glossary = Glossary.from_file()
     authz = AuthzService.create()
     if gateway is not None:
-        disambiguator = LlmDisambiguator(gateway, model=chosen_model,
-                                         registry=registry)
+        # Abstain gate config (wrong-agent guard, ITOM-scale). Unset = OFF
+        # (no ITSM regression). Set ONEOPS_ROUTER_ABSTAIN_MIN_SCORE (e.g. 0.45
+        # for pgvector cosine) + optionally _MIN_MARGIN to refuse-and-clarify
+        # on weak/ambiguous matches instead of guessing among look-alikes.
+        _abstain_score = os.getenv("ONEOPS_ROUTER_ABSTAIN_MIN_SCORE", "").strip()
+        disambiguator = LlmDisambiguator(
+            gateway, model=chosen_model, registry=registry,
+            abstain_min_score=(float(_abstain_score) if _abstain_score else None),
+            abstain_min_margin=float(
+                os.getenv("ONEOPS_ROUTER_ABSTAIN_MIN_MARGIN", "0.0") or "0.0"))
         # Rewriter selection — when the LLM gateway is up, use the LLM
         # rewriter (resolves pronouns / back-references against
         # conversation_history). Without it, multi-turn "what is the
@@ -488,10 +544,15 @@ async def _lifespan(app: FastAPI):
         disambiguator = ThresholdDisambiguator()
         rewriter = PassthroughRewriter()
         decomposer = PassthroughDecomposer()
+    from oneops.router.route_cache import build_route_decision_cache
+    _route_cache = build_route_decision_cache()
     router = Router(
         registry=registry, glossary=glossary, retriever=retriever,
         disambiguator=disambiguator, authz=authz,
-        rewriter=rewriter, decomposer=decomposer)
+        rewriter=rewriter, decomposer=decomposer,
+        route_cache=_route_cache)
+    _log.info("oneops.api.route_cache_wired",
+              backend=(type(_route_cache).__name__ if _route_cache else "off"))
     dispatcher = FastPathDispatcher(registry)
 
     # ── HandlerResolver — registry of tool handlers ────────────────────
@@ -619,8 +680,17 @@ async def _lifespan(app: FastAPI):
             LlmControlClassifier,
             set_control_classifier,
         )
+        # Control gate runs on a STRONGER model than the reranker default: it's
+        # a nuanced classification (enterprise IT how-to vs off-domain), and
+        # gpt-4o-mini over-refused how-to (wifi/macbook/teams/slack) as
+        # out_of_scope — gpt-4o scored 100/100 on the control-gate eval vs
+        # mini's 89/100. Tiny call (max 8 tokens), 7-day Dragonfly-cached, so
+        # the cost/latency impact is minimal. Override via env.
+        _control_gate_model = (
+            os.getenv("ONEOPS_CONTROL_GATE_MODEL", "gpt-4o").strip()
+            or chosen_model)
         set_control_classifier(
-            LlmControlClassifier(gateway, model=chosen_model))
+            LlmControlClassifier(gateway, model=_control_gate_model))
         _log.info("oneops.api.llm_gateway_wired",
                   model=chosen_model, embed_model=embed_model,
                   cache_aside=True,
@@ -1046,31 +1116,16 @@ async def _lifespan(app: FastAPI):
                       error=str(exc)[:160])
         app.state.chat_turn_cache = None
 
-    # Embedding refresh worker — drains pgmq.embedding_refresh.
-    # Default ON as of 2026-05-30 (after UC-5 + UC-3 verified on new substrate).
-    # Set EMBEDDING_WORKER_ENABLED=false to disable; default keeps the new
-    # substrate fresh on every ticket UPDATE without per-deploy env knobs.
+    # Embedding refresh workers are now SEPARATE per-service processes (one queue
+    # + one worker per service, no shared lane / no head-of-line blocking). They
+    # live in database/<service>/worker.py and run on their own:
+    #     python database/incident/worker.py
+    #     python database/agent/worker.py    ... etc.
+    # The API process therefore does NOT start an in-process worker. The
+    # attribute is kept (None) so the shutdown path stays a no-op.
     app.state.embedding_worker = None
-    if os.getenv("EMBEDDING_WORKER_ENABLED", "true").strip().lower() != "false":
-        try:
-            import asyncpg as _asyncpg
-
-            from oneops.embeddings.worker import EmbeddingRefreshWorker
-
-            async def _emb_conn():
-                return await _asyncpg.connect(os.environ["POSTGRES_URL"])
-
-            if gateway is None:
-                raise RuntimeError("EMBEDDING_WORKER_ENABLED but no LlmGateway")
-            worker = EmbeddingRefreshWorker(
-                gateway=gateway, connection_provider=_emb_conn,
-            )
-            await worker.start()
-            app.state.embedding_worker = worker
-            _log.info("oneops.api.embedding_worker_started")
-        except Exception as exc:                                  # noqa: BLE001
-            _log.warning("oneops.api.embedding_worker_failed",
-                          error=str(exc)[:160])
+    _log.info("oneops.api.embedding_worker_external",
+              note="per-service workers run as database/<service>/worker.py processes")
 
     # Dashboard priming: emit one `ai.agent.runs.total{agent_id=<id>}` sample
     # per registered agent at boot so the Grafana "Active agents" counter
@@ -1124,6 +1179,14 @@ async def _lifespan(app: FastAPI):
             if getattr(app.state, "embedding_worker", None) is not None:
                 await app.state.embedding_worker.stop()
                 _log.info("oneops.api.embedding_worker_stopped")
+        except Exception:
+            pass
+
+        # Close the router retriever pool if the pgvector retriever opened one.
+        try:
+            if getattr(app.state, "router_retriever_pool", None) is not None:
+                await app.state.router_retriever_pool.close()
+                _log.info("oneops.api.router_retriever_pool_closed")
         except Exception:
             pass
 
@@ -1267,8 +1330,13 @@ def build_app() -> FastAPI:
         import re as _re
 
         index_path = os.path.join(static_dir, "index.html")
-        with open(index_path, encoding="utf-8") as f:
-            html = f.read()
+
+        def _read_index() -> str:
+            with open(index_path, encoding="utf-8") as f:
+                return f.read()
+
+        # Read off the event loop (sonar S7493 — no sync open() in async path).
+        html = await asyncio.to_thread(_read_index)
 
         def _stamp(match: _re.Match[str]) -> str:
             attr, url = match.group(1), match.group(2)
@@ -1399,7 +1467,7 @@ def build_app() -> FastAPI:
     # ── session history (frontend rehydrates on reload) ───────────────
     @app.get("/api/session/{session_id}/history")
     async def _session_history(
-        session_id: str = Path(..., min_length=1, max_length=64),
+        session_id: Annotated[str, Path(min_length=1, max_length=64)],
         request: Request = None,             # type: ignore[assignment]
     ) -> dict[str, Any]:
         store = getattr(app.state, "session_store", None)
@@ -1426,8 +1494,8 @@ def build_app() -> FastAPI:
         }
 
     # ── fast-path spec discovery (frontend renders forms from this) ───
-    @app.get("/api/fast/{uc_id}/spec")
-    async def _fast_path_spec(uc_id: str = Path(..., min_length=1)) -> dict[str, Any]:
+    @app.get("/api/fast/{uc_id}/spec", responses={404: {"description": "Not found"}})
+    async def _fast_path_spec(uc_id: Annotated[str, Path(min_length=1)]) -> dict[str, Any]:
         spec = app.state.dispatcher.describe(uc_id)
         if spec is None:
             raise HTTPException(
@@ -1475,9 +1543,9 @@ def build_app() -> FastAPI:
             tenant_id=tenant_id, user_id=user_id, limit=max(1, min(50, limit)))
         return {"sessions": [m.to_dict() for m in rows]}
 
-    @app.get("/api/sessions/{session_id}")
+    @app.get("/api/sessions/{session_id}", responses={404: {"description": "Not found"}})
     async def _session_get(
-        session_id: str = Path(..., min_length=1, max_length=64),
+        session_id: Annotated[str, Path(min_length=1, max_length=64)],
         request: Request = None,                    # type: ignore[assignment]
     ) -> dict[str, Any]:
         from oneops.session.lifecycle import get_lifecycle
@@ -1491,7 +1559,7 @@ def build_app() -> FastAPI:
 
     @app.delete("/api/sessions/{session_id}")
     async def _session_delete(
-        session_id: str = Path(..., min_length=1, max_length=64),
+        session_id: Annotated[str, Path(min_length=1, max_length=64)],
         request: Request = None,                    # type: ignore[assignment]
     ) -> dict[str, Any]:
         from oneops.session.lifecycle import get_lifecycle
@@ -1514,7 +1582,7 @@ def build_app() -> FastAPI:
         return {"deleted": ok, "session_id": session_id}
 
     # ── chat door (natural language) ─────────────────────────────────
-    @app.post("/api/chat", response_model=TurnResponse)
+    @app.post("/api/chat")
     async def _chat(req: ChatRequest, request: Request) -> TurnResponse:
         from oneops.api.chat_turn_cache import (
             cache_key as _chat_cache_key,
@@ -1608,6 +1676,8 @@ def build_app() -> FastAPI:
             "role": role,
             "message": req.message,
         }
+        if req.forced_agent_ids:
+            envelope["forced_agent_ids"] = list(req.forced_agent_ids)
         response = await _run(request, envelope, door="chat",
                               thread_id=request_id, session_id=session_id)
         # Slide the idle TTL and bump turn_count + title on every
@@ -1783,7 +1853,7 @@ def build_app() -> FastAPI:
         }
         return StreamingResponse(
             _stream_turn(request, envelope, door="chat"),
-            media_type="application/x-ndjson")
+            media_type=_APPLICATION_X_NDJSON)
 
     # ── chat door (WebSocket) ─────────────────────────────────────────
     # Production topology (per architecture plan):
@@ -1893,9 +1963,9 @@ def build_app() -> FastAPI:
                 pass
 
     # ── fast-path door (button-shaped, UC-declared) ──────────────────
-    @app.post("/api/fast/{uc_id}", response_model=TurnResponse)
+    @app.post("/api/fast/{uc_id}")
     async def _fast_path(
-        uc_id: str = Path(..., min_length=1),
+        uc_id: Annotated[str, Path(min_length=1)],
         req: FastPathPostRequest | None = None,
         request: Request = None,                # type: ignore[assignment]
     ) -> TurnResponse:
@@ -2024,7 +2094,7 @@ def build_app() -> FastAPI:
 
     @app.post("/api/fast/{uc_id}/stream")
     async def _fast_path_stream(
-        uc_id: str = Path(..., min_length=1),
+        uc_id: Annotated[str, Path(min_length=1)],
         req: FastPathPostRequest | None = None,
         request: Request = None,                # type: ignore[assignment]
     ):
@@ -2072,7 +2142,7 @@ def build_app() -> FastAPI:
                                   default=str) + "\n"
 
             return StreamingResponse(_clarify(),
-                                     media_type="application/x-ndjson")
+                                     media_type=_APPLICATION_X_NDJSON)
 
         plan_state = [
             {"step_id": s.step_id, "agent_id": s.agent_id,
@@ -2089,7 +2159,7 @@ def build_app() -> FastAPI:
         }
         return StreamingResponse(
             _stream_turn(request, envelope, door="fast_path"),
-            media_type="application/x-ndjson")
+            media_type=_APPLICATION_X_NDJSON)
 
     return app
 

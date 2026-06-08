@@ -3,6 +3,7 @@
   "id": "uc03_kb_lookup",
   "versions": {
     "1": {
+      "domain": "itsm",
       "abac_tags": {
         "audience": [
           "viewer",
@@ -25,14 +26,20 @@
             "negate": false,
             "operator": "leaf",
             "signal": "entity_service_in",
-            "values": ["knowledge"]
+            "values": [
+              "knowledge"
+            ]
           },
           {
             "clauses": [],
             "negate": false,
             "operator": "leaf",
             "signal": "intent_in",
-            "values": ["knowledge_base", "kb_search", "how_to"]
+            "values": [
+              "knowledge_base",
+              "kb_search",
+              "how_to"
+            ]
           }
         ],
         "signal": null,
@@ -60,28 +67,38 @@
         {
           "id": "search_knowledge_base",
           "name": "Search the knowledge base",
-          "description": "Retrieve ranked knowledge articles, how-tos, runbooks, and SOPs that help understand or resolve an issue. Use when the user wants supporting material OUTSIDE the record.",
+          "description": "Retrieve ranked knowledge content - articles, runbooks, SOPs, troubleshooting guides, how-tos, known-issue write-ups - that helps understand or resolve a topic or issue. Two modes: topic search (no record) and entity-scoped (KB about a record). Use when the user wants supporting material OUTSIDE the record. NOT for the record's own field values, finding similar tickets, or modifying records.",
           "use_when": [
-            "how do I fix / how was this solved",
-            "any docs / KB / runbook / procedure for X",
-            "what is documented / what guidance exists for X",
-            "topic-only how-to with no entity (e.g. VPN reset steps)"
+            "the user asks how to fix, how to do, or how something was solved",
+            "the user wants documentation, a KB article, runbook, SOP, procedure, or guidance for a topic",
+            "a general IT how-to question with no specific record (e.g. how to reset MFA, VPN error steps, mapping a network drive)",
+            "an everyday end-user workplace-IT task even if it sounds mundane - browser, email client, Wi-Fi, printer, laptop/device setup (e.g. clear browser cache, set up Outlook)",
+            "the user asks what is documented or what guidance exists for an issue or a record",
+            "the user wants troubleshooting steps or a known-issue / known-error write-up"
           ],
           "not_when": [
-            "facts ABOUT the record itself (that is the summary agent)",
-            "the value of a field stored ON the record such as root_cause / affected_ci (that is a field-read on the record, not a KB lookup)"
+            "the user wants facts, fields, status, or timeline of a specific record itself (route to uc01_summarization)",
+            "the user wants the value of an on-record field such as root_cause or affected_ci (that is a field-read, route to uc01_summarization)",
+            "the user wants other tickets similar to or duplicates of a record (route to uc02_similar_tickets)",
+            "the user wants to create, update, or modify a record (route to an action/fulfilment agent)",
+            "the user wants to triage, prioritise, or route a ticket (route to uc05_triage)"
           ],
           "tags": [
             "knowledge",
             "kb",
             "retrieval",
             "read",
-            "how-to"
+            "how-to",
+            "runbook",
+            "troubleshooting"
           ],
           "examples": [
             "how do I reset MFA",
             "any KB for VPN error 809",
-            "what's the runbook for a stuck job"
+            "what's the runbook for a stuck job",
+            "documentation on mapping a network drive",
+            "how do I configure Outlook on a new laptop",
+            "is there a guide for SSO login issues"
           ]
         }
       ],

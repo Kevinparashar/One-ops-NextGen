@@ -48,7 +48,7 @@ class DeterminismLevel(StrEnum):
 
 class RoutingShape(StrEnum):
     """The six routing shapes the router must be able to produce
-    (see docs/BEHAVIOR_CORPUS.md §2)."""
+    (see docs/product/BEHAVIOR_CORPUS.md §2)."""
 
     SINGLE = "single_agent"
     PARALLEL = "multi_agent_parallel"
@@ -309,7 +309,7 @@ class Skill(BaseModel):
     ADDITIVE / NOT-YET-WIRED: declaring skills changes no routing behavior
     today. The retrieval + disambiguation stages consume these cards only once
     the dynamic router is enabled (flag-gated + eval-gated). See
-    docs/agent-skills-spec.md.
+    docs/architecture/agent-skills-spec.md.
     """
 
     model_config = {"frozen": True}
@@ -339,6 +339,10 @@ class AgentRecord(_VersionedRecord):
 
     description: str = Field(min_length=1, max_length=MAX_DESCRIPTION_CHARS)
     intent_family: str = Field(min_length=1, max_length=64)   # docs/BEHAVIOR_CORPUS §1
+    # Routing scope: itsm | itom[.subdomain]. Default keeps existing cards valid;
+    # the skill-card contract requires NEW cards to declare it explicitly so an
+    # ITOM agent can't silently default to 'itsm' and get mis-scoped at retrieval.
+    domain: str = Field(default="itsm", min_length=1, max_length=64)
     routing_shape: RoutingShape
     # Every agent is a use case the router matches deterministically on this
     # condition. The conversational / out-of-scope / policy-boundary responder
@@ -388,11 +392,11 @@ class AgentRecord(_VersionedRecord):
         if self.routing_shape is RoutingShape.JOURNEY and self.journey is None:
             raise ValueError("routing_shape=slot_filling_journey requires a `journey` spec")
         # Action-tier agents must declare an auth re-check hook — defence in
-        # depth (ARCHITECTURE.md §9: authz at every boundary).
+        # depth (docs/architecture/ARCHITECTURE.md §9: authz at every boundary).
         if self.abac_tags.tier is ExecutionTier.ACTION and not self.hooks.before_invocation:
             raise ValueError(
                 f"action-tier agent {self.id} must declare a before_invocation hook "
-                "(auth re-check) — see ARCHITECTURE.md §9"
+                "(auth re-check) — see docs/architecture/ARCHITECTURE.md §9"
             )
         # Fast-path cross-field rules. The dispatcher trusts the registry —
         # validate the declaration here so a bad fast_path can never load.
@@ -444,7 +448,7 @@ class ToolRecord(_VersionedRecord):
     @model_validator(mode="after")
     def _action_rules(self) -> ToolRecord:
         # An action tool that is not idempotent is a double-execution hazard
-        # under NATS at-least-once re-delivery (ARCHITECTURE.md §8).
+        # under NATS at-least-once re-delivery (docs/architecture/ARCHITECTURE.md §8).
         if self.execution_type is ExecutionTier.ACTION and not self.idempotent:
             raise ValueError(
                 f"action tool {self.id} must be idempotent — re-delivery is "

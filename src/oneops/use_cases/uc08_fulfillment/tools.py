@@ -46,6 +46,9 @@ from oneops.use_cases.uc08_fulfillment.errors import (
     RequestNotFoundError,
 )
 
+# Telemetry/HTTP literals → constants (sonar S1192).
+_ONEOPS_TENANT_ID = "oneops.tenant_id"
+
 _log = structlog.get_logger("oneops.uc08.tools")
 _tracer = trace.get_tracer("oneops.uc08.tools")
 
@@ -103,7 +106,7 @@ async def fulfill_request(
     with _tracer.start_as_current_span(
         "uc08.tool.fulfill_request",
         attributes={
-            "oneops.tenant_id": tenant_id,
+            _ONEOPS_TENANT_ID: tenant_id,
             "oneops.user_id": user_id,
             "uc08.trigger_type": trigger,
         },
@@ -178,7 +181,7 @@ async def get_fulfillment_status(
     arguments: dict[str, Any], context: dict[str, Any],
 ) -> dict[str, Any]:
     """Live status for one RITM."""
-    tenant_id, user_id, _ = _principal_from_context(context)
+    tenant_id, _, _ = _principal_from_context(context)
     ritm_id = str(arguments.get("ritm_id") or "").strip()
     if not ritm_id:
         return {
@@ -188,7 +191,7 @@ async def get_fulfillment_status(
         }
     with _tracer.start_as_current_span(
         "uc08.tool.get_fulfillment_status",
-        attributes={"oneops.tenant_id": tenant_id, "uc08.ritm_id": ritm_id},
+        attributes={_ONEOPS_TENANT_ID: tenant_id, "uc08.ritm_id": ritm_id},
     ):
         cp = _connection_provider or _db.default_connection_provider
         conn = await cp()
@@ -247,7 +250,7 @@ async def load_catalog_template(
                 "error": "catalog_item_id is required"}
     with _tracer.start_as_current_span(
         "uc08.tool.load_catalog_template",
-        attributes={"oneops.tenant_id": tenant_id,
+        attributes={_ONEOPS_TENANT_ID: tenant_id,
                     "uc08.catalog_item_id": catalog_item_id},
     ):
         cp = _connection_provider or _db.default_connection_provider
@@ -284,7 +287,7 @@ async def check_request_duplicate(
     with _tracer.start_as_current_span(
         "uc08.tool.check_request_duplicate",
         attributes={
-            "oneops.tenant_id": tenant_id,
+            _ONEOPS_TENANT_ID: tenant_id,
             "uc08.requested_for": requested_for,
             "uc08.catalog_item_id": catalog_item_id,
         },

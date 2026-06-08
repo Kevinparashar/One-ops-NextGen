@@ -77,7 +77,7 @@ async def get_pg_pool() -> asyncpg.Pool:
                 loop_id=id(loop),
             )
             return pool
-        except (asyncpg.PostgresError, OSError, ConnectionError) as e:
+        except (asyncpg.PostgresError, OSError) as e:
             raise UpstreamError(f"cannot connect to Postgres: {e}", cause=e) from e
 
 

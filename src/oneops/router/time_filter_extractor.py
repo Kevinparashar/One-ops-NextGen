@@ -29,6 +29,9 @@ from oneops.llm.models import LlmMessage, LlmRequest, ResponseFormat
 from oneops.observability import get_logger, get_tracer
 from oneops.uc_common import TimeFilter
 
+# Telemetry literals → constants (sonar S1192).
+_ROUTER_TIME_FILTER_OUTCOME = "router.time_filter.outcome"
+
 _log = get_logger(__name__)
 _tracer = get_tracer(__name__)
 
@@ -220,7 +223,7 @@ class TimeFilterExtractor:
             except Exception as exc:                                   # noqa: BLE001
                 _log.warning("router.time_filter.extract_failed",
                              error=str(exc)[:160])
-                span.set_attribute("router.time_filter.outcome", "error")
+                span.set_attribute(_ROUTER_TIME_FILTER_OUTCOME, "error")
                 return None
 
             # ── Span events (operator visibility) ────────────────────
@@ -242,9 +245,9 @@ class TimeFilterExtractor:
                     },
                 )
             if tf is None:
-                span.set_attribute("router.time_filter.outcome", "none")
+                span.set_attribute(_ROUTER_TIME_FILTER_OUTCOME, "none")
             else:
-                span.set_attribute("router.time_filter.outcome", "present")
+                span.set_attribute(_ROUTER_TIME_FILTER_OUTCOME, "present")
                 for k, v in tf.otel_attrs().items():
                     if v is not None:
                         span.set_attribute(k, v)

@@ -27,6 +27,10 @@ from opentelemetry import trace
 
 from oneops.observability.metrics import histogram, increment
 
+# Telemetry literals (single source — sonar S1192).
+_CACHE_KEY_HASH = "cache.key_hash"
+_CACHE_NAME = "cache.name"
+
 
 def record_cache_get(
     *,
@@ -41,12 +45,12 @@ def record_cache_get(
     try:
         sp = trace.get_current_span()
         attrs: dict[str, Any] = {
-            "cache.name": cache_name,
+            _CACHE_NAME: cache_name,
             "cache.hit": hit,
             "cache.stale": stale,
         }
         if key_hash:
-            attrs["cache.key_hash"] = key_hash
+            attrs[_CACHE_KEY_HASH] = key_hash
         if latency_ms is not None:
             attrs["cache.latency_ms"] = latency_ms
         for k, v in extra.items():
@@ -82,9 +86,9 @@ def record_cache_set(
     """Emit cache.set event on current span + counter."""
     try:
         sp = trace.get_current_span()
-        attrs: dict[str, Any] = {"cache.name": cache_name}
+        attrs: dict[str, Any] = {_CACHE_NAME: cache_name}
         if key_hash:
-            attrs["cache.key_hash"] = key_hash
+            attrs[_CACHE_KEY_HASH] = key_hash
         if payload_size is not None:
             attrs["cache.payload_size"] = payload_size
         if ttl_seconds is not None:
@@ -111,9 +115,9 @@ def record_cache_delete(*, cache_name: str, key_hash: str = "") -> None:
     """Emit cache.delete event + counter."""
     try:
         sp = trace.get_current_span()
-        attrs = {"cache.name": cache_name}
+        attrs = {_CACHE_NAME: cache_name}
         if key_hash:
-            attrs["cache.key_hash"] = key_hash
+            attrs[_CACHE_KEY_HASH] = key_hash
         sp.add_event("cache.delete", attributes=attrs)
     except Exception:
         pass

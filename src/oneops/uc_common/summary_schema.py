@@ -1,9 +1,10 @@
 """EntitySummary — the canonical UC-1 response shape.
 
 One shape for every service (incident, service_request, problem, change,
-asset, cmdb_ci). Per-service variation lives in the display_spec, NOT in
-the envelope. This is the contract every UC-1 handler returns and every
-consumer (UI, aggregator, LLM, OTel) reads.
+asset, cmdb_ci). Per-service field labelling/ordering lives in code
+(`use_cases/_shared/field_labels.humanise_record`), NOT in the envelope.
+This is the contract every UC-1 handler returns and every consumer (UI,
+aggregator, LLM, OTel) reads.
 
 Design rules enforced by validation (production-grade, 1000-UC ready):
 

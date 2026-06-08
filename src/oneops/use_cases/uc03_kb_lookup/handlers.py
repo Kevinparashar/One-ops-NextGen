@@ -37,6 +37,9 @@ from oneops.use_cases.uc03_kb_lookup.kb_embed import get_kb_embed_fn
 
 _log = get_logger("oneops.use_cases.uc03.handlers")
 
+# Repeated literals → constants (sonar S1192).
+_NO_TENANT_SCOPE_WAS_SUPPLIED_FOR_THIS_REQUEST = "No tenant scope was supplied for this request."
+
 _EMPTY: tuple[Any, ...] = (None, "", [], {})
 
 
@@ -207,7 +210,7 @@ async def search_kb(
         return _search("invalid_request", "A search query is required.")
     if not tenant_id:
         return _search("invalid_request",
-                       "No tenant scope was supplied for this request.")
+                       _NO_TENANT_SCOPE_WAS_SUPPLIED_FOR_THIS_REQUEST)
 
     audiences = _audiences_for(context)
     store = get_kb_store()
@@ -472,7 +475,7 @@ async def get_kb_article(
                         "A knowledge-base article id is required.")
     if not tenant_id:
         return _article("invalid_request", article_id,
-                        "No tenant scope was supplied for this request.")
+                        _NO_TENANT_SCOPE_WAS_SUPPLIED_FOR_THIS_REQUEST)
 
     store = get_kb_store()
     audiences = _audiences_for(context)
@@ -607,7 +610,7 @@ async def search_kb_by_ticket(
                        "A ticket or CI id is required to find linked articles.")
     if not tenant_id:
         return _search("invalid_request",
-                       "No tenant scope was supplied for this request.")
+                       _NO_TENANT_SCOPE_WAS_SUPPLIED_FOR_THIS_REQUEST)
 
     hits = await get_kb_store().linked_to(
         entity_id=ticket_id, tenant_id=tenant_id, audiences=_audiences_for(context))

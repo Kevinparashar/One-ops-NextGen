@@ -57,7 +57,7 @@ boost — the new ticket's words should dominate over neighbour-only words."""
 
 # English stoplist — frozen build-time snapshot of NLTK stopwords (198 words).
 # Runtime has zero dependency on the nltk package; refresh by running
-# `python tools/freeze_stopwords.py`. See stopwords_en.py for provenance.
+# `python dev/freeze_stopwords.py`. See stopwords_en.py for provenance.
 # Tokenize: split on whitespace and most punctuation BUT keep hyphens
 # inside words (so "Wi-Fi" stays one token).
 import re as _re

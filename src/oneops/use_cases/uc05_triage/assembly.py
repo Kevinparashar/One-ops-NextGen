@@ -7,7 +7,7 @@ Computes the 5 derived fields (locked 2026-05-29):
   • mutation_intent          = "recommend_only" (constant)
   • (sla_due is computed in apply.py at write time, not at assembly)
 
-Reads `triage_confidence_tiers` from registries/service-schema.json so
+Reads `triage_confidence_tiers` from registries/v2/platform/service-schema.json so
 thresholds are tenant-tunable without code change.
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ from oneops.use_cases.uc05_triage.contracts import (
 
 _DEFAULT_SCHEMA_PATH = (
     Path(__file__).resolve().parents[4]
-    / "registries" / "service-schema.json"
+    / "registries" / "v2" / "platform" / "service-schema.json"
 )
 
 # Priority -> risk_class deterministic map (locked 2026-05-29).

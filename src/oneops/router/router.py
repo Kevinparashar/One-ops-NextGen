@@ -1,4 +1,4 @@
-"""Router — the routing funnel (ARCHITECTURE.md §3).
+"""Router — the routing funnel (docs/architecture/ARCHITECTURE.md §3).
 
     user message
       │  stage 0a  decompose into sub-queries          (LLM, or passthrough)
@@ -36,6 +36,7 @@ from oneops.authz.descriptors import from_agent_record
 from oneops.authz.models import Principal
 from oneops.authz.service import AuthzService
 from oneops.observability import get_logger, get_tracer, set_langfuse_io
+from oneops.observability.metrics import increment
 from oneops.registry.service import RegistryService
 from oneops.router.conditions import evaluate, survives_filter
 from oneops.router.decompose import Decomposer, PassthroughDecomposer
@@ -77,6 +78,7 @@ class Router:
         decomposer: Decomposer | None = None,
         rewriter: Rewriter | None = None,
         top_k: int = DEFAULT_TOP_K,
+        route_cache: Any | None = None,
     ) -> None:
         self._registry = registry
         self._glossary = glossary
@@ -88,6 +90,11 @@ class Router:
         self._decomposer = decomposer or PassthroughDecomposer()
         self._rewriter = rewriter or PassthroughRewriter()
         self._top_k = top_k
+        # Route-decision cache (router/route_cache.py). None ⇒ disabled (no
+        # behaviour change). When set, a hit returns the funnel verdict without
+        # running decompose+rewrite+disambiguate; the plan is rebuilt fresh via
+        # assemble_plan and still EXECUTED fresh downstream, so data is current.
+        self._route_cache = route_cache
 
     async def route(
         self,
@@ -110,6 +117,32 @@ class Router:
         ) as span:
             if not query_text or not query_text.strip():
                 return RouteResult.no_match("empty query", ["stage0: empty query"])
+
+            # ── Route-decision cache lookup (before any LLM) ─────────────
+            # The route is the most cross-session-stable thing in the system.
+            # On a hit we skip decompose+rewrite+disambiguate (3 LLM calls)
+            # and rebuild the plan deterministically — execution still runs
+            # fresh downstream, so the answer is current. Key = normalized
+            # query + routing signals + focus + domain + role + conversation
+            # digest + registry fingerprint (every input the funnel reads).
+            cache_key = self._route_cache_key(query_text, principal, signals,
+                                              history, request_ctx)
+            if self._route_cache is not None and cache_key is not None:
+                try:
+                    hit = await self._route_cache.get(
+                        tenant_id=principal.tenant_id, key=cache_key)
+                except Exception as exc:                          # noqa: BLE001
+                    hit = None
+                    _log.warning("router.route_cache_get_failed",
+                                 error=str(exc)[:160])
+                if hit is not None:
+                    result = self._result_from_cache(hit)
+                    if result is not None:
+                        increment("oneops.router.route_cache.hit")
+                        span.set_attribute("router.route_cache", "hit")
+                        return result
+                increment("oneops.router.route_cache.miss")
+                span.set_attribute("router.route_cache", "miss")
 
             # ── Stage 0a + 0b — speculative parallel execution ───────────
             # Decompose and rewrite are both LLM calls (~1.2-1.5s each).
@@ -139,7 +172,13 @@ class Router:
                 try:
                     await spec_rewrite_task
                 except _asyncio.CancelledError:
-                    pass
+                    # We deliberately cancelled the speculative rewrite — its
+                    # teardown CancelledError is expected and swallowed. But if
+                    # THIS coroutine is itself being cancelled, honour that and
+                    # propagate so the turn aborts cleanly (S7497).
+                    _ct = _asyncio.current_task()
+                    if _ct is not None and _ct.cancelling():
+                        raise
                 except Exception:                                # noqa: BLE001
                     pass
                 span.set_attribute("router.spec_rewrite_used", False)
@@ -269,10 +308,17 @@ class Router:
                     reason = fail_reasons[0]
                 else:
                     reason = "no sub-query produced a confident route"
+                outcome = "policy_denied" if any_policy_denied else "no_match"
+                await self._route_cache_store(
+                    cache_key, principal, outcome=outcome,
+                    routes=[], unrouted=[], reason=reason)
                 if any_policy_denied:
                     return RouteResult.policy_denied(reason, diag)
                 return RouteResult.no_match(reason, diag)
 
+            await self._route_cache_store(
+                cache_key, principal, outcome="routed",
+                routes=routes, unrouted=unrouted, reason="")
             plan = assemble_plan(routes, self._registry)
             span.set_attribute("router.plan_steps", len(plan.steps))
             span.set_attribute("router.unrouted", len(unrouted))
@@ -282,6 +328,78 @@ class Router:
                 output={"agents": list(plan.agent_ids),
                         "steps": len(plan.steps), "unrouted": len(unrouted)})
             return RouteResult.routed(plan, diag, unrouted)
+
+    # ── route-decision cache helpers ─────────────────────────────────────
+
+    def _route_cache_key(
+        self, query_text: str, principal: Principal,
+        signals: RequestSignals, history: list, request_ctx: dict,
+    ) -> str | None:
+        """Build the cache key from every input the funnel reads. Returns None
+        (cache skipped) if the cache is disabled or key construction fails —
+        never let caching break routing."""
+        if self._route_cache is None:
+            return None
+        try:
+            from oneops.router.route_cache import (
+                conversation_digest,
+                route_cache_key,
+                signals_digest,
+            )
+            return route_cache_key(
+                query=query_text,
+                role=principal.role,
+                domain=(request_ctx.get("domain") or ""),
+                focus_entity_id=(request_ctx.get("focus_entity_id") or ""),
+                focus_service_id=(request_ctx.get("focus_service_id") or ""),
+                sig_digest=signals_digest(signals),
+                conv_digest=conversation_digest(history),
+                registry_fingerprint=self._registry.routing_fingerprint(),
+            )
+        except Exception as exc:                                   # noqa: BLE001
+            _log.warning("router.route_cache_key_failed", error=str(exc)[:160])
+            return None
+
+    def _result_from_cache(self, hit: dict) -> RouteResult | None:
+        """Rebuild a RouteResult from a cached decision. The plan is reassembled
+        against the CURRENT registry (deterministic, no LLM). Returns None on a
+        malformed entry so the caller falls through to a fresh route."""
+        try:
+            outcome = hit.get("outcome")
+            reason = hit.get("reason") or ""
+            diag = ["route-cache: hit"]
+            if outcome == "routed":
+                from oneops.router.route_cache import deserialize_routes
+                routes = deserialize_routes(hit.get("routes") or [])
+                if not routes:
+                    return None
+                plan = assemble_plan(routes, self._registry)
+                return RouteResult.routed(plan, diag, list(hit.get("unrouted") or []))
+            if outcome == "policy_denied":
+                return RouteResult.policy_denied(reason, diag)
+            if outcome == "no_match":
+                return RouteResult.no_match(reason, diag)
+        except Exception as exc:                                   # noqa: BLE001
+            _log.warning("router.route_cache_rebuild_failed", error=str(exc)[:160])
+        return None
+
+    async def _route_cache_store(
+        self, cache_key: str | None, principal: Principal, *,
+        outcome: str, routes: list, unrouted: list, reason: str,
+    ) -> None:
+        """Persist the funnel verdict. Best-effort — a cache write must never
+        break a successful route."""
+        if self._route_cache is None or cache_key is None:
+            return
+        try:
+            from oneops.router.route_cache import serialize_decision
+            value = serialize_decision(
+                outcome=outcome, routes=routes, unrouted=unrouted, reason=reason)
+            await self._route_cache.put(
+                tenant_id=principal.tenant_id, key=cache_key, value=value)
+            increment("oneops.router.route_cache.store")
+        except Exception as exc:                                   # noqa: BLE001
+            _log.warning("router.route_cache_put_failed", error=str(exc)[:160])
 
     # ── the per-sub-query funnel (stages 1-4) ────────────────────────────
 

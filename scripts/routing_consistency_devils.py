@@ -166,7 +166,7 @@ def coverage() -> None:
         if shape is None:
             check(False, f"no-crash: {q!r}", err)
             continue
-        status, tool, cls = shape
+        status, _, cls = shape
         check(status not in ("", "failed") or cls == "no_match",
               f"valid outcome: {q!r}", f"{shape}")
         if exp is not None:

@@ -46,6 +46,9 @@ from oneops.use_cases.uc02_similar_tickets.id_resolver import (
     resolve as resolve_id,
 )
 
+# Telemetry/HTTP literals → constants (sonar S1192).
+_AI_AGENT_RUNS_TOTAL = "ai.agent.runs.total"
+
 _log = get_logger("oneops.api.uc02")
 
 router = APIRouter(prefix="/api/uc02", tags=["uc02-similar-tickets"])
@@ -162,14 +165,14 @@ def _cache_key(
 # ── route ────────────────────────────────────────────────────────────────────
 
 
-@router.post("/similar-tickets", response_model=SimilarTicketsResponse)
+@router.post("/similar-tickets", responses={400: {"description": "Invalid request"}, 404: {"description": "Not found"}, 500: {"description": "Internal server error"}, 503: {"description": "Service unavailable"}})
 async def similar_tickets(
     payload: SimilarTicketsRouteRequest,
     request: Request,
 ) -> SimilarTicketsResponse:
     """Find tickets similar to `payload.ticket_id` for the calling tenant.
 
-    Spec: ai-service-use-cases.md §UC-2.
+    Spec: docs/product/ai-service-use-cases.md §UC-2.
     """
     tenant_id, user_id, role = _principal(request)
     _require_role(role)
@@ -190,7 +193,7 @@ async def similar_tickets(
     # `uc02_similar_tickets`). Previously this emitted
     # the legacy `similar_tickets_agent` label which split the dashboard
     # into two phantom rows. Aligned 2026-05-30.
-    _metric_inc("ai.agent.runs.total", 1,
+    _metric_inc(_AI_AGENT_RUNS_TOTAL, 1,
                 agent_id="uc02_similar_tickets",
                 tenant_id=tenant_id, service_id=service_id,
                 status="started")
@@ -221,7 +224,7 @@ async def similar_tickets(
                 _log.info("oneops.api.uc02.cache_hit",
                           tenant_id=tenant_id, ticket_id=canonical_id)
                 cached["cached"] = True
-                _metric_inc("ai.agent.runs.total", 1,
+                _metric_inc(_AI_AGENT_RUNS_TOTAL, 1,
                             agent_id="uc02_similar_tickets",
                             tenant_id=tenant_id, service_id=service_id,
                             status="success")
@@ -283,7 +286,7 @@ async def similar_tickets(
             except Exception:                                      # noqa: BLE001
                 pass  # cache write failure is never fatal
 
-        _metric_inc("ai.agent.runs.total", 1,
+        _metric_inc(_AI_AGENT_RUNS_TOTAL, 1,
                     agent_id="uc02_similar_tickets",
                     tenant_id=tenant_id, service_id=service_id,
                     status="success")

@@ -12,7 +12,7 @@ Two completely separate paths by service_id:
   REQUEST — Deterministic (no LLM cost, fully auditable):
     impact  = derive_impact_for_request[catalog_category]  (+ VIP override)
     urgency = derive_urgency_for_request[sla_state]
-    Both maps live in registries/service-schema.json under the request entry.
+    Both maps live in registries/v2/platform/service-schema.json under the request entry.
 
 Then for BOTH paths, priority is a matrix lookup:
     priority = priority_matrix[impact][urgency]
@@ -41,10 +41,13 @@ from oneops.use_cases.uc05_triage.contracts import (
     Urgency,
 )
 
+# Repeated literals → constants (sonar S1192).
+_ON_BUSINESS = "On Business"
+
 # Same path resolution pattern as schema_loader
 _DEFAULT_SCHEMA_PATH = (
     Path(__file__).resolve().parents[5]
-    / "registries" / "service-schema.json"
+    / "registries" / "v2" / "platform" / "service-schema.json"
 )
 
 # Safe middle-tier default when both the LLM and any fallback fail. Picked
@@ -55,7 +58,7 @@ _SAFE_DEFAULT_IMPACT: Impact = "On Users"
 _SAFE_DEFAULT_URGENCY: Urgency = "Medium"
 
 _VALID_IMPACTS: frozenset[str] = frozenset(
-    {"Low", "On Users", "On Department", "On Business"}
+    {"Low", "On Users", "On Department", _ON_BUSINESS}
 )
 _VALID_URGENCIES: frozenset[str] = frozenset(
     {"Low", "Medium", "High", "Urgent"}
@@ -71,7 +74,7 @@ def normalise_priority(
 ) -> str | None:
     """Convert any priority string to the Motadata canonical vocabulary.
 
-    Reads `priority_aliases` from registries/service-schema.json. Behaviour:
+    Reads `priority_aliases` from registries/v2/platform/service-schema.json. Behaviour:
       • None / empty   → None
       • Already canonical (Low/Medium/High/Urgent) → returned unchanged
       • Known alias (P1/P2/P3/P4)                  → mapped to canonical
@@ -210,7 +213,6 @@ async def _prioritize_impl(
     else:
         impact, urgency, basis = _request_path(
             suggested_category=suggested_category,
-            suggested_catalog_item_id=suggested_catalog_item_id,
             vip_flag=vip_flag,
             sla_state=sla_state,
             derive_impact_block=derive_impact_block,
@@ -273,8 +275,8 @@ async def _incident_path(
     urgency: Urgency = raw_urgency if urgency_ok else _SAFE_DEFAULT_URGENCY  # type: ignore[assignment]
 
     # VIP override — if the reporter is VIP, never drop below On Business
-    if vip_flag and impact != "On Business":
-        impact = "On Business"
+    if vip_flag and impact != _ON_BUSINESS:
+        impact = _ON_BUSINESS
 
     basis = {
         "impact": "llm_inferred" if impact_ok else "safe_default_llm_invalid",
@@ -290,7 +292,6 @@ async def _incident_path(
 def _request_path(
     *,
     suggested_category: str | None,
-    suggested_catalog_item_id: str | None,
     vip_flag: bool,
     sla_state: str | None,
     derive_impact_block: dict[str, Any],
@@ -308,9 +309,9 @@ def _request_path(
         else _SAFE_DEFAULT_IMPACT
     )
     vip_override = (
-        derive_impact_block.get("vip_user_override") or "On Business"
+        derive_impact_block.get("vip_user_override") or _ON_BUSINESS
         if derive_impact_block
-        else "On Business"
+        else _ON_BUSINESS
     )
 
     cat_key = (suggested_category or "").lower().strip()

@@ -3,7 +3,7 @@
 Devil's-advocate: force the engine to raise, then assert the HTTP 500 body
 carries an OPAQUE message (+ a request_id for correlation) and NEVER the internal
 exception text. The status code (500) is preserved — clients may key on it.
-See docs/production-readiness-audit.md P0-3 + change-log Batch B.
+See docs/planning/production-readiness-audit.md P0-3 + change-log Batch B.
 """
 from __future__ import annotations
 
@@ -20,6 +20,9 @@ _SECRET = "INTERNAL_DB_DSN=postgres://user:p4ssw0rd@host/db leaked in exc text"
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("UC_INVOKER_MODE", "local")
+    # AGENT_TRANSPORT=local is forced for all unit tests by the autouse
+    # `_hermetic_agent_transport` fixture in tests/unit/conftest.py (so the app
+    # lifespan starts no NATS workers that would deadlock teardown).
     app = build_app()
     with TestClient(app) as c:
         yield c

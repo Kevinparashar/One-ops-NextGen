@@ -1,0 +1,19 @@
+{
+  "// SonarLint scope": "Takes effect when THIS folder is the open VS Code workspace (File > Open Folder > Oneops-NextGen V1). SonarLint then analyzes only this project; these globs drop generated/vendor/data noise so the Problems panel shows only our code.",
+  "sonarlint.analysisExcludesStandalone": "**/.venv/**, **/__pycache__/**, **/*.pyc, **/*_pb2.py, **/*_pb2_grpc.py, proto/**, contracts/**, data/**, docs/**, langgraph_docs/**, registries/**, ops/**, **/node_modules/**, src/oneops/api/static/**",
+
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.analysis.extraPaths": ["${workspaceFolder}/src"],
+
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/.pytest_cache": true,
+    "**/*.egg-info": true
+  },
+  "search.exclude": {
+    "**/.venv": true,
+    "**/data": true,
+    "**/langgraph_docs": true
+  }
+}

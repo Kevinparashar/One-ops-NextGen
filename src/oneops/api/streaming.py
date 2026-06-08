@@ -2,7 +2,7 @@
 
 Lets the bespoke UC endpoints (UC-2/5/8 — which run their tools OUTSIDE the
 executor and keep their own result UIs) emit the SAME live "agent + tool"
-activity stream as the chat/fast-path doors, per CONVENTIONS.md
+activity stream as the chat/fast-path doors, per docs/architecture/CONVENTIONS.md
 "Live activity stream".
 
 `event_stream(request_id, run_final)` opens an event sink keyed by

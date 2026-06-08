@@ -24,6 +24,9 @@ from typing import Any, Protocol
 from oneops.observability import get_logger, get_tracer, set_langfuse_io
 from oneops.registry.service import RegistryService
 
+# Telemetry literals → constants (sonar S1192).
+_ONEOPS_ROUTER_CANDIDATE_COUNT = "oneops.router.candidate_count"
+
 _log = get_logger("oneops.router.retrieval")
 _tracer = get_tracer("oneops.router.retrieval")
 
@@ -130,7 +133,7 @@ class LexicalRetriever:
             q = _tokens(query_text)
             span.set_attribute("oneops.router.query_token_count", len(q))
             if not q:
-                span.set_attribute("oneops.router.candidate_count", 0)
+                span.set_attribute(_ONEOPS_ROUTER_CANDIDATE_COUNT, 0)
                 return []
             index = self._get_index()
             overlaps: dict[str, int] = {}
@@ -146,7 +149,7 @@ class LexicalRetriever:
                 scored.append(Candidate(a.id, score))
             scored.sort(key=lambda c: (-c.score, c.agent_id))
             result = scored[:top_k]
-            span.set_attribute("oneops.router.candidate_count", len(result))
+            span.set_attribute(_ONEOPS_ROUTER_CANDIDATE_COUNT, len(result))
             span.set_attribute(
                 "oneops.router.candidate_ids",
                 ",".join(c.agent_id for c in result))
@@ -157,33 +160,162 @@ class LexicalRetriever:
             return result
 
 
-class PgVectorRetriever:
-    """Production retriever — query embedding (LLM Gateway) + pgvector kNN over
-    agent-capability embeddings (ADR-0002).
+async def configure_hnsw_connection(conn: Any) -> None:
+    """Pool `init` for the retriever's asyncpg connections — tunes pgvector HNSW
+    so the filtered ANN query behaves correctly at scale. Best-effort: any
+    failure (older pgvector without these GUCs) is swallowed; retrieval still
+    works, just untuned.
 
-    Exercised only in the env-gated integration suite — embedding and the
-    vector store both need live infrastructure. The body is intentionally a
-    thin adapter; the funnel logic is identical regardless of retriever.
+      * loads the pgvector library first (its GUCs only register after the
+        first vector op in a session),
+      * iterative_scan='relaxed_order' — REQUIRED for filtered ANN: without it a
+        `WHERE domain=… ORDER BY <=> LIMIT N` can return < N rows (filter drops
+        index hits); relaxed_order keeps searching to fill the limit (we re-rank
+        in the outer query anyway, so relaxed vs strict order is fine + faster),
+      * ef_search=200 — search breadth ≥ our candidate-chunk LIMIT for recall.
+    """
+    try:
+        await conn.execute("SELECT '[1,2,3]'::vector")          # load pgvector GUCs
+        await conn.execute("SET hnsw.iterative_scan = 'relaxed_order'")
+        await conn.execute("SET hnsw.ef_search = 200")
+    except Exception:                                            # noqa: BLE001
+        pass
+
+
+class GatewayEmbedder:
+    """Embeds query text through the LLM Gateway — the single egress (§2.5).
+
+    Uses the SAME model + dimensions as the stored agent vectors
+    (database/agent/worker.py → text-embedding-3-large @ 1536) so the query and
+    the corpus live in one embedding space; otherwise cosine is meaningless.
     """
 
-    def __init__(self, registry: RegistryService, *, embedder: Any, pool: Any) -> None:
+    def __init__(
+        self, gateway: Any, *,
+        model: str = "text-embedding-3-large", dimensions: int = 1536,
+        cache: Any | None = None,
+    ) -> None:
+        self._gateway = gateway
+        self._model = model
+        self._dimensions = dimensions
+        # Optional QueryEmbeddingCache (router/route_cache.py). The query vector
+        # is deterministic per (model, dimensions) and tenant-independent, so a
+        # repeated query reuses the vector instead of a gateway round-trip.
+        # None ⇒ disabled (no behaviour change).
+        self._cache = cache
+
+    async def embed(self, text: str, *, tenant_id: str) -> list[float]:
+        key = None
+        if self._cache is not None:
+            try:
+                from oneops.observability.metrics import increment
+                from oneops.router.route_cache import embedding_cache_key
+                key = embedding_cache_key(
+                    text=text, model=self._model, dimensions=self._dimensions)
+                cached = await self._cache.get(key=key)
+                if cached is not None:
+                    increment("oneops.router.embedding_cache.hit")
+                    return list(cached)
+                increment("oneops.router.embedding_cache.miss")
+            except Exception:                                      # noqa: BLE001
+                key = None  # cache failure must never break embedding
+        vectors = await self._gateway.embed(
+            [text], model=self._model, tenant_id=tenant_id,
+            dimensions=self._dimensions)
+        vector = vectors[0]
+        if key is not None:
+            try:
+                await self._cache.put(key=key, vector=vector)
+            except Exception:                                      # noqa: BLE001
+                pass
+        return vector
+
+
+class PgVectorRetriever:
+    """Production retriever — query embedding (LLM Gateway) + pgvector kNN over
+    `ai.embeddings_agent` (the per-facet agent routing vectors, ADR-0002).
+
+    The agent vectors are GLOBAL (no tenant_id — the registry serves every
+    tenant); tenant/role scoping happens downstream in the activation-condition
+    + ABAC filter, not here (§2.4). Each agent has multiple chunks
+    (description / use_when / example), so we take the BEST-matching chunk per
+    agent (max cosine similarity) and return the top-K agents.
+    """
+
+    # ANN pattern: the INNER `ORDER BY embedding <=> q LIMIT N` is what the HNSW
+    # index accelerates (returns the N nearest chunks without scanning the table
+    # → flat latency at scale). The OUTER groups those nearest chunks to agents
+    # and takes the top-K agents. An aggregate-over-all-rows (max ... GROUP BY)
+    # can NEVER use HNSW — it forces a Seq Scan — which is why we retrieve
+    # nearest chunks first, then aggregate. N ($5) must be generous enough that
+    # every true top-K agent has a chunk in the nearest-N (recall/latency knob).
+    _SQL = (
+        "SELECT agent_id, max(score) AS score FROM ("
+        "  SELECT agent_id, 1 - (embedding <=> $1::vector) AS score "
+        "  FROM ai.embeddings_agent "
+        "  WHERE embedding_version = $2 "
+        "    AND ($4::text IS NULL OR domain = $4) "   # domain scope (NULL = all)
+        "  ORDER BY embedding <=> $1::vector "          # ← HNSW ANN (index scan)
+        "  LIMIT $5 "                                   # candidate chunks
+        ") t "
+        "GROUP BY agent_id "
+        "ORDER BY score DESC "
+        "LIMIT $3::int"
+    )
+
+    def __init__(
+        self, registry: RegistryService, *,
+        embedder: Any, pool: Any, embedding_version: str = "v1",
+        candidate_chunks: int = 200,
+    ) -> None:
         self._registry = registry
-        self._embedder = embedder        # async: embed(text) -> list[float]
+        self._embedder = embedder        # async: embed(text, *, tenant_id) -> list[float]
         self._pool = pool                # asyncpg pool
+        self._embedding_version = embedding_version
+        # How many nearest chunks the inner ANN fetches before grouping to
+        # agents. Bigger = better recall of the true top-K agents, slightly
+        # slower. ~200 covers ~15 agents at ~13 chunks each with headroom.
+        self._candidate_chunks = candidate_chunks
 
     async def retrieve(
-        self, query_text: str, *, tenant_id: str, top_k: int
+        self, query_text: str, *, tenant_id: str, top_k: int,
+        domain: str | None = None,
     ) -> list[Candidate]:
-        vector = await self._embedder.embed(query_text)
-        sql = (
-            "SELECT agent_id, 1 - (embedding <=> $1) AS score "
-            "FROM agent_capability_embeddings "
-            "WHERE tenant_id = $2 OR tenant_id = '_platform' "
-            "ORDER BY embedding <=> $1 LIMIT $3"
-        )
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(sql, vector, tenant_id, top_k)
-        return [Candidate(r["agent_id"], float(r["score"])) for r in rows]
+        with _tracer.start_as_current_span(
+            "router.stage2.retrieve",
+            attributes={
+                "oneops.router.stage": "2",
+                "oneops.router.retriever": "pgvector",
+                "oneops.router.top_k": top_k,
+                "oneops.router.domain": domain or "all",
+            },
+        ) as span:
+            if not query_text.strip():
+                span.set_attribute(_ONEOPS_ROUTER_CANDIDATE_COUNT, 0)
+                return []
+            # Single egress (§2.5): query embedded via the gateway, same space
+            # as the stored agent vectors. Errors propagate — no silent failure
+            # (§2.7); the caller's funnel decides the fallback. domain=None
+            # retrieves across all domains; a value scopes to one domain (ITOM).
+            vector = await self._embedder.embed(query_text, tenant_id=tenant_id)
+            vec_literal = "[" + ",".join(repr(float(x)) for x in vector) + "]"
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    self._SQL, vec_literal, self._embedding_version, top_k,
+                    domain, self._candidate_chunks)
+            result = [Candidate(r["agent_id"], float(r["score"])) for r in rows]
+            span.set_attribute(_ONEOPS_ROUTER_CANDIDATE_COUNT, len(result))
+            span.set_attribute(
+                "oneops.router.candidate_ids",
+                ",".join(c.agent_id for c in result))
+            set_langfuse_io(
+                span, input=query_text,
+                output=[{"agent_id": c.agent_id, "score": round(c.score, 3)}
+                        for c in result])
+            return result
 
 
-__all__ = ["Candidate", "CandidateRetriever", "LexicalRetriever", "PgVectorRetriever"]
+__all__ = [
+    "Candidate", "CandidateRetriever", "GatewayEmbedder",
+    "LexicalRetriever", "PgVectorRetriever", "configure_hnsw_connection",
+]

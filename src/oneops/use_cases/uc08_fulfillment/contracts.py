@@ -9,7 +9,7 @@ Single source of truth for state enums: every value here MUST match the
 Postgres CHECK constraint in migration 0007. The DB and Python share the
 truth — drift is structurally impossible because tests verify both ends.
 
-Spec source: ai-service-use-cases.md §UC-8 (DOC-09 in the 22-doc bundle).
+Spec source: docs/product/ai-service-use-cases.md §UC-8 (DOC-09 in the 22-doc bundle).
 """
 from __future__ import annotations
 

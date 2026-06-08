@@ -3,6 +3,7 @@
   "id": "uc02_similar_tickets",
   "versions": {
     "1": {
+      "domain": "itsm",
       "abac_tags": {
         "audience": [
           "service_desk_agent",
@@ -15,7 +16,10 @@
           "requester"
         ],
         "data_classification": "confidential",
-        "service": ["incident", "request"],
+        "service": [
+          "incident",
+          "request"
+        ],
         "tier": "read"
       },
       "activation_condition": {
@@ -23,7 +27,16 @@
         "negate": false,
         "operator": "leaf",
         "signal": "role_in",
-        "values": ["service_desk_agent", "technician_l1", "technician_l2", "triage_desk", "manager", "admin", "end_user", "requester"]
+        "values": [
+          "service_desk_agent",
+          "technician_l1",
+          "technician_l2",
+          "triage_desk",
+          "manager",
+          "admin",
+          "end_user",
+          "requester"
+        ]
       },
       "compound_of": [],
       "created_at": "2026-05-30T14:30:00.000000+00:00",
@@ -33,7 +46,9 @@
       "excludes": [],
       "hooks": {
         "after_invocation": [],
-        "before_invocation": ["builtin:authz_recheck"]
+        "before_invocation": [
+          "builtin:authz_recheck"
+        ]
       },
       "id": "uc02_similar_tickets",
       "intent_family": "similar_read",
@@ -47,34 +62,58 @@
         {
           "id": "find_similar_tickets",
           "name": "Find similar tickets",
-          "description": "Surface semantically and metadata-similar past tickets for a given ticket, for pattern discovery, duplicate awareness, and resolution reuse. Use when the user wants OTHER records like this one.",
+          "description": "Find past incidents or requests that are semantically and metadata-similar to a focused ticket - for duplicate detection, pattern discovery, and resolution reuse. Use when the user wants OTHER records like this one. NOT for summarizing the ticket itself, fetching KB/how-to articles, or modifying records.",
           "use_when": [
-            "find similar / related / comparable tickets",
-            "have we seen this before / any duplicates of X",
-            "other incidents like INC..."
+            "the user asks for tickets like a given record id (e.g. similar to INC0001001)",
+            "a contextual follow-up asking for similar or related items about the active focus record",
+            "the user wants to identify other incidents that share characteristics with the current ticket",
+            "the user is looking for historical cases that resemble the current issue",
+            "the user seeks to uncover patterns by finding previous requests that are alike",
+            "the user inquires about past occurrences that are similar to the ongoing ticket",
+            "the user is interested in discovering previously reported issues that match the current situation",
+            "the user wants to explore tickets that have been categorized similarly to the active record"
           ],
           "not_when": [
-            "summarize the ticket itself (that is the summary agent)",
-            "find KB articles / documentation (that is the knowledge agent)"
+            "the user wants facts, fields, status, or timeline of the record itself (route to uc01_summarization)",
+            "the user wants external knowledge, documentation, how-to, or KB articles (route to uc03_kb_lookup)",
+            "the user wants to create, update, assign, or modify a record (route to an action/fulfilment agent)",
+            "the user wants to triage, prioritise, or route a single ticket (route to uc05_triage)",
+            "the user asks a general IT question with no specific record or active focus record",
+            "the user wants to understand the details or status of a specific record (route to uc01_summarization)",
+            "the user seeks external knowledge or solutions related to a specific record (route to uc03_kb_lookup)",
+            "the user is asking for classification or assignment recommendations for a specific ticket (route to uc05_triage)"
           ],
           "tags": [
             "similarity",
             "retrieval",
             "read",
             "incident",
-            "request"
+            "request",
+            "duplicate"
           ],
           "examples": [
             "show tickets similar to INC0001001",
-            "any duplicates of this incident",
-            "have we seen this issue before"
+            "any duplicates of this incident?",
+            "have we seen this issue before?",
+            "find related incidents to INC0001021",
+            "other tickets with the same problem",
+            "is this a known recurring issue?",
+            "are there any past tickets like this one?",
+            "can you find incidents that are similar to this?",
+            "what other requests have we had that are like this?",
+            "show me previous cases that match this issue",
+            "have we dealt with something like this in the past?",
+            "list any related tickets to the current incident"
           ]
         }
       ],
       "routing_shape": "single_agent",
       "status": "active",
       "tool_refs": [
-        {"tool_id": "find_similar_entities", "version": 1}
+        {
+          "tool_id": "find_similar_entities",
+          "version": 1
+        }
       ],
       "consumes_time_filter": true,
       "updated_at": "2026-05-30T14:30:00.000000+00:00",

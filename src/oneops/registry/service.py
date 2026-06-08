@@ -45,6 +45,42 @@ class RegistryService:
         """Build a file-backed service rooted at `root` (e.g. registries/v2)."""
         return cls(FileBackend(root))
 
+    # ── routing fingerprint (route-decision cache invalidation) ──────────────
+
+    def routing_fingerprint(self) -> str:
+        """A stable hash over every routing-relevant active record.
+
+        The route-decision cache (`router/route_cache.py`) embeds this in its
+        key, so ANY change to an active agent or tool — a sharpened
+        `not_when`, a new agent, a tweaked `activation_condition`, a tool
+        rebind — changes the fingerprint and therefore invalidates every
+        cached route *structurally* (no manual flush). This is the registry's
+        side of "invalidate when the registry changes, not on session or
+        ticket data".
+
+        Computed from the full serialized active agent + tool records (not
+        just version numbers — an in-place card edit during dev does not bump
+        the version, but it MUST invalidate the cache). Memoized: the registry
+        is immutable for a process's lifetime once loaded, so this is hashed
+        once and reused on the hot path.
+        """
+        cached = getattr(self, "_routing_fp", None)
+        if cached is not None:
+            return cached
+        import hashlib
+
+        parts: list[str] = []
+        for store in (self.agents, self.tools):
+            for rec in sorted(store.list_active(),
+                              key=lambda r: getattr(r, "id", "") or ""):
+                # pydantic BaseModel → deterministic JSON; falls back to repr
+                # for any non-pydantic record type.
+                dump = getattr(rec, "model_dump_json", None)
+                parts.append(dump(exclude_none=True) if callable(dump) else repr(rec))
+        fp = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:16]
+        self._routing_fp = fp
+        return fp
+
     # ── lifecycle inventory ─────────────────────────────────────────────────
 
     def lifecycle_summary(self) -> dict[str, dict[str, int]]:
@@ -155,7 +191,7 @@ def _find_dependency_cycle(agents: dict[str, AgentRecord]) -> list[str]:
     """Return one cycle in the depends_on graph as a node list, or [] if the
     graph is acyclic. Iterative DFS with a three-colour marking."""
     WHITE, GREY, BLACK = 0, 1, 2
-    colour: dict[str, int] = {a: WHITE for a in agents}
+    colour: dict[str, int] = dict.fromkeys(agents, WHITE)
 
     def visit(start: str) -> list[str]:
         stack: list[tuple[str, int]] = [(start, 0)]

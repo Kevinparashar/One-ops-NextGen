@@ -21,6 +21,10 @@ import sys
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
+# Repeated literals → constants (sonar S1192).
+_API_CHAT_STREAM = "/api/chat/stream"
+_API_FAST_UC01_SUMMARIZATION_STREAM = "/api/fast/uc01_summarization/stream"
+
 BASE = "http://localhost:8765"
 HDR = {
     "content-type": "application/json",
@@ -81,7 +85,7 @@ def invariants(events: list[dict], label: str, *, expect_tools: bool) -> dict | 
 
 def main() -> None:
     print("\n=== A. chat multi-step stream ===")
-    ev = stream("/api/chat/stream",
+    ev = stream(_API_CHAT_STREAM,
                 {"message": "summarize INC0001001 and find similar tickets",
                  "session_id": "dp-a"})
     p = invariants(ev, "A", expect_tools=True)
@@ -91,7 +95,7 @@ def main() -> None:
           "A: multi-step → 2+ tools")
 
     print("\n=== B. chat missing ticket (graceful) ===")
-    ev = stream("/api/chat/stream",
+    ev = stream(_API_CHAT_STREAM,
                 {"message": "summarize INC9999999", "session_id": "dp-b"})
     p = invariants(ev, "B", expect_tools=False)
     fr = (p or {}).get("final_response", "").lower()
@@ -100,7 +104,7 @@ def main() -> None:
           or "9999999" in fr, "B: missing id handled gracefully", fr[:80])
 
     print("\n=== C. chat field-read via stream ===")
-    ev = stream("/api/chat/stream",
+    ev = stream(_API_CHAT_STREAM,
                 {"message": "give me sla of INC0001001", "session_id": "dp-c"})
     p = invariants(ev, "C", expect_tools=True)
     outcomes = [s.get("output", {}).get("outcome")
@@ -108,7 +112,7 @@ def main() -> None:
     check("field_read" in outcomes, "C: field-read still routes correctly", str(outcomes))
 
     print("\n=== D. button bad input → clarification, NO tool events ===")
-    ev = stream("/api/fast/uc01_summarization/stream",
+    ev = stream(_API_FAST_UC01_SUMMARIZATION_STREAM,
                 {"inputs": {"ticket_id": "garbage"}, "session_id": "dp-d"})
     p = invariants(ev, "D", expect_tools=False)
     check(not [e for e in ev if e["type"] == "tool_start"],
@@ -117,7 +121,7 @@ def main() -> None:
           "D: final is a clarification", str(p and p.get("final_status")))
 
     print("\n=== E. button valid stream ===")
-    ev = stream("/api/fast/uc01_summarization/stream",
+    ev = stream(_API_FAST_UC01_SUMMARIZATION_STREAM,
                 {"inputs": {"ticket_id": "PBM0003007", "service_id": "problem"},
                  "session_id": "dp-e"})
     p = invariants(ev, "E", expect_tools=True)
@@ -125,9 +129,9 @@ def main() -> None:
 
     print("\n=== F. two concurrent streams don't cross-contaminate ===")
     with ThreadPoolExecutor(max_workers=2) as ex:
-        f1 = ex.submit(stream, "/api/chat/stream",
+        f1 = ex.submit(stream, _API_CHAT_STREAM,
                        {"message": "summarize INC0001002", "session_id": "dp-f1"})
-        f2 = ex.submit(stream, "/api/fast/uc01_summarization/stream",
+        f2 = ex.submit(stream, _API_FAST_UC01_SUMMARIZATION_STREAM,
                        {"inputs": {"ticket_id": "CHG0004001", "service_id": "change"},
                         "session_id": "dp-f2"})
         e1, e2 = f1.result(), f2.result()

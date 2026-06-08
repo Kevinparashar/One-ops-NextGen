@@ -5,7 +5,7 @@ These wrap UC-5's three triage tools in the platform-standard
 declared in the registry (`registries/v2/tools/uc05_triage/*.json`) and dispatched
 by the MAIN executor like every other UC — instead of UC-5's bespoke runner+graph.
 
-This is the agents-as-data alignment (see docs/agent-skills-spec.md + the uc05
+This is the agents-as-data alignment (see docs/architecture/agent-skills-spec.md + the uc05
 onboarding scope): orchestration becomes a registry PLAN run by the one executor
 (check_duplicates → [recommend_assignment ∥ prioritize] → assemble), with the
 executor's Send fan-out + data-flow binding carrying check_duplicates' `candidates`
@@ -53,6 +53,10 @@ from oneops.use_cases.uc05_triage.tools.recommend_assignment import (
 )
 
 _log = get_logger("oneops.use_cases.uc05_triage.handlers")
+
+# Repeated literals → constants (sonar S1192).
+_TENANT_ID_SERVICE_ID_TICKET_ID_REQUIRED = "tenant_id, service_id, ticket_id required"
+_UC05_DEPENDENCIES_NOT_WIRED = "uc05 dependencies not wired"
 
 # ── module-injected dependencies (wired at app boot, like set_summarize_llm) ──
 _gateway: Any | None = None
@@ -102,13 +106,13 @@ async def check_duplicates(arguments: dict[str, Any],
     """Standard handler for UC-5 Tool 1. Outputs a DuplicateCheckResult dict —
     including `candidates`, which the executor binds into recommend_assignment."""
     if not _deps_ready():
-        return _err("dependency_unavailable", "uc05 dependencies not wired")
+        return _err("dependency_unavailable", _UC05_DEPENDENCIES_NOT_WIRED)
     tenant_id = str(context.get("tenant_id") or "")
     user_id = str(context.get("user_id") or "")
     service_id = str(arguments.get("service_id") or "")
     ticket_id = str(arguments.get("ticket_id") or "")
     if not (tenant_id and service_id and ticket_id):
-        return _err("invalid_request", "tenant_id, service_id, ticket_id required")
+        return _err("invalid_request", _TENANT_ID_SERVICE_ID_TICKET_ID_REQUIRED)
 
     row = await _load_row(service_id, ticket_id, tenant_id)
     if row is None:
@@ -135,7 +139,7 @@ async def recommend_assignment_handler(arguments: dict[str, Any],
     output by the executor (data-flow binding); `probe_text`/`ticket_row`
     optional (only used on the LLM tiebreak path)."""
     if not _deps_ready():
-        return _err("dependency_unavailable", "uc05 dependencies not wired")
+        return _err("dependency_unavailable", _UC05_DEPENDENCIES_NOT_WIRED)
     tenant_id = str(context.get("tenant_id") or "")
     user_id = str(context.get("user_id") or "")
     raw_candidates = arguments.get("candidates") or []
@@ -158,13 +162,13 @@ async def prioritize(arguments: dict[str, Any],
     """Standard handler for UC-5 Tool 3. category/subcategory are bound from
     Tool 1's output by the executor; loads the row for impact/urgency signals."""
     if not _deps_ready():
-        return _err("dependency_unavailable", "uc05 dependencies not wired")
+        return _err("dependency_unavailable", _UC05_DEPENDENCIES_NOT_WIRED)
     tenant_id = str(context.get("tenant_id") or "")
     user_id = str(context.get("user_id") or "")
     service_id = str(arguments.get("service_id") or "")
     ticket_id = str(arguments.get("ticket_id") or "")
     if not (tenant_id and service_id and ticket_id):
-        return _err("invalid_request", "tenant_id, service_id, ticket_id required")
+        return _err("invalid_request", _TENANT_ID_SERVICE_ID_TICKET_ID_REQUIRED)
 
     row = await _load_row(service_id, ticket_id, tenant_id)
     if row is None:
@@ -218,7 +222,7 @@ async def assemble_triage_proposal(arguments: dict[str, Any],
     service_id = str(arguments.get("service_id") or "")
     ticket_id = str(arguments.get("ticket_id") or "")
     if not (tenant_id and service_id and ticket_id):
-        return _err("invalid_request", "tenant_id, service_id, ticket_id required")
+        return _err("invalid_request", _TENANT_ID_SERVICE_ID_TICKET_ID_REQUIRED)
 
     check_out = _upstream_output(previous_results, STEP_CHECK)
     if check_out is None:

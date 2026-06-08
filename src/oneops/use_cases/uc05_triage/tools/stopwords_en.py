@@ -2,7 +2,7 @@
 
 Source : NLTK 3.9.4 `stopwords.words('english')`
 Words  : 198
-Refresh: .venv/bin/python tools/freeze_stopwords.py
+Refresh: .venv/bin/python dev/freeze_stopwords.py
 
 Locked pattern (2026-05-29): build-time snapshot, runtime has zero
 dependency on the nltk package. UC-5 isolation respected — this

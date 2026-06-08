@@ -76,6 +76,7 @@ markers = [
     "integration: requires dragonfly, nats, llm gateway",
     "stress: full-pipeline scenario tests",
     "slow: > 5s wall clock",
+    "routing_eval: routing-quality gates (recall / held-out / counter-example) — live infra + LLM cost, gated by RUN_ROUTING_EVAL=1",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

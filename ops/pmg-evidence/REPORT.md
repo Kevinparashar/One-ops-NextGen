@@ -14,7 +14,7 @@
 | 4 | Phase 4 — UC-8 Fulfillment handler | ✅ green | `/home/kevin-parashar/AI-services/Oneops-NextGen/ops/pmg-evidence/phase-4-uc08-fulfillment.log` | onboarding-template wave→interrupt→resume Tempo trace tree |
 | 5 | Phase 5 — SLO + cost + probes | ✅ green | `/home/kevin-parashar/AI-services/Oneops-NextGen/ops/pmg-evidence/phase-5-slo-alert.log` | alert rules + cost dashboard JSON + forced-breach alert log |
 | 6 | Phase 6 — Local CI gate | ✅ green | `/home/kevin-parashar/AI-services/Oneops-NextGen/ops/pmg-evidence/phase-6-ci-gate-green.log` | make ci green on clean tree + blocked on broken tree |
-| 7 | Phase 7 — Demo runbook + decision package | ✅ green | `docs/pmg-demo-runbook.md` | PMG meeting script + manager 10-question decision package |
+| 7 | Phase 7 — Demo runbook + decision package | ✅ green | `docs/runbooks/pmg-demo-runbook.md` | PMG meeting script + manager 10-question decision package |
 
 ## How to read this
 
@@ -25,7 +25,7 @@
 
 ## Source of truth
 
-- Plan: [`docs/day1-execution-plan.md`](../../docs/day1-execution-plan.md)
-- Production maturity plan: [`docs/production-maturity-plan.md`](../../docs/production-maturity-plan.md)
-- Demo runbook: [`docs/pmg-demo-runbook.md`](../../docs/pmg-demo-runbook.md)
-- Decision package: [`docs/manager-decision-package.md`](../../docs/manager-decision-package.md)
+- Plan: [`docs/planning/day1-execution-plan.md`](../../docs/planning/day1-execution-plan.md)
+- Production maturity plan: [`docs/planning/production-maturity-plan.md`](../../docs/planning/production-maturity-plan.md)
+- Demo runbook: [`docs/runbooks/pmg-demo-runbook.md`](../../docs/runbooks/pmg-demo-runbook.md)
+- Decision package: [`docs/briefings/manager-decision-package.md`](../../docs/briefings/manager-decision-package.md)

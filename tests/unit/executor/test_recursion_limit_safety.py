@@ -5,7 +5,7 @@ could abort a legitimate deep plan mid-turn with an opaque error. `_safe_recursi
 floors the configured value at a budget provably sufficient for the configured
 generation depth, and never shrinks an operator's larger value. A real
 `GraphRecursionError` is also made diagnosable (logged + tagged) rather than opaque.
-See docs/scheduler-refactor-scope.md (Phase 1).
+See docs/planning/scheduler-refactor-scope.md (Phase 1).
 """
 from __future__ import annotations
 

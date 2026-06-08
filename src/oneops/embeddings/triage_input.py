@@ -2,11 +2,11 @@
 
 Pattern: canonical anchor (common to both tables) + per-service enrichment
 (table-specific JOIN fields). Used by:
-  * tools/seed_incident_embeddings.py (backfill)
+  * database/<service>/backfill.py (per-service backfill)
   * UC-5 check_duplicate_candidates (query-time)
   * UC-2 similar_tickets retrieval (query-time)
 
-Field selection rationale lives in docs/phase-2-checklist.md §B4.
+Field selection rationale lives in docs/planning/phase-2-checklist.md §B4.
 """
 from __future__ import annotations
 

@@ -14,7 +14,6 @@
 (() => {
   "use strict";
   const $ = (s, root = document) => root.querySelector(s);
-  const $$ = (s, root = document) => Array.from(root.querySelectorAll(s));
 
   function headers() {
     const t = $("#tenant"), u = $("#user"), r = $("#role");

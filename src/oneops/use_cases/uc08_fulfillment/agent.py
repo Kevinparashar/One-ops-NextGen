@@ -25,6 +25,9 @@ from oneops.adapters.nats_client import NATSClient
 from oneops.observability import get_logger, span
 from oneops.observability.metrics import increment
 
+# Telemetry/HTTP literals → constants (sonar S1192).
+_AI_UC08_AGENT_EVENTS_TOTAL = "ai.uc08.agent.events.total"
+
 _log = get_logger("oneops.uc08.agent")
 
 SUBJECT_FULFILL_EXECUTE = "oneops.uc08.fulfill.execute"
@@ -88,7 +91,7 @@ class UC8FulfillmentAgent:
                 "uc08.agent.envelope_invalid", error=str(exc)[:200],
             )
             increment(
-                "ai.uc08.agent.events.total",
+                _AI_UC08_AGENT_EVENTS_TOTAL,
                 outcome="envelope_invalid",
             )
             return
@@ -107,7 +110,7 @@ class UC8FulfillmentAgent:
                 ritm_id=ritm_id,
             )
             increment(
-                "ai.uc08.agent.events.total",
+                _AI_UC08_AGENT_EVENTS_TOTAL,
                 outcome="received",
                 tenant_id=tenant_id,
             )
@@ -120,7 +123,7 @@ class UC8FulfillmentAgent:
                     trace_id=trace_id,
                 )
                 increment(
-                    "ai.uc08.agent.events.total",
+                    _AI_UC08_AGENT_EVENTS_TOTAL,
                     outcome="completed",
                     tenant_id=tenant_id,
                 )
@@ -132,7 +135,7 @@ class UC8FulfillmentAgent:
                     error=str(exc)[:200],
                 )
                 increment(
-                    "ai.uc08.agent.events.total",
+                    _AI_UC08_AGENT_EVENTS_TOTAL,
                     outcome="failed",
                     tenant_id=tenant_id,
                 )

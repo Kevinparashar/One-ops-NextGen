@@ -3,7 +3,7 @@
 Devil's-advocate: a fast-path caller could flood `inputs` with a huge / deeply
 nested dict, reaching downstream validators, SQL, and embeddings. The bound must
 reject those with a clean 422-class ValidationError while NEVER rejecting a real
-input (a handful of short scalar fields). See docs/change-log.md Batch C.
+input (a handful of short scalar fields). See docs/history/change-log.md Batch C.
 """
 from __future__ import annotations
 

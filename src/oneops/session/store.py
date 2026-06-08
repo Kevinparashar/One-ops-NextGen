@@ -1,6 +1,6 @@
 """SessionEventStore — append-only conversation history with a hot window.
 
-Composition (ARCHITECTURE.md §6):
+Composition (docs/architecture/ARCHITECTURE.md §6):
   * the **cold** `EventLog` is the system of record — append-only, durable;
   * the **hot** `HotWindow` caches the most recent events for fast reads.
 
@@ -23,6 +23,10 @@ from oneops.session.backend import ConversationEvent, EventLog, HotWindow
 
 _log = get_logger("oneops.session.store")
 _tracer = get_tracer("oneops.session.store")
+
+# Telemetry literals (single source — sonar S1192).
+_ONEOPS_TENANT_ID = "oneops.tenant_id"
+_SESSION_ID = "session.id"
 
 
 @dataclass(frozen=True)
@@ -77,7 +81,7 @@ class SessionEventStore:
         """
         with _tracer.start_as_current_span(
             "session.append",
-            attributes={"oneops.tenant_id": tenant_id, "session.id": session_id,
+            attributes={_ONEOPS_TENANT_ID: tenant_id, _SESSION_ID: session_id,
                         "session.turn_index": event.turn_index},
         ):
             seq = await self._cold.append(tenant_id, session_id, event)
@@ -99,7 +103,7 @@ class SessionEventStore:
         """
         with _tracer.start_as_current_span(
             "session.recent",
-            attributes={"oneops.tenant_id": tenant_id, "session.id": session_id},
+            attributes={_ONEOPS_TENANT_ID: tenant_id, _SESSION_ID: session_id},
         ) as span:
             cached = await self._hot.window(tenant_id, session_id)
             if cached is not None:
@@ -119,7 +123,7 @@ class SessionEventStore:
         Never served from the (bounded) hot window."""
         with _tracer.start_as_current_span(
             "session.replay",
-            attributes={"oneops.tenant_id": tenant_id, "session.id": session_id,
+            attributes={_ONEOPS_TENANT_ID: tenant_id, _SESSION_ID: session_id,
                         "session.from_turn": from_turn},
         ):
             return await self._cold.read(tenant_id, session_id, from_turn=from_turn)
@@ -136,7 +140,7 @@ class SessionEventStore:
         cutoff = self._retention.cold_cutoff_unix_ms()
         with _tracer.start_as_current_span(
             "session.apply_retention",
-            attributes={"oneops.tenant_id": tenant_id,
+            attributes={_ONEOPS_TENANT_ID: tenant_id,
                         "session.cold_retention_days": self._retention.cold_retention_days},
         ) as span:
             removed = await self._cold.prune(tenant_id, older_than_unix_ms=cutoff)

@@ -7,7 +7,7 @@ Two things are locked here:
 2. WIRING: the compiled executor graph attaches a retry policy to `route` and
    `control_gate` (idempotent read/decide nodes) and NOT to the action-capable
    `run_step` node.
-See docs/change-log.md #5.
+See docs/history/change-log.md #5.
 """
 from __future__ import annotations
 

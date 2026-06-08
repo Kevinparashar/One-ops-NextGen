@@ -54,7 +54,7 @@ def load_registry(root: str | None = None, *, check_integrity: bool = True) -> R
     if not path.is_dir():
         raise ConfigError(
             f"registry root {path} does not exist — seed it before startup "
-            "(see tools/ seeding scripts)"
+            "(see database/ sync scripts: agent/tool/uc_schema sync.py)"
         )
 
     service = RegistryService.from_path(str(path))

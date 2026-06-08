@@ -8,7 +8,7 @@ shape is returned by:
 By construction the two paths cannot diverge: both publish onto the NATS
 subject and the worker returns this exact model.
 
-Spec source: ai-service-use-cases.md §UC-2.
+Spec source: docs/product/ai-service-use-cases.md §UC-2.
 """
 from __future__ import annotations
 

@@ -25,6 +25,9 @@ from typing import Any, Protocol
 from oneops.observability import get_tracer, set_langfuse_io
 from oneops.router.retrieval import Candidate
 
+# Telemetry literals → constants (sonar S1192).
+_ONEOPS_ROUTER_SELECTED = "oneops.router.selected"
+
 _tracer = get_tracer("oneops.router.disambiguation")
 
 # Deterministic preroute vocabulary. Narrowed to ONLY the two patterns
@@ -279,9 +282,18 @@ on X", "is there a procedure documented for X", "what do we have on X",
 user needs authored content, regardless of how they asked for it.
 
 Route by matching (OBJECT × ANSWER-SOURCE) to the candidate whose
-capability description fits that pair. The agent catalog above the
-routing block describes each candidate's capability. Select the candidate
-whose description aligns; do not invent agents not listed.
+capability description fits that pair. Each candidate agent's card is
+provided with the query (its description, Use when, and Do NOT use). Select
+the candidate whose card fits; do not invent agents not listed.
+
+Each candidate card also lists "Use when" (the agent's positive scope) and
+"Do NOT use" (out-of-scope cases, each naming the agent to pick instead).
+Treat these as DECISIVE: if the query matches a candidate's "Do NOT use"
+clause, do NOT select that candidate — select the agent named in that clause
+when it is in the candidate list. These boundaries are how same-entity
+look-alikes are told apart — e.g. "how do I resolve INC0001001" carries a
+record id but asks for authored guidance, so the summary/similar agents'
+"Do NOT use" clauses send it to the KB agent.
 
 When the query contains BOTH a stored-attribute ask AND an
 authored-material ask, return both agents, ordered with the stored-
@@ -311,6 +323,27 @@ recoverable; a router-level refusal is not.
 
 The `intents` field uses tokens from: summary, field_read, kb_search, \
 kb_article_fetch, similar_search, action, off_domain."""
+
+# Appended ONLY in strict_fit mode (team member-selection). Overrides the
+# always-route dispatch discipline above: the candidates are a fixed set, so a
+# query whose intent matches none of them must be refused, not force-routed.
+_STRICT_FIT_PROMPT = """## Fixed candidate set — fit test (overrides dispatch discipline)
+
+The candidate agents above are a FIXED, externally-chosen set (a team's
+members) — NOT a relevance-ranked shortlist. So you must judge FIT, not just
+pick the closest:
+
+- Select an agent ONLY if its capability genuinely matches the query's intent
+  (its "Use when" covers this ask, and the ask is not in its "Do NOT use").
+- If NONE of these specific candidates fit the query's intent, return an EMPTY
+  selected_agent_ids — even when the query is a perfectly valid in-domain
+  request. "This team has no member for this" is a correct, expected outcome;
+  do NOT force-pick the least-bad candidate.
+- This supersedes any earlier instruction to always route an in-domain query.
+
+Example: a "summarize this incident" query offered only a triage agent and a
+fulfilment agent → no fit → return []. Refusing lets the caller route it to the
+right team instead of mis-handling it."""
 
 
 def _deterministic_preroute(
@@ -370,18 +403,68 @@ class LlmDisambiguator:
     """
 
     def __init__(self, gateway, *, model: str = "gpt-4o-mini",
-                 registry: Any = None) -> None:
+                 registry: Any = None,
+                 abstain_min_score: float | None = None,
+                 abstain_min_margin: float = 0.0,
+                 strict_fit: bool = False) -> None:
         self._gateway = gateway
         self._model = model
+        # strict_fit: the candidate set is FIXED and externally constrained
+        # (e.g. a team's members), NOT a relevance-ranked shortlist from
+        # retrieval. In that mode the reranker must judge whether any candidate's
+        # capability genuinely FITS the query and refuse (empty selection) when
+        # none do — instead of the default global bias toward always routing an
+        # in-domain query to the closest agent. Off by default (the global router
+        # keeps its always-route discipline). Used by the team member-selector.
+        self._strict_fit = strict_fit
         # Optional; when None the disambiguator falls back to id-only listings
         # (preserves the pre-2026-05-28 behaviour for callers that haven't
         # been wired through yet).
         self._registry = registry
+        # Abstain = a JUNK-SKIP floor, NOT a decision threshold (2026-06-07 v2).
+        # A retrieval SCORE must never *refuse* a query — only the reranker may
+        # (it reads the full card and judges intent + axis-D). So this floor is
+        # set LOW (~0.25): below it, retrieval is clearly junk → skip the LLM to
+        # save cost; ABOVE it, the borderline band falls THROUGH to the reranker,
+        # which is the refuse authority. This is the canonical "retrieve → if
+        # confident route, else hand to the LLM" pattern — setting it high (a
+        # decision threshold) over-refused weak-but-valid queries (e.g. KB topic
+        # queries ~0.31) before the corrector could run. None = gate OFF.
+        # AMBIGUOUS (top-two within abstain_min_margin) likewise only fires as a
+        # junk-skip, not a verdict. Preroute is exempt. Tuned per-domain at scale.
+        self._abstain_min_score = abstain_min_score
+        self._abstain_min_margin = abstain_min_margin
         # Catalog block — built lazily once and embedded in the cached system
         # prompt so Anthropic's prompt cache reuses descriptions across every
         # routing call. Dragonfly FLUSHALL never touches it; only a process
         # restart (which is also when the registry would reload) rebuilds it.
         self._catalog_block: str | None = None
+
+    def _abstain_check(self, candidates: list[Candidate], span) -> Disambiguation | None:
+        """Wrong-agent guard. Returns a refuse-and-clarify Disambiguation when
+        retrieval is too weak or too ambiguous to commit; None to proceed to
+        the LLM. OFF when abstain_min_score is None (no regression)."""
+        if self._abstain_min_score is None or not candidates:
+            return None
+        ranked = sorted(candidates, key=lambda c: -c.score)
+        top = ranked[0]
+        if top.score < self._abstain_min_score:
+            span.set_attribute("oneops.router.abstain", "weak")
+            span.set_attribute("oneops.router.abstain.top_score", top.score)
+            return Disambiguation.no_match(
+                f"abstain (weak match): top candidate '{top.agent_id}' score "
+                f"{top.score:.2f} < floor {self._abstain_min_score:.2f} — "
+                f"ask the user to clarify rather than route")
+        if len(ranked) >= 2 and self._abstain_min_margin > 0.0:
+            margin = top.score - ranked[1].score
+            if margin < self._abstain_min_margin:
+                span.set_attribute("oneops.router.abstain", "ambiguous")
+                span.set_attribute("oneops.router.abstain.margin", margin)
+                return Disambiguation.no_match(
+                    f"abstain (ambiguous): top two ('{ranked[0].agent_id}', "
+                    f"'{ranked[1].agent_id}') within {margin:.2f} < margin "
+                    f"{self._abstain_min_margin:.2f} — ask the user to clarify")
+        return None
 
     def _describe(self, agent_id: str) -> str:
         """Look up the agent's registry description. Returns '' on miss so
@@ -394,10 +477,34 @@ class LlmDisambiguator:
             return ""
         return (agent.description or "").strip() if agent is not None else ""
 
+    def _scope(self, agent_id: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Return (use_when, not_when) for an agent, flattened+deduped across its
+        skills. These are the reranker's POSITIVE scope and CONTRASTIVE
+        boundaries (the latter carry 'route to <id>' hints). Empty on miss —
+        never raises into the router."""
+        if self._registry is None:
+            return (), ()
+        try:
+            agent = self._registry.agents.get_optional(agent_id)
+        except Exception:                                       # noqa: BLE001
+            return (), ()
+        if agent is None or not getattr(agent, "skills", None):
+            return (), ()
+        uw: list[str] = []
+        nw: list[str] = []
+        for s in agent.skills:
+            uw.extend(s.use_when or ())
+            nw.extend(s.not_when or ())
+        return tuple(dict.fromkeys(uw)), tuple(dict.fromkeys(nw))
+
     def _build_catalog(self) -> str:
-        """One-time build of the full agent catalog: every active agent's
-        id + description, formatted for inclusion in the cached system
-        prompt. None when registry is unwired (legacy callers)."""
+        """One-time build of the full agent catalog for the cached system prompt:
+        every active agent's id + description + use_when (positive scope) +
+        not_when (contrastive boundaries with 'route to <id>' hints). The
+        not_when lines are what let the reranker tell same-entity look-alikes
+        apart (summarize vs similar vs how-to); they are NOT embedded, so this
+        catalog is the ONLY place they reach the routing decision. Stable across
+        calls → benefits from prompt-cache. None when registry is unwired."""
         if self._registry is None:
             return ""
         try:
@@ -409,8 +516,37 @@ class LlmDisambiguator:
             desc = self._describe(aid)
             if not desc:
                 continue
-            lines.append(f"\n### {aid}\n{desc}")
+            block = [f"\n### {aid}\n{desc}"]
+            use_when, not_when = self._scope(aid)
+            if use_when:
+                block.append("Use when:\n" + "\n".join(f"  - {x}" for x in use_when))
+            if not_when:
+                block.append(
+                    "Do NOT use — out of scope (pick the agent named in the clause):\n"
+                    + "\n".join(f"  - {x}" for x in not_when))
+            lines.append("\n".join(block))
         return "\n".join(lines)
+
+    def _candidate_catalog(self, candidates: list[Candidate]) -> str:
+        """Shortlist catalog: the cards (description + use_when + not_when) for
+        ONLY the retrieved candidates, each with its retrieval score. Built per
+        request and carried in the user block — so the reranker sees the top-K,
+        never the full registry, and the prompt stays bounded as the agent count
+        grows. This is the inject-all fix: the all-agents `_build_catalog` is no
+        longer stitched into every prompt."""
+        blocks: list[str] = []
+        for c in candidates:
+            desc = self._describe(c.agent_id) or "(no description)"
+            block = [f"\n### {c.agent_id} (retrieval score {c.score:.2f})\n{desc}"]
+            use_when, not_when = self._scope(c.agent_id)
+            if use_when:
+                block.append("Use when:\n" + "\n".join(f"  - {x}" for x in use_when))
+            if not_when:
+                block.append(
+                    "Do NOT use — out of scope (pick the agent named in the clause):\n"
+                    + "\n".join(f"  - {x}" for x in not_when))
+            blocks.append("\n".join(block))
+        return "\n".join(blocks)
 
     async def disambiguate(
         self, query_text: str, candidates: list[Candidate], *, request_ctx: dict
@@ -481,17 +617,24 @@ class LlmDisambiguator:
             _span.set_attribute("oneops.router.preroute.fired", True)
             _span.set_attribute("oneops.router.preroute.target", agent_id)
             _span.set_attribute("oneops.router.preroute.rationale", rationale)
-            _span.set_attribute("oneops.router.selected", agent_id)
+            _span.set_attribute(_ONEOPS_ROUTER_SELECTED, agent_id)
             return Disambiguation.select(
                 [agent_id], confidence=0.95,
                 rationale=rationale, intents=[intent])
         _span.set_attribute("oneops.router.preroute.fired", False)
-        # User block carries only what changes per call: the query and the
-        # surviving candidate ids. Descriptions live in the cached system
-        # prompt (catalog block) — they are stable across every call and
-        # benefit from Anthropic prompt-cache reuse.
-        listing = "\n".join(
-            f"- {c.agent_id} (retrieval score {c.score:.2f})" for c in candidates)
+        # Abstain gate — refuse-and-clarify before spending an LLM call when
+        # retrieval is too weak/ambiguous to commit (wrong-agent guard, off by
+        # default). Preroute above is exempt (deterministic high-confidence).
+        abstain = self._abstain_check(candidates, _span)
+        if abstain is not None:
+            return abstain
+        # Shortlist-only catalog (this is what scales to 100s of agents): the
+        # per-call user block carries the cards (description + use_when +
+        # not_when) of ONLY the retrieved top-K candidates — never the full
+        # registry. The stable rules stay in the cached system prompt; this small
+        # top-K catalog varies per call. Avoids the inject-all collapse past ~50
+        # agents (a full-registry catalog in every prompt).
+        listing = self._candidate_catalog(candidates)
         # Stage 2 (2026-05-28): when the conversation has an active focus
         # entity (carried in the LangGraph state via request_ctx), surface
         # it to the disambiguator so it has the correct prior. A
@@ -543,17 +686,15 @@ class LlmDisambiguator:
             )
         user_block = (
             f"Query:\n{query_text}{focus_block}\n\n"
-            f"Candidate agents (look up each id in the Agent catalog "
-            f"section of the system prompt for its description):\n{listing}"
+            f"Candidate agents — choose ONLY from these. Each card has the "
+            f"agent's description, Use when, and Do NOT use:\n{listing}"
         )
-        # Lazy-build the catalog once (process lifetime) and stitch it into the
-        # cached system prompt. Order: policy prefix → routing rules →
-        # full agent catalog.
-        if self._catalog_block is None:
-            self._catalog_block = self._build_catalog()
+        # System prompt = the STABLE rules only (prompt-cache friendly). The
+        # agent cards are NOT here — they ride per-request in the user block,
+        # scoped to the retrieved candidates (shortlist-only catalog).
         extra_sections = [_DISAMBIGUATE_PROMPT]
-        if self._catalog_block:
-            extra_sections.append(self._catalog_block)
+        if self._strict_fit:
+            extra_sections.append(_STRICT_FIT_PROMPT)
         system_prompt = compose(Profile.INTERNAL_AGENT,
                                 extra_sections=extra_sections)
         try:
@@ -593,7 +734,7 @@ class LlmDisambiguator:
                 if candidates:
                     top = max(candidates, key=lambda c: c.score)
                     if top.score >= 0.10:        # narrow floor, matches MIN_FUSED_SCORE on retriever side
-                        _span.set_attribute("oneops.router.selected", top.agent_id)
+                        _span.set_attribute(_ONEOPS_ROUTER_SELECTED, top.agent_id)
                         _span.set_attribute("oneops.router.dispatch_reason",
                                             "retriever_floor_llm_hedge")
                         _span.set_attribute("oneops.router.llm_hedge_rationale",
@@ -607,10 +748,10 @@ class LlmDisambiguator:
                                 "(no_match). The agent reports its own "
                                 "no-result if its lookup yields nothing."),
                             intents=["kb_search"] if top.agent_id.endswith("_kb_lookup") else [])
-                _span.set_attribute("oneops.router.selected", "")
+                _span.set_attribute(_ONEOPS_ROUTER_SELECTED, "")
                 return Disambiguation.no_match(
                     str(doc.get("rationale") or "no candidate matched the intent"))
-            _span.set_attribute("oneops.router.selected", ",".join(selected))
+            _span.set_attribute(_ONEOPS_ROUTER_SELECTED, ",".join(selected))
             _span.set_attribute("oneops.router.confidence",
                                 float(doc.get("confidence") or 0.0))
             return Disambiguation.select(

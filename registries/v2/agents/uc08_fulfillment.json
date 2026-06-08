@@ -3,6 +3,7 @@
   "id": "uc08_fulfillment",
   "versions": {
     "1": {
+      "domain": "itsm",
       "abac_tags": {
         "audience": [
           "service_desk_agent",
@@ -32,7 +33,7 @@
       "compound_of": [],
       "created_at": "2026-05-31T08:30:00.000000+00:00",
       "depends_on": [],
-      "description": "Catalog item fulfillment orchestrator (DOC-09 \u00a7UC-8). Generic engine that fulfils ANY catalog item by reading its template from itsm.catalog_item, decomposing the request into a task DAG via a single LLM call, and orchestrating execution through LangGraph (parallel waves via Send, approval gates via interrupt(), retry with backoff, saga compensation on cancel). Both portal-submit and chat paths land in the same handler \u2014 parity guaranteed by `tools.fulfill_request`. Mock integration adapters (AD / email / VPN / GitHub / license / procurement) swap to real APIs via the IntegrationAdapter Protocol without handler changes. Tracks SR \u2192 RITM \u2192 tasks \u2192 approvals in itsm.* substrate; emits per-task OTel spans + per-tenant cost; lifecycle-gated by step-1 state machine (ships as draft, activated by quality gate).",
+      "description": "Catalog item fulfillment orchestrator (DOC-09 §UC-8). Generic engine that fulfils ANY catalog item by reading its template from itsm.catalog_item, decomposing the request into a task DAG via a single LLM call, and orchestrating execution through LangGraph (parallel waves via Send, approval gates via interrupt(), retry with backoff, saga compensation on cancel). Both portal-submit and chat paths land in the same handler — parity guaranteed by `tools.fulfill_request`. Mock integration adapters (AD / email / VPN / GitHub / license / procurement) swap to real APIs via the IntegrationAdapter Protocol without handler changes. Tracks SR → RITM → tasks → approvals in itsm.* substrate; emits per-task OTel spans + per-tenant cost; lifecycle-gated by step-1 state machine (ships as draft, activated by quality gate).",
       "determinism_level": "medium",
       "excludes": [],
       "hooks": {
@@ -55,27 +56,42 @@
         {
           "id": "fulfill_catalog_request",
           "name": "Fulfill a catalog request",
-          "description": "Decompose and execute fulfillment for a catalog item or onboarding request (provision accounts, licenses, access, tasks). Use when the user wants a catalog request CARRIED OUT. Action-tier: mutations require confirmation/approval.",
+          "description": "Decompose and carry out fulfillment of a catalog item, service request, or onboarding - provisioning accounts, mailboxes, licenses, group/VPN access, and ordering hardware, including approval gates and rollback. Use when the user wants to OBTAIN or PROVISION something, or have an existing catalog request executed. Action-tier: mutations require confirmation/approval. NOT for summarizing a record, fetching KB/how-to articles, finding similar tickets, or triaging an existing incident.",
           "use_when": [
-            "fulfill / provision / onboard",
-            "create the items/tasks for a catalog request",
-            "set up access / mailbox / license for a request"
+            "the user asks to get, request, order, or provision an item, software, license, hardware, or access",
+            "the user wants a new hire onboarded or an environment/account set up",
+            "the user wants an existing catalog request or service request carried out or its tasks created",
+            "the user wants to set up a mailbox, group membership, VPN, or directory account for a request",
+            "the user wants the status of an in-flight fulfillment request",
+            "the user wants to obtain or provision a specific item or service from the catalog"
           ],
           "not_when": [
-            "summarize a record (summary agent)",
-            "find KB / docs (knowledge agent)",
-            "report a brand-new incident (ticket-creation, not fulfillment)"
+            "the user wants the facts, fields, or timeline of an existing record (route to uc01_summarization)",
+            "the user wants knowledge, documentation, or how-to on doing something themselves (route to uc03_kb_lookup)",
+            "the user wants other tickets similar to or duplicates of a record (route to uc02_similar_tickets)",
+            "the user wants an existing incident classified, prioritized, or assigned (route to uc05_triage)",
+            "the user is reporting a brand-new problem/outage (that is incident creation, not catalog fulfillment)",
+            "the user seeks guidance on how to resolve an existing incident (route to uc03_kb_lookup)"
           ],
           "tags": [
             "fulfillment",
             "catalog",
+            "provisioning",
             "onboarding",
+            "request",
             "action"
           ],
           "examples": [
             "fulfill REQ0005001",
-            "onboard the new hire Maria",
-            "provision the standard developer kit"
+            "I need a new laptop",
+            "request an Adobe Photoshop license",
+            "onboard new employee John Smith starting March 15",
+            "I need access to the finance share",
+            "set up a new AWS account for me",
+            "order a second monitor for my desk",
+            "please provision a new email account for me",
+            "request access to the marketing folder",
+            "can you fulfill my request for a new phone?"
           ]
         }
       ],

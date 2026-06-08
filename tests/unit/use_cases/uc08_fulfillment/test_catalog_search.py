@@ -242,31 +242,26 @@ async def test_gateway_failure_wrapped_in_typed_error(conn):
 
 
 @pytest.mark.asyncio
-async def test_gateway_hang_caught_by_timeout(conn):
+async def test_gateway_hang_caught_by_timeout(conn, monkeypatch):
     """A hanging gateway must surface CatalogSearchError via the timeout,
     not block the caller indefinitely."""
-    # Use a tiny override so the test doesn't actually wait
-    os.environ["UC08_CATALOG_EMBED_TIMEOUT_S"] = "0.5"
-    try:
-        # Force module re-read of timeout
-        import importlib
-
-        from oneops.use_cases.uc08_fulfillment import catalog_search as cs
-        importlib.reload(cs)
-        with pytest.raises(cs.CatalogSearchError) as exc_info:
-            await cs.find_closest_catalog_items(
-                tenant_id=TEST_TENANT,
-                sr_title="VPN", sr_description="VPN",
-                gateway=_HangingGateway(), conn=conn,
-            )
-        assert "timeout" in str(exc_info.value).lower()
-    finally:
-        os.environ.pop("UC08_CATALOG_EMBED_TIMEOUT_S", None)
-        # Restore module
-        import importlib
-
-        from oneops.use_cases.uc08_fulfillment import catalog_search
-        importlib.reload(catalog_search)
+    from oneops.use_cases.uc08_fulfillment import catalog_search as cs
+    # Shrink the embed timeout for THIS test only. We patch the module
+    # attribute rather than `importlib.reload(cs)` — reload re-executes the
+    # module in place, rebinding cs.CatalogSearchResult / cs.CatalogSearchError
+    # to NEW class objects while every other test/module still holds the OLD
+    # ones; that identity split makes their isinstance()/pytest.raises() fail
+    # for the rest of the suite (cross-test pollution). EMBED_TIMEOUT_S is read
+    # from module globals at call time, so this takes effect immediately and
+    # monkeypatch auto-restores it afterwards.
+    monkeypatch.setattr(cs, "EMBED_TIMEOUT_S", 0.5)
+    with pytest.raises(cs.CatalogSearchError) as exc_info:
+        await cs.find_closest_catalog_items(
+            tenant_id=TEST_TENANT,
+            sr_title="VPN", sr_description="VPN",
+            gateway=_HangingGateway(), conn=conn,
+        )
+    assert "timeout" in str(exc_info.value).lower()
 
 
 # ── Edge case: deterministic ordering for tied scores ─────────────────────
