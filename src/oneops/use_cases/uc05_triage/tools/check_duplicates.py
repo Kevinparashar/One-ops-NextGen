@@ -326,6 +326,176 @@ def _tokenise(text: str) -> list[str]:
 
 # ── Per-field aggregation + LLM tiebreak ─────────────────────────────────────
 
+async def _suggest_when_no_votes(
+    col: str, *, candidates: list[ScoredNeighbour], probe_text: str,
+    ticket_row: Mapping[str, Any], propose_fn: ProposeFn | None,
+) -> FieldSuggestion:
+    """No neighbour had a value for `col`. Try the LLM proposer fallback (only
+    on whitelisted fields, so we never invent assignees / CIs), else return an
+    explicit empty-neighbours suggestion."""
+    if propose_fn is not None and col in PROPOSE_ALLOWED_FIELDS:
+        pool = _collect_pool_for_field(candidates, col)
+        proposed = await _safe_propose(
+            propose_fn, probe_text=probe_text, field=col,
+            ticket_row=dict(ticket_row), pool=pool,
+        )
+        if proposed:
+            return FieldSuggestion(
+                value=proposed["value"], confidence=proposed["confidence"],
+                coverage=0.0, diversity=0, basis_ids=[], basis="llm_propose",
+                rationale=(
+                    f"No similar tickets had a {col} value; LLM "
+                    f"proposed '{proposed['value']}' "
+                    f"({proposed.get('rationale','')})"
+                ),
+            )
+    return FieldSuggestion(
+        value=None, confidence=0.0, coverage=0.0, diversity=0, basis_ids=[],
+        basis="empty_neighbours",
+        rationale=f"No similar tickets had a {col} value to vote on.",
+    )
+
+
+async def _try_llm_tiebreak(
+    col: str, *, votes: list[tuple[str, str]],
+    candidates: list[ScoredNeighbour], counts: Counter[str],
+    confidence: float, coverage: float, diversity: int,
+    probe_text: str, ticket_row: Mapping[str, Any], tiebreak_fn: TiebreakFn | None,
+) -> FieldSuggestion | None:
+    """When the kNN vote is split (below the confidence floor) but has enough
+    coverage + diversity to be worth an LLM read, ask the tiebreaker to pick
+    the best semantic fit. Returns the suggestion, or None to fall back to the
+    pure-kNN majority (gate not met / LLM error / choice not a candidate)."""
+    if not (
+        tiebreak_fn is not None
+        and confidence < CONFIDENCE_FLOOR_FOR_LLM
+        and coverage >= COVERAGE_MIN_FOR_LLM
+        and diversity >= 2
+    ):
+        return None
+    # Pass ALL distinct candidate values (not truncated). For each value,
+    # attach the titles of the neighbours that used it — gives the LLM
+    # concrete examples to ground its semantic reasoning.
+    candidate_records = _build_llm_candidates(
+        votes=votes, candidates=candidates, max_examples_per_value=2,
+    )
+    all_values = [c["value"] for c in candidate_records]
+    try:
+        llm_choice = await tiebreak_fn(
+            probe_text=probe_text, field=col,
+            candidates=candidate_records, ticket_row=dict(ticket_row),
+        )
+    except Exception:
+        llm_choice = None
+    if isinstance(llm_choice, str) and llm_choice.strip() in all_values:
+        chosen = llm_choice.strip()
+        return FieldSuggestion(
+            value=chosen,
+            confidence=counts.get(chosen, 0) / len(votes),
+            coverage=coverage, diversity=diversity,
+            basis_ids=[nid for v, nid in votes if v == chosen],
+            basis="llm_tiebreak",
+            rationale=(
+                f"kNN vote was split ({_summary(counts)}); LLM read the "
+                f"ticket description and chose '{chosen}' as the best "
+                f"semantic fit."
+            ),
+        )
+    return None
+
+
+async def _suggest_for_field(
+    col: str, *, candidates: list[ScoredNeighbour], total_k: int,
+    probe_text: str, ticket_row: Mapping[str, Any],
+    tiebreak_fn: TiebreakFn | None, propose_fn: ProposeFn | None,
+) -> FieldSuggestion:
+    """Single-field suggestion: kNN majority over the neighbours' values, with
+    an LLM tiebreak when the vote is split, or the proposer fallback when no
+    neighbour had a value."""
+    votes: list[tuple[str, str]] = []  # (value, neighbour_id)
+    for c in candidates:
+        v = c.fields.get(col)
+        if isinstance(v, str) and v.strip():
+            votes.append((v, c.id))
+
+    coverage = (len(votes) / total_k) if total_k else 0.0
+    diversity = len({v for v, _ in votes})
+
+    if not votes:
+        return await _suggest_when_no_votes(
+            col, candidates=candidates, probe_text=probe_text,
+            ticket_row=ticket_row, propose_fn=propose_fn)
+
+    counts = Counter(v for v, _ in votes)
+    winner, winner_count = counts.most_common(1)[0]
+    confidence = winner_count / len(votes)
+
+    tb = await _try_llm_tiebreak(
+        col, votes=votes, candidates=candidates, counts=counts,
+        confidence=confidence, coverage=coverage, diversity=diversity,
+        probe_text=probe_text, ticket_row=ticket_row, tiebreak_fn=tiebreak_fn)
+    if tb is not None:
+        return tb
+
+    # Pure kNN majority result
+    if confidence < CONFIDENCE_FLOOR_FOR_LLM and tiebreak_fn is None:
+        rationale = (
+            f"kNN vote split ({_summary(counts)}); top value '{winner}' "
+            f"chosen by plurality. Consider human review."
+        )
+        basis: Any = "below_confidence_floor"
+    else:
+        rationale = f"{winner_count} of {total_k} similar tickets are '{winner}'."
+        basis = "majority_of_top_k"
+    return FieldSuggestion(
+        value=winner, confidence=confidence, coverage=coverage,
+        diversity=diversity,
+        basis_ids=[nid for v, nid in votes if v == winner],
+        basis=basis, rationale=rationale,
+    )
+
+
+async def _apply_propose_override(
+    out: dict[str, FieldSuggestion], *, candidates: list[ScoredNeighbour],
+    probe_text: str, ticket_row: Mapping[str, Any], propose_fn: ProposeFn,
+) -> None:
+    """LLM-propose override pass (parallel). For every whitelisted field whose
+    chosen value is below the confidence floor, fire the proposer for all of
+    them concurrently (bounds latency at ~one LLM round-trip instead of N).
+    The override only takes effect when the proposed confidence exceeds the
+    current one, so a weak proposal can't degrade a fine kNN answer."""
+    weak_fields: list[str] = [
+        c for c in out
+        if c in PROPOSE_ALLOWED_FIELDS
+        and out[c].confidence < CONFIDENCE_FLOOR_FOR_LLM
+    ]
+    if not weak_fields:
+        return
+    import asyncio
+    results = await asyncio.gather(*[
+        _safe_propose(
+            propose_fn, probe_text=probe_text, field=c,
+            ticket_row=dict(ticket_row),
+            pool=_collect_pool_for_field(candidates, c),
+        )
+        for c in weak_fields
+    ])
+    for col, proposed in zip(weak_fields, results, strict=False):
+        if proposed and proposed["confidence"] > out[col].confidence:
+            prev = out[col]
+            out[col] = FieldSuggestion(
+                value=proposed["value"], confidence=proposed["confidence"],
+                coverage=prev.coverage, diversity=prev.diversity,
+                basis_ids=[], basis="llm_propose",
+                rationale=(
+                    f"kNN signal was weak (was '{prev.value}' at "
+                    f"{prev.confidence:.2f}); LLM proposed "
+                    f"'{proposed['value']}' "
+                    f"({proposed.get('rationale','')})"
+                ),
+            )
+
+
 async def _build_field_suggestions(
     *,
     candidates: list[ScoredNeighbour],
@@ -340,159 +510,15 @@ async def _build_field_suggestions(
     out: dict[str, FieldSuggestion] = {}
 
     for col in targets:
-        # Collect non-empty values with their owners
-        votes: list[tuple[str, str]] = []  # (value, neighbour_id)
-        for c in candidates:
-            v = c.fields.get(col)
-            if isinstance(v, str) and v.strip():
-                votes.append((v, c.id))
+        out[col] = await _suggest_for_field(
+            col, candidates=candidates, total_k=total_k,
+            probe_text=probe_text, ticket_row=ticket_row,
+            tiebreak_fn=tiebreak_fn, propose_fn=propose_fn)
 
-        coverage = (len(votes) / total_k) if total_k else 0.0
-        distinct = {v for v, _ in votes}
-        diversity = len(distinct)
-
-        if not votes:
-            # Try the LLM proposer fallback before giving up. Only on
-            # whitelisted fields so we never invent assignees / CIs.
-            if propose_fn is not None and col in PROPOSE_ALLOWED_FIELDS:
-                pool = _collect_pool_for_field(candidates, col)
-                proposed = await _safe_propose(
-                    propose_fn, probe_text=probe_text, field=col,
-                    ticket_row=dict(ticket_row), pool=pool,
-                )
-                if proposed:
-                    out[col] = FieldSuggestion(
-                        value=proposed["value"],
-                        confidence=proposed["confidence"],
-                        coverage=0.0,
-                        diversity=0,
-                        basis_ids=[],
-                        basis="llm_propose",
-                        rationale=(
-                            f"No similar tickets had a {col} value; LLM "
-                            f"proposed '{proposed['value']}' "
-                            f"({proposed.get('rationale','')})"
-                        ),
-                    )
-                    continue
-            out[col] = FieldSuggestion(
-                value=None, confidence=0.0, coverage=0.0,
-                diversity=0, basis_ids=[],
-                basis="empty_neighbours",
-                rationale=f"No similar tickets had a {col} value to vote on.",
-            )
-            continue
-
-        counts = Counter(v for v, _ in votes)
-        winner, winner_count = counts.most_common(1)[0]
-        confidence = winner_count / len(votes)
-        basis_ids = [nid for v, nid in votes if v == winner]
-
-        # LLM tiebreak path
-        if (
-            tiebreak_fn is not None
-            and confidence < CONFIDENCE_FLOOR_FOR_LLM
-            and coverage >= COVERAGE_MIN_FOR_LLM
-            and diversity >= 2
-        ):
-            # Pass ALL distinct candidate values (not truncated). For each
-            # value, attach the titles of the neighbours that used it — gives
-            # the LLM concrete examples to ground its semantic reasoning.
-            candidate_records = _build_llm_candidates(
-                votes=votes, candidates=candidates, max_examples_per_value=2,
-            )
-            all_values = [c["value"] for c in candidate_records]
-            try:
-                llm_choice = await tiebreak_fn(
-                    probe_text=probe_text,
-                    field=col,
-                    candidates=candidate_records,
-                    ticket_row=dict(ticket_row),
-                )
-            except Exception:
-                llm_choice = None
-            if isinstance(llm_choice, str) and llm_choice.strip() in all_values:
-                chosen = llm_choice.strip()
-                chosen_basis_ids = [nid for v, nid in votes if v == chosen]
-                rationale = (
-                    f"kNN vote was split ({_summary(counts)}); LLM read the "
-                    f"ticket description and chose '{chosen}' as the best "
-                    f"semantic fit."
-                )
-                out[col] = FieldSuggestion(
-                    value=chosen,
-                    confidence=counts.get(chosen, 0) / len(votes),
-                    coverage=coverage,
-                    diversity=diversity,
-                    basis_ids=chosen_basis_ids,
-                    basis="llm_tiebreak",
-                    rationale=rationale,
-                )
-                continue
-
-        # Pure kNN majority result
-        if confidence < CONFIDENCE_FLOOR_FOR_LLM and tiebreak_fn is None:
-            rationale = (
-                f"kNN vote split ({_summary(counts)}); top value '{winner}' "
-                f"chosen by plurality. Consider human review."
-            )
-            basis: Any = "below_confidence_floor"
-        else:
-            rationale = (
-                f"{winner_count} of {total_k} similar tickets are '{winner}'."
-            )
-            basis = "majority_of_top_k"
-
-        out[col] = FieldSuggestion(
-            value=winner,
-            confidence=confidence,
-            coverage=coverage,
-            diversity=diversity,
-            basis_ids=basis_ids,
-            basis=basis,
-            rationale=rationale,
-        )
-
-    # ── LLM-propose override pass (parallel) ──────────────────────────────
-    # Once the kNN/tiebreak pass has filled `out`, look at every whitelisted
-    # field whose chosen value is below the confidence floor and fire the
-    # LLM proposer for all of them concurrently. This bounds end-to-end
-    # latency at ~one LLM round-trip instead of N. The override only takes
-    # effect when the proposed confidence exceeds the current one, so a weak
-    # proposal can't degrade a fine kNN answer.
     if propose_fn is not None:
-        weak_fields: list[str] = [
-            c for c in out
-            if c in PROPOSE_ALLOWED_FIELDS
-            and out[c].confidence < CONFIDENCE_FLOOR_FOR_LLM
-        ]
-        if weak_fields:
-            import asyncio
-            results = await asyncio.gather(*[
-                _safe_propose(
-                    propose_fn, probe_text=probe_text, field=c,
-                    ticket_row=dict(ticket_row),
-                    pool=_collect_pool_for_field(candidates, c),
-                )
-                for c in weak_fields
-            ])
-            for col, proposed in zip(weak_fields, results, strict=False):
-                if proposed and proposed["confidence"] > out[col].confidence:
-                    prev = out[col]
-                    out[col] = FieldSuggestion(
-                        value=proposed["value"],
-                        confidence=proposed["confidence"],
-                        coverage=prev.coverage,
-                        diversity=prev.diversity,
-                        basis_ids=[],
-                        basis="llm_propose",
-                        rationale=(
-                            f"kNN signal was weak (was '{prev.value}' at "
-                            f"{prev.confidence:.2f}); LLM proposed "
-                            f"'{proposed['value']}' "
-                            f"({proposed.get('rationale','')})"
-                        ),
-                    )
+        await _apply_propose_override(
+            out, candidates=candidates, probe_text=probe_text,
+            ticket_row=ticket_row, propose_fn=propose_fn)
     return out
 
 

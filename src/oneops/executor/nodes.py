@@ -497,58 +497,18 @@ class ExecutorNodes:
         ) as span:
             normalizer = EntityIdNormalizer.from_registry_file()
             message = state.get("message", "") or ""
-            # Carry forward the previous focus by default (the checkpointer
-            # restored it). Only overwrite when this turn brings a new id.
-            new_focus_id = state.get("focus_entity_id", "") or ""
-            new_focus_service = state.get("focus_service_id", "") or ""
-            source = "carried"
-            # Step 1 — current message.
-            extracted = normalizer.extract(message)
-            if extracted.entities:
-                e = extracted.entities[0]
-                new_focus_id = e.entity_id
-                new_focus_service = e.service_id
-                source = "current_message"
-            elif not new_focus_id:
-                # Step 2 — most-recent user-named entity in history. Only
-                # consulted when we have no carried-forward focus AND no
-                # current-message entity (first turn after a session
-                # resume from cold).
-                for turn in reversed(state.get("conversation_history", []) or []):
-                    if (turn.get("role") or "").lower() != "user":
-                        continue
-                    h_extracted = normalizer.extract(turn.get("content", "") or "")
-                    if h_extracted.entities:
-                        he = h_extracted.entities[0]
-                        new_focus_id = he.entity_id
-                        new_focus_service = he.service_id
-                        source = "history_recovery"
-                        break
-
-            # Focus-intent classifier — runs on any turn that ended up with a
-            # focus that did NOT come from the current message itself. The
-            # user did not name an entity in this turn, but a focus is being
-            # carried (from prior state or recovered from history). Classify
-            # whether the user's intent is a property-of-focus question or a
-            # topic-search; if topic-search, drop the focus so downstream
-            # disambiguation runs against a clean state.
-            if (new_focus_id
-                    and source in ("carried", "history_recovery")
-                    and self._focus_intent_classifier is not None):
-                try:
-                    label = await self._focus_intent_classifier.classify(
-                        message=message,
-                        focus_entity_id=new_focus_id,
-                        focus_service=new_focus_service,
-                        tenant_id=state.get("tenant_id", "") or "",
-                        user_id=state.get("user_id", "") or "",
-                    )
-                except Exception:                                   # noqa: BLE001
-                    label = "unknown"
-                if label == "topic":
-                    new_focus_id = ""
-                    new_focus_service = ""
-                    source = "topic_search_drop"
+            # Steps 1-2 (deterministic): current-message id, else carried
+            # focus, else most-recent user-named id from history.
+            new_focus_id, new_focus_service, source = self._resolve_focus(
+                normalizer, message,
+                state.get("focus_entity_id", "") or "",
+                state.get("focus_service_id", "") or "",
+                state.get("conversation_history", []) or [])
+            # Step 3: focus-intent classifier may drop a carried/recovered
+            # focus when the user's intent is a topic search.
+            new_focus_id, new_focus_service, source = await self._apply_focus_intent(
+                focus_id=new_focus_id, focus_service=new_focus_service,
+                source=source, message=message, state=state)
             span.set_attribute("focus.entity_id", new_focus_id or "")
             span.set_attribute("focus.service_id", new_focus_service or "")
             span.set_attribute("focus.source", source)
@@ -560,6 +520,60 @@ class ExecutorNodes:
                 "focus_entity_id": new_focus_id,
                 "focus_service_id": new_focus_service,
             }
+
+    @staticmethod
+    def _resolve_focus(
+        normalizer: Any, message: str, carried_id: str, carried_service: str,
+        history: list[dict[str, Any]],
+    ) -> tuple[str, str, str]:
+        """Deterministic focus resolution (no LLM). Returns
+        (focus_id, focus_service, source):
+          1. a canonical entity id in the CURRENT message wins → current_message
+          2. else carry the previous focus forward → carried
+          3. else recover the most-recent USER-named id from history (only when
+             nothing is carried) → history_recovery
+        Empty id with source 'carried' means fresh/off-domain (no focus)."""
+        extracted = normalizer.extract(message)
+        if extracted.entities:
+            e = extracted.entities[0]
+            return e.entity_id, e.service_id, "current_message"
+        if carried_id:
+            return carried_id, carried_service, "carried"
+        for turn in reversed(history):
+            if (turn.get("role") or "").lower() != "user":
+                continue
+            h_extracted = normalizer.extract(turn.get("content", "") or "")
+            if h_extracted.entities:
+                he = h_extracted.entities[0]
+                return he.entity_id, he.service_id, "history_recovery"
+        return "", "", "carried"
+
+    async def _apply_focus_intent(
+        self, *, focus_id: str, focus_service: str, source: str,
+        message: str, state: ExecutorState,
+    ) -> tuple[str, str, str]:
+        """Step 3 — runs only when a focus is carried/recovered (NOT named in
+        this turn). Classify whether the user wants a property-of-focus answer
+        or a topic search; on topic-search, DROP the focus so downstream
+        disambiguation runs against a clean state. Returns the (possibly
+        unchanged) (focus_id, focus_service, source)."""
+        if not (focus_id
+                and source in ("carried", "history_recovery")
+                and self._focus_intent_classifier is not None):
+            return focus_id, focus_service, source
+        try:
+            label = await self._focus_intent_classifier.classify(
+                message=message,
+                focus_entity_id=focus_id,
+                focus_service=focus_service,
+                tenant_id=state.get("tenant_id", "") or "",
+                user_id=state.get("user_id", "") or "",
+            )
+        except Exception:                                   # noqa: BLE001
+            label = "unknown"
+        if label == "topic":
+            return "", "", "topic_search_drop"
+        return focus_id, focus_service, source
 
     # ── route ────────────────────────────────────────────────────────────
 

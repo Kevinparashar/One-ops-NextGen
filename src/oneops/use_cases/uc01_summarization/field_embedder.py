@@ -189,6 +189,136 @@ def _normalise_for_embed(msg: str) -> list[str]:
 
 # ── Public: build a field matcher bound to one LLM Gateway ────────────
 
+async def _ensure_field_vectors(
+    gateway: Any, model: str, dimensions: int | None, tenant_id: str,
+) -> dict[str, list[float]] | None:
+    """Bootstrap (once, process-lifetime) the label → description vectors."""
+    global _field_vectors
+    if _field_vectors is not None:
+        return _field_vectors
+    async with _field_vec_lock:
+        if _field_vectors is not None:
+            return _field_vectors
+        labels = sorted(_FIELD_DESCRIPTIONS.keys())
+        texts = [f"{lbl}. {_FIELD_DESCRIPTIONS[lbl]}" for lbl in labels]
+        try:
+            vectors = await gateway.embed(
+                texts, model=model,
+                tenant_id=tenant_id or "_unknown",
+                user_id="", dimensions=dimensions,
+            )
+        except Exception as exc:                    # noqa: BLE001
+            _log.warning("field_embedder.bootstrap_failed",
+                         error=str(exc)[:200])
+            return None
+        if not vectors or len(vectors) != len(labels):
+            return None
+        _field_vectors = {lbl: [float(x) for x in vec]
+                          for lbl, vec in zip(labels, vectors, strict=False)}
+        _log.info("field_embedder.bootstrapped",
+                  label_count=len(labels), model=model)
+        return _field_vectors
+
+
+async def _embed_message(
+    gateway: Any, model: str, dimensions: int | None,
+    text: str, tenant_id: str, user_id: str,
+) -> list[float] | None:
+    """Embed one message view, with a process-lifetime hash cache."""
+    if not text:
+        return None
+    h = hashlib.sha256(text.strip().lower().encode("utf-8")).hexdigest()[:24]
+    cached = _msg_cache.get(h)
+    if cached is not None:
+        return cached
+    try:
+        vectors = await gateway.embed(
+            [text], model=model,
+            tenant_id=tenant_id or "_unknown",
+            user_id=user_id or "",
+            dimensions=dimensions,
+        )
+    except Exception as exc:                        # noqa: BLE001
+        _log.warning("field_embedder.message_embed_failed",
+                     error=str(exc)[:200])
+        return None
+    if not vectors:
+        return None
+    vec = [float(x) for x in vectors[0]]
+    if len(_msg_cache) > 2000:
+        _msg_cache.clear()
+    _msg_cache[h] = vec
+    return vec
+
+
+async def _embed_views(
+    gateway: Any, model: str, dimensions: int | None,
+    views: list[str], tenant_id: str, user_id: str,
+) -> list[list[float]]:
+    """Embed every message view, dropping the ones that fail to embed."""
+    out: list[list[float]] = []
+    for v in views:
+        mv = await _embed_message(gateway, model, dimensions, v, tenant_id, user_id)
+        if mv is not None:
+            out.append(mv)
+    return out
+
+
+def _select_matches(scored: list[tuple[str, float]]) -> list[str] | None:
+    """From labels sorted by score (desc), collect every label at or above
+    `(top - AMBIGUITY_DELTA)` AND `>= MATCH_THRESHOLD` — so multi-field
+    queries surface both labels in score order. None if nothing clears."""
+    if not scored or scored[0][1] < MATCH_THRESHOLD:
+        return None
+    cutoff = max(MATCH_THRESHOLD, scored[0][1] - AMBIGUITY_DELTA)
+    return [lbl for lbl, sc in scored if sc >= cutoff]
+
+
+async def _match_fields(
+    gateway: Any, model: str, dimensions: int | None,
+    user_message: str, available_labels: list[str], *,
+    tenant_id: str = "", user_id: str = "",
+) -> list[str] | None:
+    """Core field matcher — see `build_field_embedder` for the contract."""
+    if not user_message or not available_labels:
+        return None
+    field_vecs = await _ensure_field_vectors(gateway, model, dimensions, tenant_id)
+    if field_vecs is None:
+        return None                                  # fail-OPEN
+
+    # Restrict to labels present in BOTH the catalog descriptions AND the
+    # focus record's schema. A label without a description silently falls
+    # out — that's correct: we have nothing semantic to match against. Add
+    # a description to _FIELD_DESCRIPTIONS and it appears.
+    candidate_labels = [lbl for lbl in available_labels if lbl in field_vecs]
+    if not candidate_labels:
+        return None
+
+    views = _normalise_for_embed(user_message)
+    msg_vecs = await _embed_views(gateway, model, dimensions, views, tenant_id, user_id)
+    if not msg_vecs:
+        return None
+
+    scored = sorted(
+        (
+            (lbl, max(_cosine(mv, field_vecs[lbl]) for mv in msg_vecs))
+            for lbl in candidate_labels
+        ),
+        key=lambda kv: kv[1], reverse=True,
+    )
+    matched = _select_matches(scored)
+    if matched is None:
+        return None
+    _log.info(
+        "field_embedder.matched",
+        user_message=user_message[:100],
+        matched=matched,
+        top=(scored[0][0], round(scored[0][1], 3)),
+        runner=(scored[1][0], round(scored[1][1], 3)) if len(scored) > 1 else None,
+    )
+    return matched
+
+
 def build_field_embedder(
     gateway: Any, *, model: str = EMBED_MODEL,
     dimensions: int | None = EMBED_DIMENSIONS,
@@ -207,114 +337,13 @@ def build_field_embedder(
     through to the LLM extractor).
     """
 
-    async def _ensure_field_vectors(tenant_id: str) -> dict[str, list[float]] | None:
-        global _field_vectors
-        if _field_vectors is not None:
-            return _field_vectors
-        async with _field_vec_lock:
-            if _field_vectors is not None:
-                return _field_vectors
-            labels = sorted(_FIELD_DESCRIPTIONS.keys())
-            texts = [
-                f"{lbl}. {_FIELD_DESCRIPTIONS[lbl]}" for lbl in labels
-            ]
-            try:
-                vectors = await gateway.embed(
-                    texts, model=model,
-                    tenant_id=tenant_id or "_unknown",
-                    user_id="", dimensions=dimensions,
-                )
-            except Exception as exc:                    # noqa: BLE001
-                _log.warning("field_embedder.bootstrap_failed",
-                             error=str(exc)[:200])
-                return None
-            if not vectors or len(vectors) != len(labels):
-                return None
-            _field_vectors = {lbl: [float(x) for x in vec]
-                              for lbl, vec in zip(labels, vectors, strict=False)}
-            _log.info("field_embedder.bootstrapped",
-                      label_count=len(labels), model=model)
-            return _field_vectors
-
-    async def _embed_message(text: str, tenant_id: str,
-                             user_id: str) -> list[float] | None:
-        if not text:
-            return None
-        h = hashlib.sha256(text.strip().lower().encode("utf-8")).hexdigest()[:24]
-        cached = _msg_cache.get(h)
-        if cached is not None:
-            return cached
-        try:
-            vectors = await gateway.embed(
-                [text], model=model,
-                tenant_id=tenant_id or "_unknown",
-                user_id=user_id or "",
-                dimensions=dimensions,
-            )
-        except Exception as exc:                        # noqa: BLE001
-            _log.warning("field_embedder.message_embed_failed",
-                         error=str(exc)[:200])
-            return None
-        if not vectors:
-            return None
-        vec = [float(x) for x in vectors[0]]
-        if len(_msg_cache) > 2000:
-            _msg_cache.clear()
-        _msg_cache[h] = vec
-        return vec
-
     async def _matcher(
         user_message: str, available_labels: list[str], *,
         tenant_id: str = "", user_id: str = "",
     ) -> list[str] | None:
-        if not user_message or not available_labels:
-            return None
-        field_vecs = await _ensure_field_vectors(tenant_id)
-        if field_vecs is None:
-            return None                                  # fail-OPEN
-
-        # Restrict to labels present in BOTH the catalog descriptions AND
-        # the focus record's schema. A label without a description silently
-        # falls out — that's correct: we have nothing semantic to match
-        # against. Add a description to _FIELD_DESCRIPTIONS and it appears.
-        candidate_labels = [lbl for lbl in available_labels if lbl in field_vecs]
-        if not candidate_labels:
-            return None
-
-        views = _normalise_for_embed(user_message)
-        msg_vecs: list[list[float]] = []
-        for v in views:
-            mv = await _embed_message(v, tenant_id, user_id)
-            if mv is not None:
-                msg_vecs.append(mv)
-        if not msg_vecs:
-            return None
-
-        scored = sorted(
-            (
-                (lbl, max(_cosine(mv, field_vecs[lbl]) for mv in msg_vecs))
-                for lbl in candidate_labels
-            ),
-            key=lambda kv: kv[1], reverse=True,
-        )
-        if not scored or scored[0][1] < MATCH_THRESHOLD:
-            return None
-
-        # Confident match. Walk down from the top and collect every label
-        # whose score is at or above (top - AMBIGUITY_DELTA) AND >=
-        # MATCH_THRESHOLD — multi-field queries surface both labels in
-        # score order.
-        top_score = scored[0][1]
-        cutoff = max(MATCH_THRESHOLD, top_score - AMBIGUITY_DELTA)
-        matched = [lbl for lbl, sc in scored if sc >= cutoff]
-        _log.info(
-            "field_embedder.matched",
-            user_message=user_message[:100],
-            matched=matched,
-            top=(scored[0][0], round(scored[0][1], 3)),
-            runner=(scored[1][0], round(scored[1][1], 3)) if len(scored) > 1 else None,
-        )
-        return matched
+        return await _match_fields(
+            gateway, model, dimensions, user_message, available_labels,
+            tenant_id=tenant_id, user_id=user_id)
 
     return _matcher
 

@@ -463,6 +463,57 @@ async def search_kb(
         articles)
 
 
+async def _check_kb_access(
+    store: Any, article_id: str, tenant_id: str,
+    audiences: Any, role: str,
+) -> dict[str, Any] | None:
+    """Stages 1-2 of the KB fetch discipline: probe existence (tenant-scoped,
+    no audience filter), then check state + audience (RBAC). Each stage emits
+    its own designed reply so the user never gets a stale article from
+    focus-bleed on a non-existent id. Returns an early-response dict to
+    short-circuit, or None to proceed to the full fetch. A store without
+    `exists` skips this (the stage-3 fetch supplies its own fallback)."""
+    if not hasattr(store, "exists"):
+        return None
+    try:
+        probe = await store.exists(kb_id=article_id, tenant_id=tenant_id)
+    except Exception as exc:
+        _log.warning("uc03.get_kb_article.exists_failed",
+                     article_id=article_id, error=str(exc)[:200])
+        probe = None
+    if probe is None:
+        _log.info("uc03.get_kb_article.not_found",
+                  article_id=article_id, stage="exists")
+        return _article(
+            "not_found", article_id,
+            f"No knowledge-base article with id {article_id} "
+            f"exists in your tenant. Double-check the id, or run "
+            f"a search to find what you need.")
+
+    # The article exists; can THIS user / role see it?
+    state = (probe.get("state") or "").lower()
+    audience = (probe.get("audience") or "").lower()
+    if state != "published":
+        _log.info("uc03.get_kb_article.unpublished",
+                  article_id=article_id, state=state)
+        return _article(
+            "not_found", article_id,
+            f"Knowledge-base article {article_id} exists but is "
+            f"not published. Contact the article owner or your "
+            f"IT support team if you need access.")
+    if audience and audience not in audiences:
+        _log.info("uc03.get_kb_article.audience_denied",
+                  article_id=article_id, audience=audience,
+                  user_role=role)
+        return _article(
+            "denied", article_id,
+            f"Knowledge-base article {article_id} exists but is "
+            f"restricted to a different audience. Your role does "
+            f"not have access. Contact the article owner or your "
+            f"IT support team if access is required.")
+    return None
+
+
 async def get_kb_article(
     arguments: dict[str, Any], context: dict[str, Any]
 ) -> dict[str, Any]:
@@ -480,51 +531,11 @@ async def get_kb_article(
     store = get_kb_store()
     audiences = _audiences_for(context)
 
-    # ── Stage 1: existence (tenant-scoped, no audience filter) ────────
-    # The same 3-stage discipline used on the ticket side: probe
-    # existence WITHOUT audience filtering first, then check
-    # audience/state, then compose. Each stage emits its own designed
-    # reply so the user never gets a stale article from focus-bleed
-    # when they typed a non-existent id.
-    if hasattr(store, "exists"):
-        try:
-            probe = await store.exists(
-                kb_id=article_id, tenant_id=tenant_id)
-        except Exception as exc:
-            _log.warning("uc03.get_kb_article.exists_failed",
-                         article_id=article_id, error=str(exc)[:200])
-            probe = None
-        if probe is None:
-            _log.info("uc03.get_kb_article.not_found",
-                      article_id=article_id, stage="exists")
-            return _article(
-                "not_found", article_id,
-                f"No knowledge-base article with id {article_id} "
-                f"exists in your tenant. Double-check the id, or run "
-                f"a search to find what you need.")
-
-        # ── Stage 2: state + audience (RBAC) ──────────────────────────
-        # The article exists; can THIS user / role see it?
-        state = (probe.get("state") or "").lower()
-        audience = (probe.get("audience") or "").lower()
-        if state != "published":
-            _log.info("uc03.get_kb_article.unpublished",
-                      article_id=article_id, state=state)
-            return _article(
-                "not_found", article_id,
-                f"Knowledge-base article {article_id} exists but is "
-                f"not published. Contact the article owner or your "
-                f"IT support team if you need access.")
-        if audience and audience not in audiences:
-            _log.info("uc03.get_kb_article.audience_denied",
-                      article_id=article_id, audience=audience,
-                      user_role=context.get("role", ""))
-            return _article(
-                "denied", article_id,
-                f"Knowledge-base article {article_id} exists but is "
-                f"restricted to a different audience. Your role does "
-                f"not have access. Contact the article owner or your "
-                f"IT support team if access is required.")
+    # ── Stages 1-2: existence + state/audience (RBAC) ─────────────────
+    early = await _check_kb_access(
+        store, article_id, tenant_id, audiences, context.get("role", ""))
+    if early is not None:
+        return early
 
     # ── Stage 3: full fetch + compose ─────────────────────────────────
     row = await store.get(

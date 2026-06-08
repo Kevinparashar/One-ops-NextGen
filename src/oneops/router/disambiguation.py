@@ -388,6 +388,87 @@ def _deterministic_preroute(
     return None
 
 
+def _build_focus_block(focus_id: str, focus_service: str) -> str:
+    """The ACTIVE-FOCUS prompt section (the axis-A/B routing prior for
+    follow-up queries). Empty string when the conversation has no focus
+    entity, so the caller can concatenate it unconditionally."""
+    if not focus_id:
+        return ""
+    return (
+        f"\n\nACTIVE FOCUS (the user is mid-conversation about):\n"
+        f"  entity_id: {focus_id}\n"
+        f"  service:   {focus_service or 'unknown'}\n"
+        f"Routing principle with active focus — apply rigorously:\n"
+        f"\n"
+        f"  The focus is a PRIOR for ambiguous follow-ups, NOT a "
+        f"sticky override of explicit intent. A user can switch "
+        f"intent mid-conversation without restating context.\n"
+        f"\n"
+        f"  Test the query in this order:\n"
+        f"\n"
+        f"  1. Does the query ask for the VALUE of a field, "
+        f"     attribute, or linked-record-id that is STORED on "
+        f"     the focused entity itself? The answer must come "
+        f"     from the focused record's own data.\n"
+        f"     YES → axis A. The focused record supplies the value.\n"
+        f"\n"
+        f"  2. Does the query ask for external knowledge material — "
+        f"     content authored as a separate written-up resource "
+        f"     about a topic, technology, service, or problem area? "
+        f"     The answer must come from documents written outside "
+        f"     the focused record. The query references a topic "
+        f"     scope, not a stored attribute of the focused record, "
+        f"     even when that topic overlaps with what the focused "
+        f"     record concerns.\n"
+        f"     YES → axis B. Explicit knowledge intent overrides "
+        f"     the focus prior. Do not re-render the focused record "
+        f"     when the user is asking for documented knowledge.\n"
+        f"\n"
+        f"  3. If neither applies — the query is genuinely "
+        f"     ambiguous and has no explicit knowledge cue — fall "
+        f"     back to the focused record's type (axis A).\n"
+        f"\n"
+        f"  Apply the principle. The focused entity's topical "
+        f"  keywords appearing inside a knowledge-content query "
+        f"  do NOT convert it to axis A.\n"
+    )
+
+
+def _floor_dispatch(
+    candidates: list[Candidate], doc: dict, span,
+) -> Disambiguation | None:
+    """Retriever-as-floor + LLM-as-refiner (canonical production router
+    pattern; cf. Aurelio Semantic Router, LangGraph Supervisor). The stage-3
+    retriever is authoritative: when it produced a non-empty survivor set, the
+    stage-4 LLM may refine/re-rank it — never empty it. An LLM hedge on
+    telegraphic / under-specified queries is exactly the failure mode this
+    mitigates: the user asked an in-domain question, retrieval surfaced a
+    relevant agent, the LLM only failed to commit — let the agent run and
+    report its own no-result rather than refusing at the supervisor.
+
+    Returns the dispatch decision, or None when no survivor clears the signal
+    floor (the caller then emits no_match — off-domain queries land here).
+    """
+    if not candidates:
+        return None
+    top = max(candidates, key=lambda c: c.score)
+    if top.score < 0.10:        # narrow floor, matches MIN_FUSED_SCORE on retriever side
+        return None
+    span.set_attribute(_ONEOPS_ROUTER_SELECTED, top.agent_id)
+    span.set_attribute("oneops.router.dispatch_reason", "retriever_floor_llm_hedge")
+    span.set_attribute("oneops.router.llm_hedge_rationale",
+                       str(doc.get("rationale") or "")[:160])
+    return Disambiguation.select(
+        [top.agent_id], confidence=float(top.score),
+        rationale=(
+            "supervisor dispatch-by-default: stage-3 "
+            "retriever surfaced this agent above the "
+            "signal floor; stage-4 LLM hedged "
+            "(no_match). The agent reports its own "
+            "no-result if its lookup yields nothing."),
+        intents=["kb_search"] if top.agent_id.endswith("_kb_lookup") else [])
+
+
 class LlmDisambiguator:
     """Production disambiguator — one gateway call over the surviving
     candidates only. Returns schema-validated structured output. A call/parse
@@ -439,6 +520,17 @@ class LlmDisambiguator:
         # routing call. Dragonfly FLUSHALL never touches it; only a process
         # restart (which is also when the registry would reload) rebuilds it.
         self._catalog_block: str | None = None
+
+    def _active_agent_ids(self) -> set[str]:
+        """All active agent ids from the registry (empty set on any failure).
+        Used as the preroute pool so the routing contract applies even when the
+        lexical retriever drops a target agent for a short query."""
+        if self._registry is None:
+            return set()
+        try:
+            return set(self._registry.agents.list_ids())
+        except Exception:                                   # noqa: BLE001
+            return set()
 
     def _abstain_check(self, candidates: list[Candidate], span) -> Disambiguation | None:
         """Wrong-agent guard. Returns a refuse-and-clarify Disambiguation when
@@ -586,11 +678,6 @@ class LlmDisambiguator:
         self, query_text: str, candidates: list[Candidate], *,
         request_ctx: dict, _span,
     ) -> Disambiguation:
-        import json
-
-        from oneops.errors import LLMGatewayError
-        from oneops.llm import LlmMessage, LlmRequest, ResponseFormat
-        from oneops.observability import get_logger
         from oneops.policy import Profile, compose
 
         if not candidates:
@@ -604,13 +691,7 @@ class LlmDisambiguator:
         # contract for these cases; the lexical retriever can drop a target
         # agent for short queries (e.g. bare CI id), but the contract still
         # applies. We never invent an agent — registry must list it active.
-        all_active_ids: set[str] = set()
-        if self._registry is not None:
-            try:
-                all_active_ids = set(self._registry.agents.list_ids())
-            except Exception:                                   # noqa: BLE001
-                all_active_ids = set()
-        preroute_pool = all_active_ids or valid_ids
+        preroute_pool = self._active_agent_ids() or valid_ids
         preroute = _deterministic_preroute(query_text, preroute_pool)
         if preroute is not None:
             agent_id, intent, rationale = preroute
@@ -642,48 +723,9 @@ class LlmDisambiguator:
         # record is overwhelmingly a record-field read (axis A), not a KB
         # search — without this signal the LLM looks at the words alone
         # and can probabilistically drift to UC-3.
-        focus_id = (request_ctx.get("focus_entity_id") or "").strip()
-        focus_service = (request_ctx.get("focus_service_id") or "").strip()
-        focus_block = ""
-        if focus_id:
-            focus_block = (
-                f"\n\nACTIVE FOCUS (the user is mid-conversation about):\n"
-                f"  entity_id: {focus_id}\n"
-                f"  service:   {focus_service or 'unknown'}\n"
-                f"Routing principle with active focus — apply rigorously:\n"
-                f"\n"
-                f"  The focus is a PRIOR for ambiguous follow-ups, NOT a "
-                f"sticky override of explicit intent. A user can switch "
-                f"intent mid-conversation without restating context.\n"
-                f"\n"
-                f"  Test the query in this order:\n"
-                f"\n"
-                f"  1. Does the query ask for the VALUE of a field, "
-                f"     attribute, or linked-record-id that is STORED on "
-                f"     the focused entity itself? The answer must come "
-                f"     from the focused record's own data.\n"
-                f"     YES → axis A. The focused record supplies the value.\n"
-                f"\n"
-                f"  2. Does the query ask for external knowledge material — "
-                f"     content authored as a separate written-up resource "
-                f"     about a topic, technology, service, or problem area? "
-                f"     The answer must come from documents written outside "
-                f"     the focused record. The query references a topic "
-                f"     scope, not a stored attribute of the focused record, "
-                f"     even when that topic overlaps with what the focused "
-                f"     record concerns.\n"
-                f"     YES → axis B. Explicit knowledge intent overrides "
-                f"     the focus prior. Do not re-render the focused record "
-                f"     when the user is asking for documented knowledge.\n"
-                f"\n"
-                f"  3. If neither applies — the query is genuinely "
-                f"     ambiguous and has no explicit knowledge cue — fall "
-                f"     back to the focused record's type (axis A).\n"
-                f"\n"
-                f"  Apply the principle. The focused entity's topical "
-                f"  keywords appearing inside a knowledge-content query "
-                f"  do NOT convert it to axis A.\n"
-            )
+        focus_block = _build_focus_block(
+            (request_ctx.get("focus_entity_id") or "").strip(),
+            (request_ctx.get("focus_service_id") or "").strip())
         user_block = (
             f"Query:\n{query_text}{focus_block}\n\n"
             f"Candidate agents — choose ONLY from these. Each card has the "
@@ -697,11 +739,25 @@ class LlmDisambiguator:
             extra_sections.append(_STRICT_FIT_PROMPT)
         system_prompt = compose(Profile.INTERNAL_AGENT,
                                 extra_sections=extra_sections)
+        return await self._call_and_select(
+            system_prompt, user_block, valid_ids, candidates, request_ctx, _span)
+
+    async def _call_and_select(
+        self, system_prompt: str, user_block: str, valid_ids: set[str],
+        candidates: list[Candidate], request_ctx: dict, _span,
+    ) -> Disambiguation:
+        """Stage-4 LLM call + closed-class parse. The system block is the stable
+        policy+rules prefix (prompt-cached for ~50-90% input-token savings); the
+        per-call user block carries the shortlist catalog. On an LLM hedge (no
+        valid selection) defer to the retriever floor; on call/parse error
+        return no_match — never a guessed route."""
+        import json
+
+        from oneops.errors import LLMGatewayError
+        from oneops.llm import LlmMessage, LlmRequest, ResponseFormat
+        from oneops.observability import get_logger
         try:
             response = await self._gateway.call(LlmRequest(
-                # System block is the policy-composed prefix + disambiguation
-                # rules — large + stable across every routing decision.
-                # Prompt-cache for ~50-90% input-token savings per turn.
                 messages=(LlmMessage("system", system_prompt,
                                      cache_control=True),
                           LlmMessage("user", user_block)),
@@ -716,38 +772,9 @@ class LlmDisambiguator:
             selected = [a for a in (doc.get("selected_agent_ids") or [])
                         if a in valid_ids]
             if not selected:
-                # Retriever-as-floor + LLM-as-refiner (canonical production
-                # router pattern; cf. Aurelio Semantic Router, LangGraph
-                # Supervisor). The stage-3 retriever is authoritative: when
-                # it produced a non-empty survivor set, the stage-4 LLM is
-                # allowed to refine that set or re-rank it — never to empty
-                # it. An LLM hedge on telegraphic / under-specified queries
-                # is exactly the failure mode this rule mitigates: the user
-                # asked an in-domain question, the retrieval already
-                # surfaced a relevant agent, the LLM only failed to commit
-                # — let the agent run and report its own no-result, do not
-                # silently refuse at the supervisor.
-                #
-                # Fires only when survivors exist and the top has signal
-                # above floor; for genuinely off-domain queries the
-                # retriever returns no survivors → boundary handles them.
-                if candidates:
-                    top = max(candidates, key=lambda c: c.score)
-                    if top.score >= 0.10:        # narrow floor, matches MIN_FUSED_SCORE on retriever side
-                        _span.set_attribute(_ONEOPS_ROUTER_SELECTED, top.agent_id)
-                        _span.set_attribute("oneops.router.dispatch_reason",
-                                            "retriever_floor_llm_hedge")
-                        _span.set_attribute("oneops.router.llm_hedge_rationale",
-                                            str(doc.get("rationale") or "")[:160])
-                        return Disambiguation.select(
-                            [top.agent_id], confidence=float(top.score),
-                            rationale=(
-                                "supervisor dispatch-by-default: stage-3 "
-                                "retriever surfaced this agent above the "
-                                "signal floor; stage-4 LLM hedged "
-                                "(no_match). The agent reports its own "
-                                "no-result if its lookup yields nothing."),
-                            intents=["kb_search"] if top.agent_id.endswith("_kb_lookup") else [])
+                floor = _floor_dispatch(candidates, doc, _span)
+                if floor is not None:
+                    return floor
                 _span.set_attribute(_ONEOPS_ROUTER_SELECTED, "")
                 return Disambiguation.no_match(
                     str(doc.get("rationale") or "no candidate matched the intent"))
