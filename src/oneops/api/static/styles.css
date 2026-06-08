@@ -258,12 +258,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  cursor: pointer;
 }
 .thread-item.active {
   border-color: var(--accent);
   background: rgba(74, 169, 255, 0.05);
 }
-.thread-item { cursor: pointer; }
 .thread-item:hover { background: rgba(74, 169, 255, 0.03); }
 .thread-line {
   display: flex; align-items: center; justify-content: space-between;
@@ -612,7 +612,7 @@ body {
 }
 .modal.hidden { display: none; }
 .hidden { display: none !important; }
-.triage-card { max-height: 88vh; display: flex; flex-direction: column; }
+.triage-card { max-height: 88vh; display: flex; flex-direction: column; max-width: 700px; }
 .triage-card .triage-body { overflow-y: auto; max-height: calc(88vh - 60px); }
 .modal-card {
   background: var(--panel);
@@ -674,7 +674,6 @@ body {
   font-weight: 700;
   text-align: center;
 }
-.triage-card { max-width: 700px; }
 .triage-body { display: flex; flex-direction: column; gap: 14px; }
 
 .triage-type-grid {

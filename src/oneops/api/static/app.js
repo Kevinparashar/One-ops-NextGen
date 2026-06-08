@@ -342,47 +342,44 @@
         state: cfg.cache.enabled ? "on" : "off",
         value: cfg.cache.backend.replace(/^In/, "").replace(/SummaryCacheStore$/, ""),
       });
-      addChip({
-        label: "OTel",
-        state: cfg.otel.in_memory_spans ? (cfg.otel.enabled ? "on" : "warn") : "off",
-        value: cfg.otel.endpoint
-                 ? "exporter live"
-                 : (cfg.otel.in_memory_spans ? "in-memory only" : "off"),
-      });
-      addChip({
-        label: "LLM",
-        state: cfg.llm_gateway.summarizer_wired
-                 ? "on"
-                 : (cfg.llm_gateway.configured ? "warn" : "off"),
-        value: cfg.llm_gateway.summarizer_wired
-                 ? "wired"
-                 : (cfg.llm_gateway.configured ? "gateway up · summarizer pending"
-                                              : "not configured"),
-      });
-      addChip({
-        label: "DB",
-        state: cfg.postgres.configured
-                 ? (cfg.postgres.backend_in_use.startsWith("Postgres") ? "on" : "warn")
-                 : "off",
-        value: cfg.postgres.backend_in_use,
-      });
-      addChip({
-        label: "NATS",
-        state: cfg.nats.configured
-                 ? (cfg.nats.wired_into_ingress ? "on" : "warn")
-                 : "off",
-        value: cfg.nats.wired_into_ingress ? "wired" : (cfg.nats.configured
-                 ? "configured · ingress in-process"
-                 : "not configured"),
-      });
+      // States/values computed with if/else (no nested ternaries; S3358).
+      let otelState = "off";
+      if (cfg.otel.in_memory_spans) otelState = cfg.otel.enabled ? "on" : "warn";
+      let otelValue = cfg.otel.in_memory_spans ? "in-memory only" : "off";
+      if (cfg.otel.endpoint) otelValue = "exporter live";
+      addChip({ label: "OTel", state: otelState, value: otelValue });
+
+      let llmState = "off";
+      if (cfg.llm_gateway.summarizer_wired) llmState = "on";
+      else if (cfg.llm_gateway.configured) llmState = "warn";
+      let llmValue = "not configured";
+      if (cfg.llm_gateway.summarizer_wired) llmValue = "wired";
+      else if (cfg.llm_gateway.configured) llmValue = "gateway up · summarizer pending";
+      addChip({ label: "LLM", state: llmState, value: llmValue });
+
+      let dbState = "off";
+      if (cfg.postgres.configured) {
+        dbState = cfg.postgres.backend_in_use.startsWith("Postgres") ? "on" : "warn";
+      }
+      addChip({ label: "DB", state: dbState, value: cfg.postgres.backend_in_use });
+
+      let natsState = "off";
+      if (cfg.nats.configured) natsState = cfg.nats.wired_into_ingress ? "on" : "warn";
+      let natsValue = "not configured";
+      if (cfg.nats.wired_into_ingress) natsValue = "wired";
+      else if (cfg.nats.configured) natsValue = "configured · ingress in-process";
+      addChip({ label: "NATS", state: natsState, value: natsValue });
+
+      let sessionValue = "not wired";
+      if (cfg.session?.wired) {
+        sessionValue = cfg.session.durable_across_reload
+          ? "durable · " + cfg.session.backend.replace(/^In/, "")
+          : cfg.session.backend;
+      }
       addChip({
         label: "Session",
         state: cfg.session?.wired ? "on" : "off",
-        value: cfg.session?.wired
-                 ? (cfg.session.durable_across_reload
-                      ? "durable · " + cfg.session.backend.replace(/^In/, "")
-                      : cfg.session.backend)
-                 : "not wired",
+        value: sessionValue,
       });
     } catch (err) {
       statusStrip.innerHTML = `<span class="status-chip off">status load failed: ${err}</span>`;
@@ -533,7 +530,7 @@
     // should see it once).
     const seenKeys = new Set();
     const steps = rawSteps.filter((s) => {
-      const msg = (s && s.output && s.output.message) || "";
+      const msg = s?.output?.message || "";
       const key = msg.replace(/\s+/g, " ").trim();
       if (!key) return true;            // keep empty-message steps (full summaries)
       if (seenKeys.has(key)) return false;
@@ -648,7 +645,7 @@
     // (built by `friendly_step_response` in the aggregator). Render it
     // verbatim — no empty Summary / Key Details sections.
     const stepStatus = (step.status || "").toLowerCase();
-    const handlerOutcome = (out && out.outcome) ? String(out.outcome).toLowerCase() : "";
+    const handlerOutcome = out?.outcome ? String(out.outcome).toLowerCase() : "";
     const isSuccessfulSummary =
       stepStatus === "success" &&
       handlerOutcome !== "not_found" &&
@@ -658,7 +655,7 @@
     if (!isSuccessfulSummary) {
       // Prefer the per-step message so multi-step turns don't duplicate
       // the entire aggregated final_response on every card.
-      const stepMessage = (out && out.message) || payload.final_response || "(no response)";
+      const stepMessage = out?.message || payload.final_response || "(no response)";
       const p = document.createElement("div");
       p.className = "summary-text bubble md";
       p.style.background = "transparent";
@@ -690,9 +687,9 @@
 
     // ── success path — render Summary + Key Details (UC-1 shape) ──────
     const summaryBlock = out.summary || null;
-    const record = out.record || (summaryBlock && summaryBlock.record) || null;
+    const record = out.record || summaryBlock?.record || null;
     const keyDetails =
-      (summaryBlock && summaryBlock.key_details) ||
+      summaryBlock?.key_details ||
       out.key_details ||
       null;
 
@@ -749,7 +746,7 @@
       p.style.padding = "0";
       p.innerHTML = renderMarkdown(summaryText);
       wrapper.appendChild(p);
-    } else if (out && out.message) {
+    } else if (out?.message) {
       const h = document.createElement("div");
       h.className = "section-title";
       h.textContent = "Response";
@@ -856,7 +853,7 @@
   // returned by /api/fast/{uc_id}/spec (single source of truth); falls back to
   // deriving it from the uc_id. Never shows the raw `ucNN_` wire id to a user.
   function ucLabel(spec) {
-    return (spec && spec.display_name) || humaniseUcId(spec && spec.uc_id);
+    return spec?.display_name || humaniseUcId(spec?.uc_id);
   }
 
   // ── chat door ────────────────────────────────────────────────────────
@@ -1198,7 +1195,7 @@
       inp.name = f.name;
       inp.required = f.required;
       inp.placeholder = f.description.slice(0, 80);
-      if (prefill && prefill[f.name]) inp.value = prefill[f.name];
+      if (prefill?.[f.name]) inp.value = prefill[f.name];
       lab.appendChild(inp);
       form.appendChild(lab);
       inputs[f.name] = inp;

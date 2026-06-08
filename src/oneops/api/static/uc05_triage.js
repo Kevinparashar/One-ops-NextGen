@@ -300,7 +300,7 @@
       const fields = TRIAGE_FIELDS[currentProposal.service_id] || [];
       for (const [col] of fields) {
         const el = $(`#tf-${col}`);
-        if (el?.value && el.value.trim()) {
+        if (el?.value?.trim()) {
           final[col] = el.value.trim();
         }
       }
