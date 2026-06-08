@@ -281,6 +281,7 @@ async def main() -> None:
     skill = _skill(body)
     existing_uw = list(skill.get("use_when") or [])
     existing_ex = list(skill.get("examples") or [])
+    existing_desc = (skill.get("description") or "").strip()
 
     gw = _gateway()
     model = os.getenv("LLM_DEFAULT_MODEL", "gpt-4o-mini").strip()
@@ -290,25 +291,47 @@ async def main() -> None:
     judge_model = (args.judge_model
                    or os.getenv("DOC2QUERY_JUDGE_MODEL", "gpt-4o")).strip()
 
-    def _dedupe(items: list, against: list) -> list:
-        seen = {x.strip().lower() for x in against}
-        out = []
-        for it in items:
-            s = (it or "").strip()
-            if s and s.lower() not in seen:
-                out.append(s); seen.add(s.lower())
-        return out
+    draft_uw, draft_ex, draft_desc = await _draft_enrichment(
+        gw, model, args.agent, skill, existing_uw, existing_ex,
+        existing_desc, args.n, args.enrich_description)
+    if not (draft_uw or draft_ex or draft_desc):
+        print("nothing new drafted — stop."); return
 
-    # 1. GENERATE both use_when (scope) and examples (queries)
+    acc_uw, acc_ex, acc_desc, verdict = await _judge_accept(
+        gw, judge_model, skill, existing_desc, existing_uw, existing_ex,
+        draft_uw, draft_ex, draft_desc)
+    acc_uw, acc_ex = _enforce_ceiling(acc_uw, acc_ex, existing_uw, existing_ex)
+    acc_uw, acc_ex, acc_desc = await _enforce_overlap(
+        gw, args.agent, acc_uw, acc_ex, acc_desc)
+    _write_enrichment(f, card, skill, existing_uw, existing_ex,
+                      acc_uw, acc_ex, acc_desc, verdict, args.apply)
+
+
+def _dedupe(items: list, against: list) -> list:
+    """Case-insensitive dedupe of `items` against `against` + within itself,
+    preserving order and stripping whitespace."""
+    seen = {x.strip().lower() for x in against}
+    out = []
+    for it in items:
+        s = (it or "").strip()
+        if s and s.lower() not in seen:
+            out.append(s); seen.add(s.lower())
+    return out
+
+
+async def _draft_enrichment(gw, model, agent_id, skill, existing_uw,
+                            existing_ex, existing_desc, n, enrich_description):
+    """Phase 1 — GENERATE use_when/examples/description, then run the two
+    deterministic bouncers (record-id strip, semantic-novelty strip) and print
+    the draft report. Returns `(draft_uw, draft_ex, draft_desc)`."""
     gen = await _ask(gw, model, _GEN_SYS, json.dumps({
         "name": skill.get("name"), "description": skill.get("description"),
         "use_when": existing_uw, "not_when": skill.get("not_when"),
-        "examples": existing_ex, "how_many_each": args.n}, ensure_ascii=False))
+        "examples": existing_ex, "how_many_each": n}, ensure_ascii=False))
     draft_uw = _dedupe(gen.get("use_when") or [], existing_uw)
     draft_ex = _dedupe(gen.get("examples") or [], existing_ex)
-    existing_desc = (skill.get("description") or "").strip()
     draft_desc = (gen.get("description") or "").strip()
-    if not args.enrich_description:
+    if not enrich_description:
         draft_desc = ""                       # description rewrite is opt-in
     elif draft_desc.lower() == existing_desc.lower():
         draft_desc = ""                       # no change proposed
@@ -320,7 +343,7 @@ async def main() -> None:
     draft_uw, dup_uw = await _filter_novel(gw, existing_uw, draft_uw)
     draft_ex, dup_ex = await _filter_novel(gw, existing_ex, draft_ex)
 
-    print(f"=== doc2query: {args.agent} ===")
+    print(f"=== doc2query: {agent_id} ===")
     if id_uw or id_ex:
         print(f"  ✂ dropped {len(id_uw) + len(id_ex)} draft(s) carrying record ids "
               f"(use_when={len(id_uw)}, examples={len(id_ex)}):")
@@ -340,10 +363,14 @@ async def main() -> None:
     print(f"examples: {len(existing_ex)} existing, {len(draft_ex)} drafted")
     for e in draft_ex:
         print(f"  + (example)  {e}")
-    if not (draft_uw or draft_ex or draft_desc):
-        print("nothing new drafted — stop."); return
+    return draft_uw, draft_ex, draft_desc
 
-    # 2. JUDGE (cross-verify the enrichment is genuinely better) — all 3 fields
+
+async def _judge_accept(gw, judge_model, skill, existing_desc, existing_uw,
+                        existing_ex, draft_uw, draft_ex, draft_desc):
+    """Phase 2 — JUDGE (cross-verify the enrichment is genuinely better) across
+    all 3 fields, apply Guard ② (description schema-window), print the verdict.
+    Returns `(acc_uw, acc_ex, acc_desc, verdict)`."""
     judged = await _ask(gw, judge_model, _JUDGE_SYS, json.dumps({
         "current_description": existing_desc, "not_when": skill.get("not_when"),
         "proposed_description": draft_desc,
@@ -375,9 +402,13 @@ async def main() -> None:
         print(f"    ✅ {e}")
     for r in (judged.get("rejected") or []):
         print(f"    ❌ [{r.get('field','?')}] {r.get('item','')}  — {r.get('reason','')}")
+    return acc_uw, acc_ex, acc_desc, verdict
 
-    # Guard ① — CEILING. Never let the card grow past the roof; trim the lowest
-    # priority (judge listed strongest first) and say what was dropped.
+
+def _enforce_ceiling(acc_uw, acc_ex, existing_uw, existing_ex):
+    """Guard ① — CEILING. Never let the card grow past the roof; trim the
+    lowest priority (judge listed strongest first) and say what was dropped.
+    Returns the trimmed `(acc_uw, acc_ex)`."""
     uw_room = max(0, _MAX_USE_WHEN - len(existing_uw))
     ex_room = max(0, _MAX_EXAMPLES - len(existing_ex))
     cap_uw, cap_ex = acc_uw[uw_room:], acc_ex[ex_room:]
@@ -386,12 +417,16 @@ async def main() -> None:
         print(f"\n=== guard ① ceiling ===  use_when<= {_MAX_USE_WHEN}, examples<= {_MAX_EXAMPLES}")
         for e in cap_uw + cap_ex:
             print(f"    ⤵ over ceiling, not added: {e}")
+    return acc_uw, acc_ex
 
-    # Guard ③ — OVERLAP vs OTHER agents. Refuse any accepted chunk that would
-    # make this agent confusable with another (the novelty filter only checked
-    # against THIS card). Drop the specific colliders; keep the rest.
+
+async def _enforce_overlap(gw, agent_id, acc_uw, acc_ex, acc_desc):
+    """Guard ③ — OVERLAP vs OTHER agents. Refuse any accepted chunk that would
+    make this agent confusable with another (the novelty filter only checked
+    against THIS card). Drop the specific colliders; keep the rest. Returns
+    `(acc_uw, acc_ex, acc_desc)`."""
     candidates = ([acc_desc] if acc_desc else []) + acc_uw + acc_ex
-    collisions = await _overlap_against_others(gw, args.agent, candidates)
+    collisions = await _overlap_against_others(gw, agent_id, candidates)
     if collisions:
         print(f"\n=== guard ③ overlap ===  flag >= {_OVERLAP_MAX_COS} cos vs another agent")
         for text, (nbr, sim) in collisions.items():
@@ -400,11 +435,16 @@ async def main() -> None:
             acc_desc = ""
         acc_uw = [e for e in acc_uw if e not in collisions]
         acc_ex = [e for e in acc_ex if e not in collisions]
+    return acc_uw, acc_ex, acc_desc
 
-    # 3. APPLY (only if judge approves + survives the guards + --apply).
+
+def _write_enrichment(f, card, skill, existing_uw, existing_ex,
+                      acc_uw, acc_ex, acc_desc, verdict, apply_flag):
+    """Phase 3 — APPLY, only if the judge approved + something survived the
+    guards + `--apply`. Otherwise prints why nothing was written."""
     ok = verdict == "better" and bool(acc_desc or acc_uw or acc_ex)
-    print(f"\n=== gate ===  {'PASS' if ok else 'HOLD'}  (apply={'on' if args.apply else 'off/dry-run'})")
-    if args.apply and ok:
+    print(f"\n=== gate ===  {'PASS' if ok else 'HOLD'}  (apply={'on' if apply_flag else 'off/dry-run'})")
+    if apply_flag and ok:
         if acc_desc:
             skill["description"] = acc_desc
         if acc_uw:
@@ -417,7 +457,7 @@ async def main() -> None:
               f"(now {len(skill.get('use_when', []))} use_when, {len(skill.get('examples', []))} examples)")
         print("  next (separate, explicit): .venv/bin/python database/agent/sync.py  "
               "→ trigger → worker re-embeds")
-    elif args.apply and not ok:
+    elif apply_flag and not ok:
         print("  judge did not approve (or guards stripped everything) — nothing written.")
     else:
         print("  dry-run — nothing written. Re-run with --apply once you're happy.")
