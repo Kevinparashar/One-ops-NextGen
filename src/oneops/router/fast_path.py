@@ -190,6 +190,36 @@ class FastPathDispatcher:
             return None
         return agent.fast_path
 
+    def _coerce_inputs(
+        self, spec: Any, request: FastPathRequest, uc_id: str,
+    ) -> dict[str, Any]:
+        """Coerce supplied inputs to their declared types, auto-deriving a
+        missing field when the registry declares a derivation (e.g. service_id
+        ⇐ ticket-id prefix). Raises FastPathError if a required field is unmet.
+        Empty-string and None both mean 'not supplied'."""
+        params: dict[str, Any] = {}
+        missing: list[str] = []
+        for field in spec.input_fields:
+            value = request.inputs.get(field.name)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                if field.auto_derive_from:
+                    derived = _derive_field(
+                        target=field.name,
+                        source_field=field.auto_derive_from,
+                        source_value=request.inputs.get(field.auto_derive_from))
+                    if derived is not None:
+                        params[field.name] = _coerce(derived, field=field)
+                        continue
+                if field.required:
+                    missing.append(field.name)
+                continue
+            params[field.name] = _coerce(value, field=field)
+        if missing:
+            raise FastPathError(
+                f"use case {uc_id!r} fast-path requires fields: "
+                f"{sorted(missing)}")
+        return params
+
     def dispatch(self, request: FastPathRequest) -> FastPathDispatchResult:
         """Validate `request` against the UC's declared fast-path spec and
         return a single-step plan + the coerced parameters.
@@ -231,30 +261,7 @@ class FastPathDispatcher:
                     f"use case {uc_id!r} received unknown fast-path "
                     f"fields: {sorted(unknown)}")
 
-            params: dict[str, Any] = {}
-            missing: list[str] = []
-            for field in spec.input_fields:
-                value = request.inputs.get(field.name)
-                # Empty-string and None both mean "caller did not supply it".
-                # Before declaring it missing, attempt registry-data-declared
-                # derivation (e.g. service_id ⇐ ticket-id prefix).
-                if value is None or (isinstance(value, str) and not value.strip()):
-                    if field.auto_derive_from:
-                        derived = _derive_field(
-                            target=field.name,
-                            source_field=field.auto_derive_from,
-                            source_value=request.inputs.get(field.auto_derive_from))
-                        if derived is not None:
-                            params[field.name] = _coerce(derived, field=field)
-                            continue
-                    if field.required:
-                        missing.append(field.name)
-                    continue
-                params[field.name] = _coerce(value, field=field)
-            if missing:
-                raise FastPathError(
-                    f"use case {uc_id!r} fast-path requires fields: "
-                    f"{sorted(missing)}")
+            params = self._coerce_inputs(spec, request, uc_id)
 
             # Build the one-step plan. The executor's direct-plan entry will
             # run load_session → policy → authz_recheck → handler → persist
