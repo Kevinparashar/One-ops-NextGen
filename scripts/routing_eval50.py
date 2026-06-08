@@ -149,8 +149,12 @@ def _score_row(
     ok = _verdict(exp, chosen)
     by_cat[cat][1] += 1
     by_cat[cat][0] += int(ok)
-    exp_lbl = (_short("+".join(sorted(exp))) if isinstance(exp, (set, list, tuple))
-               else _short(exp) if exp != NONE else "none")
+    if isinstance(exp, (set, list, tuple)):
+        exp_lbl = _short("+".join(sorted(exp)))
+    elif exp != NONE:
+        exp_lbl = _short(exp)
+    else:
+        exp_lbl = "none"
     got_lbl = "+".join(sorted(_short(a) for a in chosen)) or "none"
     rows.append((ok, q, exp_lbl, got_lbl, cat))
     if not ok:

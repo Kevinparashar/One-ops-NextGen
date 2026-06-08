@@ -331,10 +331,9 @@ async def _draft_enrichment(gw, model, agent_id, skill, existing_uw,
     draft_uw = _dedupe(gen.get("use_when") or [], existing_uw)
     draft_ex = _dedupe(gen.get("examples") or [], existing_ex)
     draft_desc = (gen.get("description") or "").strip()
-    if not enrich_description:
-        draft_desc = ""                       # description rewrite is opt-in
-    elif draft_desc.lower() == existing_desc.lower():
-        draft_desc = ""                       # no change proposed
+    # Description rewrite is opt-in; also drop it when nothing changed.
+    if not enrich_description or draft_desc.lower() == existing_desc.lower():
+        draft_desc = ""
 
     # Bouncer #1 — deterministic record-id strip (before any judge spend).
     draft_uw, id_uw = _strip_ids(draft_uw)
@@ -343,6 +342,15 @@ async def _draft_enrichment(gw, model, agent_id, skill, existing_uw,
     draft_uw, dup_uw = await _filter_novel(gw, existing_uw, draft_uw)
     draft_ex, dup_ex = await _filter_novel(gw, existing_ex, draft_ex)
 
+    _print_draft_report(agent_id, existing_uw, existing_ex, draft_uw, draft_ex,
+                        draft_desc, id_uw, id_ex, dup_uw, dup_ex)
+    return draft_uw, draft_ex, draft_desc
+
+
+def _print_draft_report(agent_id, existing_uw, existing_ex, draft_uw, draft_ex,
+                        draft_desc, id_uw, id_ex, dup_uw, dup_ex):
+    """Print the draft report — bouncer drops (record-ids, near-duplicates),
+    the optional description rewrite, and the surviving use_when/examples."""
     print(f"=== doc2query: {agent_id} ===")
     if id_uw or id_ex:
         print(f"  ✂ dropped {len(id_uw) + len(id_ex)} draft(s) carrying record ids "
@@ -363,7 +371,6 @@ async def _draft_enrichment(gw, model, agent_id, skill, existing_uw,
     print(f"examples: {len(existing_ex)} existing, {len(draft_ex)} drafted")
     for e in draft_ex:
         print(f"  + (example)  {e}")
-    return draft_uw, draft_ex, draft_desc
 
 
 async def _judge_accept(gw, judge_model, skill, existing_desc, existing_uw,
@@ -444,23 +451,24 @@ def _write_enrichment(f, card, skill, existing_uw, existing_ex,
     guards + `--apply`. Otherwise prints why nothing was written."""
     ok = verdict == "better" and bool(acc_desc or acc_uw or acc_ex)
     print(f"\n=== gate ===  {'PASS' if ok else 'HOLD'}  (apply={'on' if apply_flag else 'off/dry-run'})")
-    if apply_flag and ok:
-        if acc_desc:
-            skill["description"] = acc_desc
-        if acc_uw:
-            skill["use_when"] = existing_uw + acc_uw
-        if acc_ex:
-            skill["examples"] = existing_ex + acc_ex
-        f.write_text(json.dumps(card, indent=2, ensure_ascii=False) + "\n")
-        print(f"  ✏  wrote {'description, ' if acc_desc else ''}+{len(acc_uw)} use_when, "
-              f"+{len(acc_ex)} examples to {f.name} "
-              f"(now {len(skill.get('use_when', []))} use_when, {len(skill.get('examples', []))} examples)")
-        print("  next (separate, explicit): .venv/bin/python database/agent/sync.py  "
-              "→ trigger → worker re-embeds")
-    elif apply_flag and not ok:
-        print("  judge did not approve (or guards stripped everything) — nothing written.")
-    else:
+    if not apply_flag:
         print("  dry-run — nothing written. Re-run with --apply once you're happy.")
+        return
+    if not ok:
+        print("  judge did not approve (or guards stripped everything) — nothing written.")
+        return
+    if acc_desc:
+        skill["description"] = acc_desc
+    if acc_uw:
+        skill["use_when"] = existing_uw + acc_uw
+    if acc_ex:
+        skill["examples"] = existing_ex + acc_ex
+    f.write_text(json.dumps(card, indent=2, ensure_ascii=False) + "\n")
+    print(f"  ✏  wrote {'description, ' if acc_desc else ''}+{len(acc_uw)} use_when, "
+          f"+{len(acc_ex)} examples to {f.name} "
+          f"(now {len(skill.get('use_when', []))} use_when, {len(skill.get('examples', []))} examples)")
+    print("  next (separate, explicit): .venv/bin/python database/agent/sync.py  "
+          "→ trigger → worker re-embeds")
 
 
 if __name__ == "__main__":

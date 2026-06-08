@@ -118,7 +118,12 @@ def _format_holdout_row(
     FIXED/BROKE flip tag."""
     mo = "✓" if oo else "✗"
     mn = "✓" if on else "✗"
-    flip = "  ← FIXED" if (not oo and on) else ("  ← BROKE" if (oo and not on) else "")
+    if not oo and on:
+        flip = "  ← FIXED"
+    elif oo and not on:
+        flip = "  ← BROKE"
+    else:
+        flip = ""
     exp_lbl = (exp.replace('uc0', 'u').replace('_summarization', '')
                .replace('_similar_tickets', '').replace('_kb_lookup', '')
                .replace('NONE', 'none'))

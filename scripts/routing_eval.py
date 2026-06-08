@@ -215,7 +215,7 @@ def _print_report(stats: _EvalStats) -> None:
         ok, n = stats.per_agent[agent]
         print(f"  {agent:<26} {ok}/{n} = {(ok / n * 100.0) if n else 0:.0f}%")
     print("\nCONFUSION MATRIX  (expected → got : count); off-diagonal = mis-route")
-    for e in sorted({x for x, _ in stats.confusion}):
+    for e in sorted({key[0] for key in stats.confusion}):
         rows = sorted(((a, c) for (ee, a), c in stats.confusion.items() if ee == e),
                       key=lambda x: -x[1])
         print(f"  {e:<26} → " + "  ".join(f"{a}:{c}{' ◄' if a != e else ''}" for a, c in rows))

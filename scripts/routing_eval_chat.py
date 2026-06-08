@@ -83,8 +83,12 @@ def _format_misroute(
     q: str, exp: object, cat: str, chosen: set, err: str | None,
 ) -> str:
     """One mis-route line: expected vs got (got = ERROR text / chosen set / none)."""
-    exp_l = (_s("+".join(sorted(exp))) if isinstance(exp, (set, list, tuple))
-             else _s(exp) if exp != NONE else "none")
+    if isinstance(exp, (set, list, tuple)):
+        exp_l = _s("+".join(sorted(exp)))
+    elif exp != NONE:
+        exp_l = _s(exp)
+    else:
+        exp_l = "none"
     got_l = ("ERROR:" + err) if err else ("+".join(sorted(_s(a) for a in chosen)) or "none")
     return f"  ✗ {q!r}\n      want {exp_l}  got {got_l}  [{cat}]"
 
