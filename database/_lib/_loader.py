@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -37,25 +38,26 @@ def _dt(v: Any) -> date | None:
     return date.fromisoformat(v) if v else None
 
 
+# Column-kind → coercion. Data-driven dispatch (one entry per kind) instead
+# of an if/elif ladder — adding a kind is a one-line table entry.
+_CONVERTERS: dict[str, Callable[[Any], Any]] = {
+    "s": lambda v: v,
+    "b": lambda v: bool(v) if v is not None else False,
+    "i": lambda v: int(v) if v is not None else None,
+    "ts": _ts,
+    "dt": _dt,
+    "A": lambda v: list(v) if v else [],
+    "J[]": lambda v: json.dumps(v if v is not None else []),
+    "J{}": lambda v: json.dumps(v if v is not None else {}),
+}
+
+
 def convert(value: Any, kind: str) -> Any:
     """Coerce a raw JSON value to the asyncpg-acceptable type for `kind`."""
-    if kind == "s":
-        return value
-    if kind == "b":
-        return bool(value) if value is not None else False
-    if kind == "i":
-        return int(value) if value is not None else None
-    if kind == "ts":
-        return _ts(value)
-    if kind == "dt":
-        return _dt(value)
-    if kind == "A":
-        return list(value) if value else []
-    if kind == "J[]":
-        return json.dumps(value if value is not None else [])
-    if kind == "J{}":
-        return json.dumps(value if value is not None else {})
-    raise ValueError(f"unknown kind {kind}")
+    try:
+        return _CONVERTERS[kind](value)
+    except KeyError:
+        raise ValueError(f"unknown kind {kind}") from None
 
 
 def read_env_url() -> str:

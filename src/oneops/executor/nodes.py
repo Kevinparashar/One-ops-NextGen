@@ -903,119 +903,164 @@ class ExecutorNodes:
                 span,
                 input={"agent_id": agent_id,
                        "parameters": step.get("parameters") or {}})
-            agent = self._registry.agents.get_optional(agent_id)
-            if agent is None:
-                # The plan named an agent with no active registry record.
-                return {"step_results": [make_result(
-                    step, status="failed",
-                    error=f"agent '{agent_id}' has no active registry record")]}
+            return await self._run_step_body(
+                span, step, request, payload, agent_id, t0)
 
-            policy_result = self._evaluate_step_policy(step, request, agent, span)
-            if policy_result is not None:
-                return policy_result
+    async def _run_step_body(
+        self, span: Any, step: dict[str, Any], request: dict[str, Any],
+        payload: dict[str, Any], agent_id: str, t0: float,
+    ) -> dict[str, Any]:
+        """The run_step pipeline (kept out of the `with span` block so its
+        guards don't all carry the span's nesting): registry + policy + binding
+        guards → before-hooks → action gate → work → after-hooks → telemetry."""
+        agent = self._registry.agents.get_optional(agent_id)
+        if agent is None:
+            # The plan named an agent with no active registry record.
+            return {"step_results": [make_result(
+                step, status="failed",
+                error=f"agent '{agent_id}' has no active registry record")]}
 
-            # ── data-flow binding (previous_results) ─────────────────────
-            # Resolve declared bindings from upstream outputs BEFORE hooks /
-            # approval: a step blocked on a missing required dependency must
-            # not run its before-hooks or ask the user to approve work that
-            # cannot proceed. `bound_inputs` are delivered to the handler via
-            # context; `previous_results` is exposed raw too (policy term, so a
-            # handler can read deps directly even without a declared binding).
-            previous_results = payload.get("_previous_results") or {}
-            bound_inputs, bind_status, bind_reason = _resolve_bindings(
-                step, previous_results)
-            if bind_status == "blocked":
-                span.set_attribute("executor.blocked_reason", bind_reason)
-                _log.info("executor.step_blocked",
-                          step_id=step.get("step_id"), reason=bind_reason)
-                return {"step_results": [make_result(
-                    step, status="blocked", error=bind_reason)]}
-            if bound_inputs:
-                span.set_attribute("executor.bindings_resolved", len(bound_inputs))
+        policy_result = self._evaluate_step_policy(step, request, agent, span)
+        if policy_result is not None:
+            return policy_result
 
-            before = list(agent.hooks.before_invocation)
-            after = list(agent.hooks.after_invocation)
-            is_action = self._step_is_action(step, agent)
-            span.set_attribute("executor.tier", agent.abac_tags.tier.value)
-            span.set_attribute("executor.determinism", agent.determinism_level.value)
+        # ── data-flow binding (previous_results) ─────────────────────
+        # Resolve declared bindings from upstream outputs BEFORE hooks /
+        # approval: a step blocked on a missing required dependency must not
+        # run its before-hooks or ask the user to approve work that cannot
+        # proceed. `bound_inputs` are delivered to the handler via context;
+        # `previous_results` is exposed raw too (a handler can read deps
+        # directly even without a declared binding).
+        previous_results = payload.get("_previous_results") or {}
+        bound_inputs, bind_status, bind_reason = _resolve_bindings(
+            step, previous_results)
+        if bind_status == "blocked":
+            span.set_attribute("executor.blocked_reason", bind_reason)
+            _log.info("executor.step_blocked",
+                      step_id=step.get("step_id"), reason=bind_reason)
+            return {"step_results": [make_result(
+                step, status="blocked", error=bind_reason)]}
+        if bound_inputs:
+            span.set_attribute("executor.bindings_resolved", len(bound_inputs))
 
-            # ── before-hooks ─────────────────────────────────────────────
-            # NOTE on resume: an interrupt() below makes the node restart from
-            # here, so before-hooks re-run. The built-in hooks are idempotent
-            # (pure validation) — that is a requirement for any before-hook.
-            try:
-                hook_services = {"agent": agent}
-                if self._authz_service is not None:
-                    hook_services["authz"] = self._authz_service
-                # Per-tool tier granularity (matches the action-approval gate):
-                # an action-tier AGENT may own read tools (analysis / propose)
-                # and action tools (apply). The authz re-check must evaluate the
-                # resource at the STEP's effective tier — `is_action` from
-                # `_step_is_action` — not blanket the agent tier, so a read-only
-                # propose step under an action agent is checked as READ.
-                hook_services["step_is_action"] = is_action
-                ctx = HookContext(agent_id=agent_id, phase=HookPhase.BEFORE,
-                                  step=step, request=request,
-                                  services=hook_services)
-                await self._hooks.run(before, ctx)
-            except HookError as exc:
-                return {"step_results": [make_result(
-                    step, status="failed", error=f"before-hook aborted: {exc}")]}
+        is_action = self._step_is_action(step, agent)
+        span.set_attribute("executor.tier", agent.abac_tags.tier.value)
+        span.set_attribute("executor.determinism", agent.determinism_level.value)
 
-            # ── action approval gate (interrupt) ─────────────────────────
-            if is_action:
-                decision = interrupt({
-                    "kind": "action_approval",
-                    "agent_id": agent_id,
-                    "step_id": step.get("step_id"),
-                    "parameters": dict(step.get("parameters") or {}),
-                    "message": (f"Approve action '{agent_id}'? This step "
-                                "changes ITSM state and is not auto-run."),
-                })
-                approved = bool(decision.get("approved")
-                                if isinstance(decision, dict) else decision)
-                if not approved:
-                    return {"step_results": [make_result(
-                        step, status="denied",
-                        error="action not approved by the user")]}
+        hook_fail = await self._run_before_hooks(
+            agent, agent_id, step, request, is_action)
+        if hook_fail is not None:
+            return hook_fail
 
-            # ── the step's work ──────────────────────────────────────────
-            try:
-                # Deliver dependency outputs to the handler. Only build a
-                # copy when there is something to add — no-binding steps pass
-                # the original envelope unchanged (zero behaviour change).
-                run_request = (
-                    {**request, "previous_results": previous_results,
-                     "bound_inputs": bound_inputs}
-                    if (previous_results or bound_inputs) else request)
-                result = await self._step_executor.run(step, run_request)
-            except Exception as exc:  # noqa: BLE001 — typed into a failed result
-                _log.warning("executor.step_executor_raised",
-                             agent_id=agent_id, error=str(exc))
-                result = make_result(step, status="failed",
-                                     error=f"step executor raised: {exc}")
+        if is_action:
+            denied = self._action_approval_gate(agent_id, step)
+            if denied is not None:
+                return denied
 
-            # ── after-hooks ──────────────────────────────────────────────
-            try:
-                hook_services = {"agent": agent}
-                if self._authz_service is not None:
-                    hook_services["authz"] = self._authz_service
-                ctx = HookContext(agent_id=agent_id, phase=HookPhase.AFTER,
-                                  step=step, request=request, result=result,
-                                  services=hook_services)
-                await self._hooks.run(after, ctx)
-            except HookError as exc:
-                result = make_result(step, status="failed",
-                                     error=f"after-hook aborted: {exc}")
+        result = await self._run_step_work(
+            step, request, previous_results, bound_inputs, agent_id)
+        result = await self._run_after_hooks(
+            agent, agent_id, step, request, result)
 
-            latency_ms = int((time.monotonic() - t0) * 1000)
-            span.set_attribute("executor.step_status", result.get("status", ""))
-            span.set_attribute("executor.latency_ms", latency_ms)
-            histogram("ai.agent.latency_ms", value=latency_ms, agent_id=agent_id)
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        span.set_attribute("executor.step_status", result.get("status", ""))
+        span.set_attribute("executor.latency_ms", latency_ms)
+        histogram("ai.agent.latency_ms", value=latency_ms, agent_id=agent_id)
 
-            update: dict[str, Any] = {"step_results": [result]}
-            self._append_generated_steps(step, result, update, span)
-            return update
+        update: dict[str, Any] = {"step_results": [result]}
+        self._append_generated_steps(step, result, update, span)
+        return update
+
+    async def _run_before_hooks(
+        self, agent: Any, agent_id: str, step: dict[str, Any],
+        request: dict[str, Any], is_action: bool,
+    ) -> dict[str, Any] | None:
+        """Run before-invocation hooks. Returns a failed `step_results` dict if
+        a hook aborts, else None.
+
+        NOTE on resume: an action interrupt() makes the node restart from the
+        top, so before-hooks re-run — the built-in hooks are idempotent (pure
+        validation), a requirement for any before-hook. Per-tool tier
+        granularity: an action-tier AGENT may own read tools (analysis/propose)
+        and action tools (apply); the authz re-check evaluates the resource at
+        the STEP's effective tier (`is_action`), so a read-only propose step
+        under an action agent is checked as READ."""
+        before = list(agent.hooks.before_invocation)
+        try:
+            hook_services: dict[str, Any] = {"agent": agent}
+            if self._authz_service is not None:
+                hook_services["authz"] = self._authz_service
+            hook_services["step_is_action"] = is_action
+            ctx = HookContext(agent_id=agent_id, phase=HookPhase.BEFORE,
+                              step=step, request=request,
+                              services=hook_services)
+            await self._hooks.run(before, ctx)
+        except HookError as exc:
+            return {"step_results": [make_result(
+                step, status="failed", error=f"before-hook aborted: {exc}")]}
+        return None
+
+    def _action_approval_gate(
+        self, agent_id: str, step: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Interrupt for human approval of a state-changing action. Returns a
+        `denied` step_results dict when the user declines, else None."""
+        decision = interrupt({
+            "kind": "action_approval",
+            "agent_id": agent_id,
+            "step_id": step.get("step_id"),
+            "parameters": dict(step.get("parameters") or {}),
+            "message": (f"Approve action '{agent_id}'? This step "
+                        "changes ITSM state and is not auto-run."),
+        })
+        approved = bool(decision.get("approved")
+                        if isinstance(decision, dict) else decision)
+        if not approved:
+            return {"step_results": [make_result(
+                step, status="denied",
+                error="action not approved by the user")]}
+        return None
+
+    async def _run_step_work(
+        self, step: dict[str, Any], request: dict[str, Any],
+        previous_results: dict[str, Any], bound_inputs: dict[str, Any],
+        agent_id: str,
+    ) -> dict[str, Any]:
+        """Run the step executor, delivering dependency outputs to the handler.
+        Only build a request copy when there is something to add (no-binding
+        steps pass the original envelope unchanged). A raised exception is
+        typed into a failed result, never propagated."""
+        try:
+            run_request = (
+                {**request, "previous_results": previous_results,
+                 "bound_inputs": bound_inputs}
+                if (previous_results or bound_inputs) else request)
+            return await self._step_executor.run(step, run_request)
+        except Exception as exc:  # noqa: BLE001 — typed into a failed result
+            _log.warning("executor.step_executor_raised",
+                         agent_id=agent_id, error=str(exc))
+            return make_result(step, status="failed",
+                               error=f"step executor raised: {exc}")
+
+    async def _run_after_hooks(
+        self, agent: Any, agent_id: str, step: dict[str, Any],
+        request: dict[str, Any], result: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Run after-invocation hooks. A hook abort replaces the result with a
+        failed one. Returns the (possibly replaced) result."""
+        after = list(agent.hooks.after_invocation)
+        try:
+            hook_services: dict[str, Any] = {"agent": agent}
+            if self._authz_service is not None:
+                hook_services["authz"] = self._authz_service
+            ctx = HookContext(agent_id=agent_id, phase=HookPhase.AFTER,
+                              step=step, request=request, result=result,
+                              services=hook_services)
+            await self._hooks.run(after, ctx)
+        except HookError as exc:
+            return make_result(step, status="failed",
+                               error=f"after-hook aborted: {exc}")
+        return result
 
     def _evaluate_step_policy(
         self, step: dict[str, Any], request: dict[str, Any], agent: Any, span,

@@ -455,6 +455,127 @@ async def match_catalog_stream(payload: MatchRequest, request: Request):
         media_type="application/x-ndjson")
 
 
+async def _decide_verdict(
+    *, payload: MatchRequest, r: Any, candidates: list,
+    gateway: Any, tenant_id: str, user_id: str,
+) -> tuple[str, Any, bool, float, str]:
+    """Stage-2 decision over the cosine matches. Returns
+    `(verdict, auto_pick, rerank_used, rerank_confidence, rerank_reasoning)`:
+    AUTO_PICK for a confident top-1, an LLM rerank for soft-zone queries
+    (RERANK_CHOSEN / WRONG_INTENT / …), else NO_MATCH."""
+    from oneops.use_cases.uc08_fulfillment.catalog_reranker import (
+        rerank,
+        should_rerank,
+    )
+    from oneops.use_cases.uc08_fulfillment.catalog_search import (
+        CatalogSearchError,
+    )
+    if not r.matches:
+        return "NO_MATCH", None, False, 0.0, ""
+    top1 = r.matches[0]
+    do_rerank, _ = should_rerank(top1.cosine_score)
+    if not do_rerank:
+        if top1.is_auto_pick:
+            return "AUTO_PICK", candidates[0], False, 0.0, ""
+        return "NO_MATCH", None, False, 0.0, ""
+
+    # PRODUCTION FIX: rerank on the ORIGINAL user text (description), not the
+    # LLM-cleaned title. Title normalisation strips intent signals ("How do
+    # I..." → "Installation of...") which fools the classifier into reading a
+    # how-to question as a fulfilment request. Preserve user intent at the
+    # boundary; transform only for display.
+    rerank_input = payload.sr_description or payload.sr_title
+    try:
+        rr = await rerank(
+            tenant_id=tenant_id, sr_text=rerank_input,
+            candidates=r.matches, gateway=gateway,
+            cache=_cache, user_id=user_id,
+        )
+    except CatalogSearchError as exc:
+        _metric_inc("ai.uc08.match.failed.total", 1,
+                    tenant_id=tenant_id, reason="rerank_error")
+        _log.warning("uc08.match.rerank_failed",
+                     tenant_id=tenant_id, error=str(exc)[:200])
+        raise HTTPException(502, detail="catalog rerank failed") from exc
+    verdict = "RERANK_CHOSEN" if rr.verdict == "CHOSEN" else rr.verdict
+    auto_pick = None
+    if rr.verdict == "CHOSEN" and rr.chosen_match is not None:
+        auto_pick = next(
+            (c for c in candidates if c.catalog_item_id == rr.chosen), None)
+    return verdict, auto_pick, True, rr.confidence, rr.reasoning
+
+
+async def _build_enrichment(
+    *, conn: Any, tenant_id: str, chosen_catalog_id: str,
+) -> EnrichedFields:
+    """Assemble the enrichment block for a chosen catalog item: catalog
+    metadata + derived SLA/priority + historical pattern suggestions."""
+    from datetime import datetime, timedelta
+
+    from oneops.use_cases.uc08_fulfillment.historical_suggest import (
+        suggest_for_catalog_item,
+    )
+    from oneops.use_cases.uc08_fulfillment.priority import (
+        derive_and_compute,
+    )
+
+    cat_row = await conn.fetchrow(
+        "SELECT category, owner_group, estimated_total_minutes "
+        "FROM itsm.catalog_item "
+        "WHERE tenant_id=$1 AND catalog_item_id=$2",
+        tenant_id, chosen_catalog_id,
+    )
+    cat_category = cat_row["category"] if cat_row else None
+    cat_owner_group = cat_row["owner_group"] if cat_row else None
+    cat_minutes = int(
+        cat_row["estimated_total_minutes"]) if (
+            cat_row and cat_row["estimated_total_minutes"]) else 240
+
+    sla_due = datetime.now(UTC) + timedelta(minutes=cat_minutes)
+    prio = derive_and_compute(
+        catalog_category=cat_category,
+        requested_for_is_vip=False,        # VIP lookup is a future hook
+        sla_minutes_remaining=cat_minutes,
+        explicit_urgency_signal=None,
+    )
+    hist = await suggest_for_catalog_item(
+        tenant_id=tenant_id, catalog_item_id=chosen_catalog_id, conn=conn,
+    )
+
+    def _to_hist(h: Any) -> HistoricalSuggestion:
+        return HistoricalSuggestion(
+            value=h.value,
+            evidence_count=h.evidence_count,
+            total_population=h.total_population,
+            evidence_label=h.evidence_label,
+        )
+
+    return EnrichedFields(
+        category=cat_category,
+        assignment_group_from_catalog=cat_owner_group,
+        sla_due_iso=sla_due.replace(microsecond=0).isoformat(),
+        impact=prio["impact"],
+        urgency=prio["urgency"],
+        priority_canonical=prio["priority_canonical"],
+        priority_p_letter=prio["priority_p"],
+        assigned_to=_to_hist(hist.assigned_to),
+        approved_by=_to_hist(hist.approved_by),
+        ci_id=_to_hist(hist.ci_id),
+        assignment_group_historical=_to_hist(hist.assignment_group),
+    )
+
+
+async def _collect_judge(
+    judge_task: Any,
+) -> tuple[str | None, float | None, str | None]:
+    """Await the concurrent LLM-as-judge task (if any) and unpack its
+    verdict / confidence / reasoning. Returns all-None when no judge ran."""
+    if judge_task is None:
+        return None, None, None
+    jr = await judge_task
+    return jr.verdict.value, jr.confidence, jr.reasoning
+
+
 @router.post("/match", responses={502: {"description": "Upstream error"}, 503: {"description": "Service unavailable"}})
 async def match_catalog(
     payload: MatchRequest,
@@ -476,10 +597,6 @@ async def match_catalog(
     if gateway is None:
         raise HTTPException(503, detail="LLM gateway not initialised")
 
-    from oneops.use_cases.uc08_fulfillment.catalog_reranker import (
-        rerank,
-        should_rerank,
-    )
     from oneops.use_cases.uc08_fulfillment.catalog_search import (
         CatalogSearchError,
         find_closest_catalog_items,
@@ -514,67 +631,18 @@ async def match_catalog(
             for m in r.matches
         ]
 
-        verdict = "NO_MATCH"
-        auto_pick_resp = None
-        rerank_used = False
-        rerank_conf = 0.0
-        rerank_reason = ""
+        verdict, auto_pick_resp, rerank_used, rerank_conf, rerank_reason = \
+            await _decide_verdict(
+                payload=payload, r=r, candidates=candidates,
+                gateway=gateway, tenant_id=tenant_id, user_id=user_id)
 
-        if not r.matches:
-            verdict = "NO_MATCH"
-        else:
-            top1 = r.matches[0]
-            do_rerank, _ = should_rerank(top1.cosine_score)
-            if not do_rerank and top1.is_auto_pick:
-                verdict = "AUTO_PICK"
-                auto_pick_resp = candidates[0]
-            elif do_rerank:
-                rerank_used = True
-                # PRODUCTION FIX: pass the ORIGINAL user text (description)
-                # to the reranker, not the LLM-cleaned title. Title
-                # normalisation strips intent signals ("How do I..." →
-                # "Installation of...") which fools the intent classifier
-                # into reading a how-to question as a fulfilment request.
-                # Industry pattern: preserve original user intent at the
-                # boundary, transform only for display.
-                rerank_input = payload.sr_description or payload.sr_title
-                try:
-                    rr = await rerank(
-                        tenant_id=tenant_id, sr_text=rerank_input,
-                        candidates=r.matches, gateway=gateway,
-                        cache=_cache, user_id=user_id,
-                    )
-                except CatalogSearchError as exc:
-                    _metric_inc("ai.uc08.match.failed.total", 1,
-                                tenant_id=tenant_id, reason="rerank_error")
-                    _log.warning("uc08.match.rerank_failed",
-                                 tenant_id=tenant_id, error=str(exc)[:200])
-                    raise HTTPException(502, detail="catalog rerank failed") from exc
-                verdict = (
-                    "RERANK_CHOSEN" if rr.verdict == "CHOSEN"
-                    else rr.verdict
-                )
-                rerank_conf = rr.confidence
-                rerank_reason = rr.reasoning
-                if rr.verdict == "CHOSEN" and rr.chosen_match is not None:
-                    auto_pick_resp = next(
-                        (c for c in candidates
-                         if c.catalog_item_id == rr.chosen),
-                        None,
-                    )
+        chosen_catalog_id = (
+            auto_pick_resp.catalog_item_id
+            if auto_pick_resp is not None else None)
 
-        # ── Enrichment — only when we have a concrete catalog pick ─────
-        # Auto-pick OR rerank chose one. NO_MATCH / WRONG_INTENT → null.
-        enrichment: EnrichedFields | None = None
-        enrichment_cat_id: str | None = None
-        judge_task = None
-
-        chosen_catalog_id = None
-        if auto_pick_resp is not None:
-            chosen_catalog_id = auto_pick_resp.catalog_item_id
-
-        # ── LLM-as-judge — verify the chosen catalog matches user intent
+        # ── LLM-as-judge — verify the chosen catalog matches user intent.
         # Fires concurrently with the enrichment SQL below. Never raises.
+        judge_task = None
         if chosen_catalog_id is not None:
             from oneops.use_cases.uc08_fulfillment.judge import judge_rerank
             judge_task = asyncio.create_task(judge_rerank(
@@ -586,85 +654,20 @@ async def match_catalog(
                 chosen_catalog_label=auto_pick_resp.name,
                 chosen_catalog_description=(auto_pick_resp.description or ""),
             ))
-        elif verdict == "RERANK_CHOSEN" and auto_pick_resp is None:
-            # Reranker chose, but the candidate may not be top-1 by cosine.
-            # Pull the chosen id out of the candidate list using the
-            # rerank reasoning (which we already have).
-            pass  # auto_pick_resp covers this path
 
+        # ── Enrichment — only when we have a concrete catalog pick ─────
+        # Auto-pick OR rerank chose one. NO_MATCH / WRONG_INTENT → null.
+        enrichment: EnrichedFields | None = None
+        enrichment_cat_id: str | None = None
         if chosen_catalog_id is not None:
-            from datetime import datetime, timedelta
-
-            from oneops.use_cases.uc08_fulfillment.historical_suggest import (
-                suggest_for_catalog_item,
-            )
-            from oneops.use_cases.uc08_fulfillment.priority import (
-                derive_and_compute,
-            )
-
-            # Catalog metadata: estimated_total_minutes + owner_group + category
-            cat_row = await conn.fetchrow(
-                "SELECT category, owner_group, estimated_total_minutes "
-                "FROM itsm.catalog_item "
-                "WHERE tenant_id=$1 AND catalog_item_id=$2",
-                tenant_id, chosen_catalog_id,
-            )
-            cat_category = cat_row["category"] if cat_row else None
-            cat_owner_group = cat_row["owner_group"] if cat_row else None
-            cat_minutes = int(
-                cat_row["estimated_total_minutes"]) if (
-                    cat_row and cat_row["estimated_total_minutes"]) else 240
-
-            # SLA = now() + estimated minutes
-            sla_due = datetime.now(UTC) + timedelta(minutes=cat_minutes)
-
-            # Priority matrix derivation (in-memory)
-            prio = derive_and_compute(
-                catalog_category=cat_category,
-                requested_for_is_vip=False,        # VIP lookup is a future hook
-                sla_minutes_remaining=cat_minutes,
-                explicit_urgency_signal=None,
-            )
-
-            # Historical pattern suggestions
-            hist = await suggest_for_catalog_item(
-                tenant_id=tenant_id,
-                catalog_item_id=chosen_catalog_id,
-                conn=conn,
-            )
-
-            def _to_hist(h) -> HistoricalSuggestion:
-                return HistoricalSuggestion(
-                    value=h.value,
-                    evidence_count=h.evidence_count,
-                    total_population=h.total_population,
-                    evidence_label=h.evidence_label,
-                )
-
-            enrichment = EnrichedFields(
-                category=cat_category,
-                assignment_group_from_catalog=cat_owner_group,
-                sla_due_iso=sla_due.replace(microsecond=0).isoformat(),
-                impact=prio["impact"],
-                urgency=prio["urgency"],
-                priority_canonical=prio["priority_canonical"],
-                priority_p_letter=prio["priority_p"],
-                assigned_to=_to_hist(hist.assigned_to),
-                approved_by=_to_hist(hist.approved_by),
-                ci_id=_to_hist(hist.ci_id),
-                assignment_group_historical=_to_hist(hist.assignment_group),
-            )
+            enrichment = await _build_enrichment(
+                conn=conn, tenant_id=tenant_id,
+                chosen_catalog_id=chosen_catalog_id)
             enrichment_cat_id = chosen_catalog_id
 
         # ── Collect judge verdict (concurrent with enrichment above) ───
-        judge_verdict: str | None = None
-        judge_confidence: float | None = None
-        judge_reasoning: str | None = None
-        if judge_task is not None:
-            jr = await judge_task
-            judge_verdict = jr.verdict.value
-            judge_confidence = jr.confidence
-            judge_reasoning = jr.reasoning
+        judge_verdict, judge_confidence, judge_reasoning = \
+            await _collect_judge(judge_task)
 
         _metric_inc("ai.uc08.match.total", 1,
                     tenant_id=tenant_id, verdict=verdict,

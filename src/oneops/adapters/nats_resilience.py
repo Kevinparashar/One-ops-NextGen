@@ -266,88 +266,104 @@ async def resilient_call(
             "oneops.retry.max_attempts": policy.max_attempts,
         },
     ) as span:
-        last_exc: Exception | None = None
         for attempt in range(policy.max_attempts):
-            try:
-                await cb.before_call(breaker_key)
-            except NATSUnavailableError as exc:
-                # Fail-fast path. Recorded as a breaker miss but NOT
-                # retried — pointless to retry while breaker is open.
-                span.set_attribute("oneops.retry.skipped_breaker_open", True)
-                _log.warning("nats_resilient.fail_fast_breaker_open",
-                             subject=subject, error=str(exc)[:200])
-                raise
-
-            # Fast-fail on a known-disconnected NATS client. The
-            # underlying nats-py client buffers requests during a
-            # reconnect attempt rather than raising — without this
-            # check, every attempt would block for the full per-call
-            # timeout while NATS is down. We probe the connection state
-            # and turn it into an immediate `NATSUnavailableError` so
-            # the retry policy + breaker can do their job.
-            try:
-                from oneops.adapters.nats_client import get_nats_client
-                _client = await get_nats_client()
-                if not _client.is_connected:
-                    raise NATSUnavailableError(
-                        f"NATS client is disconnected (subject {subject!r})")
-            except NATSUnavailableError as exc:
-                last_exc = exc
-                await cb.record(breaker_key, success=False)
-                if attempt < policy.max_attempts - 1:
-                    delay = policy.delay_for(attempt)
-                    _log.info(
-                        "nats_resilient.retry",
-                        subject=subject, attempt=attempt + 1,
-                        max_attempts=policy.max_attempts,
-                        delay_s=round(delay, 3),
-                        reason="client_disconnected",
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-                span.set_attribute("oneops.retry.exhausted", True)
-                raise
-
-            try:
-                result = await fn()
-            except NATSUnavailableError as exc:
-                last_exc = exc
-                await cb.record(breaker_key, success=False)
-                if attempt < policy.max_attempts - 1:
-                    delay = policy.delay_for(attempt)
-                    span.set_attribute(f"oneops.retry.attempt_{attempt}_delay_s",
-                                       round(delay, 3))
-                    _log.info(
-                        "nats_resilient.retry",
-                        subject=subject, attempt=attempt + 1,
-                        max_attempts=policy.max_attempts,
-                        delay_s=round(delay, 3), reason=str(exc)[:200],
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-                # Final attempt failed.
-                span.set_attribute("oneops.retry.exhausted", True)
-                _log.warning(
-                    "nats_resilient.exhausted",
-                    subject=subject, attempts=policy.max_attempts,
-                    error=str(exc)[:200],
-                )
-                raise
-            except Exception:
-                # Non-NATS exception → record as failure, don't retry.
-                await cb.record(breaker_key, success=False)
-                raise
-            else:
-                await cb.record(breaker_key, success=True)
-                if attempt > 0:
-                    span.set_attribute("oneops.retry.recovered_at_attempt",
-                                       attempt + 1)
+            done, result = await _run_one_attempt(
+                fn=fn, cb=cb, breaker_key=breaker_key, span=span,
+                policy=policy, attempt=attempt, subject=subject)
+            if done:
                 return result
-        # Defensive — loop above always returns or raises.
-        if last_exc is not None:
-            raise last_exc
+        # Defensive — _run_one_attempt always returns success or raises on
+        # the final attempt, so the loop never falls through here.
         raise NATSUnavailableError(
             f"resilient_call exited with no result for {subject!r}")
+
+
+async def _check_breaker(
+    cb: CircuitBreaker, breaker_key: str, span: Any, subject: str,
+) -> None:
+    """Breaker admission. On OPEN, record the skip on the span and re-raise
+    `NATSUnavailableError` — fail fast, never retry while the breaker is open."""
+    try:
+        await cb.before_call(breaker_key)
+    except NATSUnavailableError as exc:
+        span.set_attribute("oneops.retry.skipped_breaker_open", True)
+        _log.warning("nats_resilient.fail_fast_breaker_open",
+                     subject=subject, error=str(exc)[:200])
+        raise
+
+
+async def _assert_nats_connected(subject: str) -> None:
+    """Fast-fail on a known-disconnected NATS client. nats-py buffers
+    requests during a reconnect rather than raising — without this probe
+    every attempt would block for the full per-call timeout while NATS is
+    down. Turn the disconnected state into an immediate `NATSUnavailableError`
+    so the retry policy + breaker can act."""
+    from oneops.adapters.nats_client import get_nats_client
+    client = await get_nats_client()
+    if not client.is_connected:
+        raise NATSUnavailableError(
+            f"NATS client is disconnected (subject {subject!r})")
+
+
+async def _retry_or_exhaust(
+    *, cb: CircuitBreaker, breaker_key: str, span: Any, policy: RetryPolicy,
+    attempt: int, subject: str, exc: Exception, reason: str,
+    set_delay_attr: bool, warn_on_exhaust: bool,
+) -> None:
+    """Record a retryable failure, then either back off before the next
+    attempt or — on the final attempt — mark the span exhausted and re-raise
+    `exc`. Returns (slept) only when another attempt remains."""
+    await cb.record(breaker_key, success=False)
+    if attempt >= policy.max_attempts - 1:
+        span.set_attribute("oneops.retry.exhausted", True)
+        if warn_on_exhaust:
+            _log.warning("nats_resilient.exhausted", subject=subject,
+                         attempts=policy.max_attempts, error=str(exc)[:200])
+        raise exc
+    delay = policy.delay_for(attempt)
+    if set_delay_attr:
+        span.set_attribute(f"oneops.retry.attempt_{attempt}_delay_s",
+                           round(delay, 3))
+    _log.info("nats_resilient.retry", subject=subject, attempt=attempt + 1,
+              max_attempts=policy.max_attempts, delay_s=round(delay, 3),
+              reason=reason)
+    await asyncio.sleep(delay)
+
+
+async def _run_one_attempt(
+    *, fn: Callable[[], Awaitable[Any]], cb: CircuitBreaker, breaker_key: str,
+    span: Any, policy: RetryPolicy, attempt: int, subject: str,
+) -> tuple[bool, Any]:
+    """One attempt of the resilient call. Returns `(True, result)` on success
+    or `(False, None)` to signal the caller should retry (failure already
+    recorded and backoff slept). Raises on a fatal/non-retryable error or when
+    the retry budget is exhausted."""
+    await _check_breaker(cb, breaker_key, span, subject)
+    try:
+        await _assert_nats_connected(subject)
+    except NATSUnavailableError as exc:
+        await _retry_or_exhaust(
+            cb=cb, breaker_key=breaker_key, span=span, policy=policy,
+            attempt=attempt, subject=subject, exc=exc,
+            reason="client_disconnected", set_delay_attr=False,
+            warn_on_exhaust=False)
+        return False, None
+    try:
+        result = await fn()
+    except NATSUnavailableError as exc:
+        await _retry_or_exhaust(
+            cb=cb, breaker_key=breaker_key, span=span, policy=policy,
+            attempt=attempt, subject=subject, exc=exc,
+            reason=str(exc)[:200], set_delay_attr=True, warn_on_exhaust=True)
+        return False, None
+    except Exception:
+        # Non-NATS exception → record as failure, don't retry.
+        await cb.record(breaker_key, success=False)
+        raise
+    await cb.record(breaker_key, success=True)
+    if attempt > 0:
+        span.set_attribute("oneops.retry.recovered_at_attempt", attempt + 1)
+    return True, result
 
 
 __all__ = [

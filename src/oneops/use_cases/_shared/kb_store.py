@@ -45,6 +45,27 @@ def _tokens(text: str) -> set[str]:
     return set(_WORD.findall((text or "").lower()))
 
 
+def _parse_pgvector_embedding(raw: Any) -> list[float] | None:
+    """Coerce a stored embedding cell to `list[float]`. pgvector returns a
+    string like '[0.1,0.2,...]' via asyncpg by default; a future asyncpg may
+    return a list/tuple already. Returns None when the value can't be parsed
+    (caller skips that id)."""
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s.startswith("[") and s.endswith("]"):
+            s = s[1:-1]
+        try:
+            return [float(x) for x in s.split(",")]
+        except ValueError:
+            return None
+    if isinstance(raw, (list, tuple)):
+        try:
+            return [float(x) for x in raw]
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 @runtime_checkable
 class KbStore(Protocol):
     """Read access to published knowledge-base articles, tenant + audience
@@ -544,26 +565,9 @@ class PostgresKbStore:
             span.set_attribute(_ATTR_ROW_COUNT, len(rows))
             out: dict[str, list[float]] = {}
             for row in rows:
-                kb_id = row["kb_id"]
-                raw = row["embedding"]
-                # pgvector returns embeddings as a string like
-                # "[0.1,0.2,...]" via asyncpg by default. Parse it
-                # into list[float]. If a future asyncpg version
-                # returns a list already, the isinstance branch picks
-                # that up.
-                if isinstance(raw, str):
-                    s = raw.strip()
-                    if s.startswith("[") and s.endswith("]"):
-                        s = s[1:-1]
-                    try:
-                        out[kb_id] = [float(x) for x in s.split(",")]
-                    except ValueError:
-                        continue
-                elif isinstance(raw, (list, tuple)):
-                    try:
-                        out[kb_id] = [float(x) for x in raw]
-                    except (ValueError, TypeError):
-                        continue
+                parsed = _parse_pgvector_embedding(row["embedding"])
+                if parsed is not None:
+                    out[row["kb_id"]] = parsed
             return out
 
     async def exists(

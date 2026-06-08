@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import math
 import os
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -198,8 +199,6 @@ def build_relevance_scorer(gateway: Any, *, model: str,
     "scores unknown, fall through with whatever the retriever already
     ranked" so a gateway outage cannot block legitimate answers.
     """
-    import math
-
     async def _score(
         query: str, doc_texts: list[str], *,
         tenant_id: str, user_id: str = "",
@@ -219,20 +218,26 @@ def build_relevance_scorer(gateway: Any, *, model: str,
         q, docs = vecs[0], vecs[1:]
         if not q:
             return [0.0] * len(doc_texts)
-        qn = math.sqrt(sum(x * x for x in q)) or 1.0
-        scores: list[float] = []
-        for d in docs:
-            if not d or len(d) != len(q):
-                scores.append(0.0)
-                continue
-            dn = math.sqrt(sum(x * x for x in d)) or 1.0
-            cosine = sum(x * y for x, y in zip(q, d, strict=False)) / (qn * dn)
-            if cosine > 1.0: cosine = 1.0
-            if cosine < -1.0: cosine = -1.0
-            scores.append(float(cosine))
-        return scores
+        return _cosine_scores(q, docs)
 
     return _score
+
+
+def _cosine_scores(
+    q: list[float], docs: list[list[float]],
+) -> list[float]:
+    """Cosine similarity of `q` against each doc vector, clamped to [-1, 1].
+    A doc with the wrong dimensionality (or empty) scores 0.0."""
+    qn = math.sqrt(sum(x * x for x in q)) or 1.0
+    scores: list[float] = []
+    for d in docs:
+        if not d or len(d) != len(q):
+            scores.append(0.0)
+            continue
+        dn = math.sqrt(sum(x * x for x in d)) or 1.0
+        cosine = sum(x * y for x, y in zip(q, d, strict=False)) / (qn * dn)
+        scores.append(float(max(-1.0, min(1.0, cosine))))
+    return scores
 
 
 # Process-wide scorer seam — same shape as the embed fn.

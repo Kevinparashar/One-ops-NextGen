@@ -263,77 +263,91 @@ def assemble_plan(
 
         # Translate sub-query-level data-flow bindings into step-level
         # ParameterBindings on this route's PRIMARY step (the terminal agent,
-        # after its prereqs). Source = the terminal step of the referenced
-        # upstream sub-query. This is a structural mapping — no keywords, no
-        # field catalogs; the (from_sq, from_field, to_param) triples were
-        # declared by the planner LLM, and the executor resolves them with a
-        # generic dotted-path lookup at dispatch time.
+        # after its prereqs); then materialise this route's steps.
         primary_agent = needed[-1] if needed else None
-        prim_bindings: list[ParameterBinding] = []
-        prim_dep_types: list[tuple[str, str]] = []
-        prim_extra_deps: list[str] = []
-        for from_sq, from_field, to_param in route.bindings:
-            up_steps = steps_by_subquery.get(from_sq)
-            if not up_steps:
-                # Binding names a sub-query that isn't an upstream of this one
-                # — a planner mistake. Drop it (loudly, never silent) rather
-                # than emit an unresolvable plan.
-                _log.warning("router.binding_dropped_unknown_source",
-                             route=route.sub_query_id, from_sq=from_sq)
-                continue
-            # Output-field contract — DYNAMIC-FIELD SAFE. Producer fields are
-            # dynamic (create/update/delete/rename at any time), so we do NOT
-            # hard-drop an enrichment binding against a static declared list:
-            # planner bindings are optional (`required=False`), so the RUNTIME
-            # resolver decides against the producer's ACTUAL output — resolve if
-            # the field exists now, omit gracefully if it was renamed/removed.
-            # A static plan-time gate would wrongly drop fields that exist at
-            # runtime. We only consult the declared surface as a soft signal
-            # (logged) — never a drop — keeping the binding alive for the
-            # dynamic runtime check.
-            declared = _producer_output_fields(
-                registry, terminal_agent_by_subquery.get(from_sq, ""))
-            if declared and from_field not in declared:
-                _log.info("router.binding_field_not_in_declared_surface",
-                          route=route.sub_query_id, from_sq=from_sq,
-                          from_field=from_field, note="kept; runtime resolves dynamically")
-            from_step = up_steps[-1]
-            # Planner-emitted bindings are ENRICHMENT, not hard requirements:
-            # the dependent sub-query already carries the inlined entity in its
-            # text (Inlining rule), so a missing/unresolved value must degrade to
-            # that inline query, never block. `required=False` makes the executor
-            # omit-and-proceed instead of emitting a `blocked` step.
-            prim_bindings.append(ParameterBinding(
-                from_step=from_step, from_field=from_field,
-                to_param=to_param, required=False))
-            # Soft ordering: the bound value is best-effort; a failed/blocked
-            # upstream must not block this step (it still has its inline query).
-            prim_dep_types.append((from_step, "soft"))
-            prim_extra_deps.append(from_step)
-
-        for agent_id in needed:
-            agent = registry.agents.get(agent_id)
-            params = route.parameters_by_agent.get(agent_id, {})
-            dep_steps = [local_step_id[d] for d in agent.depends_on] + upstream
-            is_primary = agent_id == primary_agent
-            if is_primary and prim_extra_deps:
-                # A bound dependency implies an ordering edge — add any that the
-                # registry/sub-query deps didn't already cover, so the source
-                # has a result before this step resolves its bindings.
-                dep_steps = dep_steps + [d for d in prim_extra_deps
-                                         if d not in dep_steps]
-            steps.append(PlanStep(
-                step_id=local_step_id[agent_id],
-                agent_id=agent_id,
-                parameters=tuple(sorted(params.items())),
-                depends_on=tuple(dep_steps),
-                parameter_bindings=tuple(prim_bindings) if is_primary else (),
-                dependency_types=tuple(prim_dep_types) if is_primary else (),
-            ))
+        prim_bindings, prim_dep_types, prim_extra_deps = _resolve_route_bindings(
+            route, registry, steps_by_subquery, terminal_agent_by_subquery)
+        steps.extend(_build_route_steps(
+            route, needed=needed, primary_agent=primary_agent,
+            local_step_id=local_step_id, upstream=upstream, registry=registry,
+            prim_bindings=prim_bindings, prim_dep_types=prim_dep_types,
+            prim_extra_deps=prim_extra_deps))
         steps_by_subquery[route.sub_query_id] = list(local_step_id.values())
         terminal_agent_by_subquery[route.sub_query_id] = primary_agent or ""
 
     return RoutePlan(steps=tuple(steps))
+
+
+def _resolve_route_bindings(
+    route: SubQueryRoute, registry: RegistryService,
+    steps_by_subquery: dict[str, list[str]],
+    terminal_agent_by_subquery: dict[str, str],
+) -> tuple[list[ParameterBinding], list[tuple[str, str]], list[str]]:
+    """Translate a route's sub-query-level data-flow bindings into step-level
+    `ParameterBinding`s on its primary step. Source = the terminal step of the
+    referenced upstream sub-query — a structural (from_sq, from_field,
+    to_param) mapping the executor resolves by dotted-path lookup at dispatch.
+
+    Returns (bindings, dependency_types, extra_dep_steps). A binding naming an
+    unknown upstream is dropped loudly. The declared output surface is only a
+    soft (logged) signal — never a plan-time drop — because producer fields are
+    dynamic; the runtime resolver decides against the producer's ACTUAL output.
+    Bindings are ENRICHMENT (`required=False`): the dependent sub-query already
+    carries the inlined entity in its text, so an unresolved value degrades to
+    that inline query (soft ordering), never blocks."""
+    prim_bindings: list[ParameterBinding] = []
+    prim_dep_types: list[tuple[str, str]] = []
+    prim_extra_deps: list[str] = []
+    for from_sq, from_field, to_param in route.bindings:
+        up_steps = steps_by_subquery.get(from_sq)
+        if not up_steps:
+            _log.warning("router.binding_dropped_unknown_source",
+                         route=route.sub_query_id, from_sq=from_sq)
+            continue
+        declared = _producer_output_fields(
+            registry, terminal_agent_by_subquery.get(from_sq, ""))
+        if declared and from_field not in declared:
+            _log.info("router.binding_field_not_in_declared_surface",
+                      route=route.sub_query_id, from_sq=from_sq,
+                      from_field=from_field,
+                      note="kept; runtime resolves dynamically")
+        from_step = up_steps[-1]
+        prim_bindings.append(ParameterBinding(
+            from_step=from_step, from_field=from_field,
+            to_param=to_param, required=False))
+        prim_dep_types.append((from_step, "soft"))
+        prim_extra_deps.append(from_step)
+    return prim_bindings, prim_dep_types, prim_extra_deps
+
+
+def _build_route_steps(
+    route: SubQueryRoute, *, needed: list[str], primary_agent: str | None,
+    local_step_id: dict[str, str], upstream: list[str],
+    registry: RegistryService, prim_bindings: list[ParameterBinding],
+    prim_dep_types: list[tuple[str, str]], prim_extra_deps: list[str],
+) -> list[PlanStep]:
+    """Materialise the `PlanStep`s for one route. Each step depends on its
+    registry prereqs + every upstream-sub-query step; the primary step also
+    carries the parameter bindings and a soft ordering edge to each bound
+    source (so the source resolves before this step reads it)."""
+    out: list[PlanStep] = []
+    for agent_id in needed:
+        agent = registry.agents.get(agent_id)
+        params = route.parameters_by_agent.get(agent_id, {})
+        dep_steps = [local_step_id[d] for d in agent.depends_on] + upstream
+        is_primary = agent_id == primary_agent
+        if is_primary and prim_extra_deps:
+            dep_steps = dep_steps + [d for d in prim_extra_deps
+                                     if d not in dep_steps]
+        out.append(PlanStep(
+            step_id=local_step_id[agent_id],
+            agent_id=agent_id,
+            parameters=tuple(sorted(params.items())),
+            depends_on=tuple(dep_steps),
+            parameter_bindings=tuple(prim_bindings) if is_primary else (),
+            dependency_types=tuple(prim_dep_types) if is_primary else (),
+        ))
+    return out
 
 
 __all__ = [

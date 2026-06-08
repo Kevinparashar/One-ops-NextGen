@@ -320,15 +320,9 @@ class HandlerStepExecutor:
                        f"tool_refs missing or none satisfies the step "
                        f"parameter shape"))
 
-        try:
-            handler = self._resolver.resolve(tool.handler_ref)
-        except ToolHandlerError as exc:
-            return make_result(step, status="failed",
-                               error=f"handler unresolvable: {exc}")
-        except Exception as exc:                          # noqa: BLE001 — boundary
-            return make_result(step, status="failed",
-                               error=f"handler resolver raised "
-                                     f"{type(exc).__name__}: {exc}")
+        handler, handler_err = self._resolve_handler(tool, step)
+        if handler_err is not None:
+            return handler_err
 
         timeout_s = (tool.timeout_ms / 1000.0) if tool.timeout_ms else self._default_timeout_s
         arguments = dict(step.get("parameters") or {})
@@ -355,6 +349,35 @@ class HandlerStepExecutor:
             "action": _tool_action(tool),
         })
 
+        return await self._invoke_handler(
+            handler=handler, arguments=arguments, context=context, step=step,
+            rid=rid, agent_id=agent_id, tool_id=tool_id, timeout_s=timeout_s)
+
+    def _resolve_handler(
+        self, tool: Any, step: dict[str, Any],
+    ) -> tuple[Any, dict[str, Any] | None]:
+        """Resolve a tool's handler callable. Returns `(handler, None)` on
+        success, or `(None, failed_result)` when the handler ref is
+        unresolvable or the resolver raises."""
+        try:
+            return self._resolver.resolve(tool.handler_ref), None
+        except ToolHandlerError as exc:
+            return None, make_result(step, status="failed",
+                                     error=f"handler unresolvable: {exc}")
+        except Exception as exc:                          # noqa: BLE001 — boundary
+            return None, make_result(
+                step, status="failed",
+                error=f"handler resolver raised {type(exc).__name__}: {exc}")
+
+    async def _invoke_handler(
+        self, *, handler: Any, arguments: dict[str, Any],
+        context: dict[str, Any], step: dict[str, Any], rid: str,
+        agent_id: str, tool_id: str, timeout_s: float,
+    ) -> dict[str, Any]:
+        """Call the handler inside a `handler_call` span with a hard timeout,
+        emitting the started marker + Langfuse I/O + the terminal `tool_done`
+        event. Timeouts and raises are typed into a failed result via
+        `_handler_error_result`."""
         with _tracer.start_as_current_span(
             "executor.step.handler_call",
             attributes={

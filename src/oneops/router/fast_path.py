@@ -164,6 +164,28 @@ def _derive_field(*, target: str, source_field: str, source_value: Any) -> Any:
     return fn(source_value)
 
 
+def _resolve_field_value(
+    field: FastPathInputField, request: FastPathRequest,
+) -> tuple[str, Any]:
+    """Resolve one declared input field against the request. Returns
+    `(outcome, value)` where outcome is:
+      * "set"     — supplied (or auto-derived); `value` is the coerced result
+      * "missing" — required but not supplied and not derivable
+      * "skip"    — optional and not supplied
+    Empty-string and None both mean 'not supplied'."""
+    value = request.inputs.get(field.name)
+    if value is not None and not (isinstance(value, str) and not value.strip()):
+        return "set", _coerce(value, field=field)
+    if field.auto_derive_from:
+        derived = _derive_field(
+            target=field.name,
+            source_field=field.auto_derive_from,
+            source_value=request.inputs.get(field.auto_derive_from))
+        if derived is not None:
+            return "set", _coerce(derived, field=field)
+    return ("missing", None) if field.required else ("skip", None)
+
+
 # ── Dispatcher ──────────────────────────────────────────────────────────
 
 
@@ -200,20 +222,11 @@ class FastPathDispatcher:
         params: dict[str, Any] = {}
         missing: list[str] = []
         for field in spec.input_fields:
-            value = request.inputs.get(field.name)
-            if value is None or (isinstance(value, str) and not value.strip()):
-                if field.auto_derive_from:
-                    derived = _derive_field(
-                        target=field.name,
-                        source_field=field.auto_derive_from,
-                        source_value=request.inputs.get(field.auto_derive_from))
-                    if derived is not None:
-                        params[field.name] = _coerce(derived, field=field)
-                        continue
-                if field.required:
-                    missing.append(field.name)
-                continue
-            params[field.name] = _coerce(value, field=field)
+            outcome, value = _resolve_field_value(field, request)
+            if outcome == "set":
+                params[field.name] = value
+            elif outcome == "missing":
+                missing.append(field.name)
         if missing:
             raise FastPathError(
                 f"use case {uc_id!r} fast-path requires fields: "

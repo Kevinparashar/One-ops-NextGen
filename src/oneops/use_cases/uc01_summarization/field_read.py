@@ -501,75 +501,78 @@ class LlmFieldReadExtractor:
                 response_format=ResponseFormat.JSON,
                 request_id=""))
             doc = json.loads(response.content)
-            raw_labels = doc.get("labels") or []
-            raw_via = doc.get("via_link") or ""
             _log.info("uc01.field_read.llm_returned",
                       user_message=user_message[:100],
-                      raw_labels=raw_labels,
-                      via_link=raw_via)
-            if not isinstance(raw_labels, list):
-                raw_labels = []
-            # Carry the LLM's via_link choice through to the handler
-            # VERBATIM. We tag it with `via_link_known` so the handler
-            # can distinguish three cases:
-            #   1. via_link present + in available_labels → real link
-            #      on this focus → do 2-hop.
-            #   2. via_link present + NOT in available_labels → user
-            #      asked for a link this focus type doesn't have →
-            #      surface a clear mismatch message ("INC0001030 has
-            #      no Related Problem"). NEVER silently fall through
-            #      to single-hop or summary.
-            #   3. via_link absent → normal single-hop or summary.
-            via_link_raw = ""
-            via_link_known = False
-            if isinstance(raw_via, str) and raw_via.strip():
-                via_link_raw = raw_via.strip()
-                # Defence-in-depth: via_link must be a FIELD LABEL on the
-                # focus record, never a canonical record id. Reject ids
-                # the LLM may have leaked into this slot (e.g. "INC0001001"
-                # / "PBM0003001"). 2026-05-27: spotted the LLM returning
-                # the focus-id as via_link when the rewriter appended
-                # "of INC0001001" to a bare "priority" message.
-                import re as _re
-                if _re.fullmatch(r"[A-Z]{2,6}\d{4,}", via_link_raw):
-                    _log.info(
-                        "uc01.field_read.via_link_id_rejected",
-                        via_link=via_link_raw,
-                        reason="canonical-id-shape not a link label")
-                    via_link_raw = ""
-                via_link_known = (via_link_raw != "" and
-                                  via_link_raw in set(available_labels))
-                if not via_link_known:
-                    _log.info("uc01.field_read.via_link_unknown",
-                              via_link=via_link_raw,
-                              available=list(available_labels))
-            if via_link_raw:
-                # via_link set (known OR unknown): pass labels through
-                # verbatim — they target the LINKED record's label set,
-                # which we cannot validate here.
-                labels = tuple(
-                    str(x) for x in raw_labels
-                    if isinstance(x, str) and x.strip())
-            else:
-                allowed = set(available_labels)
-                seen: set[str] = set()
-                kept: list[str] = []
-                for item in raw_labels:
-                    if not isinstance(item, str):
-                        continue
-                    if item in allowed and item not in seen:
-                        seen.add(item)
-                        kept.append(item)
-                labels = tuple(kept)
-            return FieldReadIntent(
-                labels=labels,
-                via_link=via_link_raw,
-                via_link_known=via_link_known,
-            )
+                      raw_labels=doc.get("labels") or [],
+                      via_link=doc.get("via_link") or "")
+            return _parse_field_read_response(doc, available_labels)
         except (LLMGatewayError, ValueError, KeyError, TypeError) as exc:
             _log.warning("uc01.field_read.extract_failed",
                          error=str(exc)[:200])
             return FieldReadIntent()
+
+
+def _resolve_via_link(
+    raw_via: Any, available_labels: list[str],
+) -> tuple[str, bool]:
+    """Resolve the LLM's `via_link` choice to `(via_link, via_link_known)`.
+
+    Defence-in-depth: via_link must be a FIELD LABEL on the focus record,
+    never a canonical record id — reject id-shaped values the LLM may have
+    leaked into this slot (2026-05-27: focus-id returned as via_link after the
+    rewriter appended "of INC0001001" to a bare "priority"). `via_link_known`
+    flags whether the label exists on the focus, so the handler can tell a
+    real link from a not-on-this-record mismatch."""
+    if not (isinstance(raw_via, str) and raw_via.strip()):
+        return "", False
+    via_link_raw = raw_via.strip()
+    if re.fullmatch(r"[A-Z]{2,6}\d{4,}", via_link_raw):
+        _log.info("uc01.field_read.via_link_id_rejected",
+                  via_link=via_link_raw,
+                  reason="canonical-id-shape not a link label")
+        return "", False
+    via_link_known = via_link_raw in set(available_labels)
+    if not via_link_known:
+        _log.info("uc01.field_read.via_link_unknown",
+                  via_link=via_link_raw, available=list(available_labels))
+    return via_link_raw, via_link_known
+
+
+def _filter_known_labels(
+    raw_labels: list, available_labels: list[str],
+) -> tuple[str, ...]:
+    """Keep only string labels that exist on the focus record, deduped in
+    first-seen order (no via_link → labels target THIS record's label set)."""
+    allowed = set(available_labels)
+    seen: set[str] = set()
+    kept: list[str] = []
+    for item in raw_labels:
+        if isinstance(item, str) and item in allowed and item not in seen:
+            seen.add(item)
+            kept.append(item)
+    return tuple(kept)
+
+
+def _parse_field_read_response(
+    doc: dict[str, Any], available_labels: list[str],
+) -> FieldReadIntent:
+    """Turn the LLM's JSON into a `FieldReadIntent`. When a via_link is set,
+    labels target the LINKED record's label set (passed through verbatim —
+    we can't validate them here); otherwise they are filtered to the focus
+    record's known labels. The three via_link cases (real link / not-on-this-
+    record / absent) are distinguished by `via_link` + `via_link_known`."""
+    raw_labels = doc.get("labels") or []
+    raw_via = doc.get("via_link") or ""
+    if not isinstance(raw_labels, list):
+        raw_labels = []
+    via_link_raw, via_link_known = _resolve_via_link(raw_via, available_labels)
+    if via_link_raw:
+        labels = tuple(
+            str(x) for x in raw_labels if isinstance(x, str) and x.strip())
+    else:
+        labels = _filter_known_labels(raw_labels, available_labels)
+    return FieldReadIntent(
+        labels=labels, via_link=via_link_raw, via_link_known=via_link_known)
 
 
 async def extract_requested_fields(
