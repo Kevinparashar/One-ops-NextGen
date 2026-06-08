@@ -27,7 +27,8 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
-from routing_eval100 import DATASET as _ALL, NONE, _s, _verdict  # noqa: E402
+from routing_eval100 import DATASET as _ALL  # noqa: E402
+from routing_eval100 import NONE, _s, _verdict
 
 DATASET = [(q, e, c) for (q, e, c) in _ALL if c not in ("uc05", "uc08")]
 
@@ -67,21 +68,30 @@ def _run_one(arg: tuple) -> tuple:
         return (q, exp, cat, set(), str(e)[:140])
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--workers", type=int, default=10)
-    args = ap.parse_args()
+def _check_server() -> int | None:
+    """Return a non-zero exit code if the server is unreachable, else None."""
     try:
         urllib.request.urlopen(  # noqa: S310
             urllib.request.Request(BASE + "/", method="GET"), timeout=5)
     except Exception as exc:  # noqa: BLE001
         print(f"✗ server unreachable at {BASE} ({exc})")
         return 2
+    return None
 
-    with ThreadPoolExecutor(max_workers=args.workers) as ex:
-        results = list(ex.map(_run_one,
-                              [(i, q, e, c) for i, (q, e, c) in enumerate(DATASET)]))
 
+def _format_misroute(
+    q: str, exp: object, cat: str, chosen: set, err: str | None,
+) -> str:
+    """One mis-route line: expected vs got (got = ERROR text / chosen set / none)."""
+    exp_l = (_s("+".join(sorted(exp))) if isinstance(exp, (set, list, tuple))
+             else _s(exp) if exp != NONE else "none")
+    got_l = ("ERROR:" + err) if err else ("+".join(sorted(_s(a) for a in chosen)) or "none")
+    return f"  ✗ {q!r}\n      want {exp_l}  got {got_l}  [{cat}]"
+
+
+def _summarize(results: list) -> int:
+    """Fold per-query results into overall + by-category accuracy, print the
+    report, and return the exit code (0 iff every query routed correctly)."""
     by_cat: dict[str, list[int]] = defaultdict(lambda: [0, 0])
     ok_total = 0
     misroutes: list[str] = []
@@ -91,12 +101,9 @@ def main() -> int:
         by_cat[cat][0] += int(ok)
         ok_total += int(ok)
         if not ok:
-            exp_l = (_s("+".join(sorted(exp))) if isinstance(exp, (set, list, tuple))
-                     else _s(exp) if exp != NONE else "none")
-            got_l = ("ERROR:" + err) if err else ("+".join(sorted(_s(a) for a in chosen)) or "none")
-            misroutes.append(f"  ✗ {q!r}\n      want {exp_l}  got {got_l}  [{cat}]")
+            misroutes.append(_format_misroute(q, exp, cat, chosen, err))
 
-    n = len(DATASET)
+    n = len(results)
     print(f"=== FULL-PIPELINE routing via /api/chat — {n} chat-routable UNSEEN queries ===\n")
     print(f"OVERALL: {ok_total}/{n} = {ok_total/n*100:.1f}%\n")
     print("BY CATEGORY:")
@@ -107,6 +114,19 @@ def main() -> int:
         print(f"\nMISROUTES ({len(misroutes)}):")
         print("\n".join(misroutes))
     return 0 if ok_total == n else 1
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--workers", type=int, default=10)
+    args = ap.parse_args()
+    rc = _check_server()
+    if rc is not None:
+        return rc
+    with ThreadPoolExecutor(max_workers=args.workers) as ex:
+        results = list(ex.map(_run_one,
+                              [(i, q, e, c) for i, (q, e, c) in enumerate(DATASET)]))
+    return _summarize(results)
 
 
 if __name__ == "__main__":

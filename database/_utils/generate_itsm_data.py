@@ -320,6 +320,27 @@ def gen_changes(rows: list[dict], users: list[dict], cis: list[dict],
     return rows
 
 
+def _choice_or_none(seq: list):
+    """`random.choice(seq)` when `seq` is non-empty, else None. Same RNG call
+    sequence as the inline `random.choice(seq) if seq else None`."""
+    return random.choice(seq) if seq else None
+
+
+def _maybe(seq: list, prob: float):
+    """`random.choice(seq)` with probability `prob` (and non-empty `seq`),
+    else None. Preserves the inline short-circuit order: the `random.random()`
+    draw only happens when `seq` is non-empty."""
+    return random.choice(seq) if seq and random.random() < prob else None
+
+
+def _sample_or_empty(seq: list, lo: int, hi: int) -> list:
+    """A random-size `random.sample` of `seq` (size in [lo, hi], capped at
+    len), else []. Matches the inline `random.sample(seq, min(len(seq),
+    random.randint(lo, hi))) if seq else []` — randint drawn only when
+    non-empty."""
+    return random.sample(seq, min(len(seq), random.randint(lo, hi))) if seq else []
+
+
 def gen_incidents(rows: list[dict], users: list[dict], cis: list[dict],
                   problems: list[dict], changes: list[dict]) -> list[dict]:
     n = next_numeric(rows, "incident_id")
@@ -335,7 +356,7 @@ def gen_incidents(rows: list[dict], users: list[dict], cis: list[dict],
         dt = base_dt()
         status = random.choice(["open", "in_progress", "resolved"])
         prio = random.choice(["P1", "P2", "P3", "P4"])
-        notes = [{"note_id": f"WN-{n+i}-{j}", "author": random.choice(users_t) if users_t else None,
+        notes = [{"note_id": f"WN-{n+i}-{j}", "author": _choice_or_none(users_t),
                   "author_role": "agent", "is_public": False,
                   "timestamp": iso(dt + timedelta(hours=j + 1)),
                   "text": f"Investigation update {j + 1}: continuing triage on the {c} issue."}
@@ -347,13 +368,13 @@ def gen_incidents(rows: list[dict], users: list[dict], cis: list[dict],
             "impact": random.choice(["low", "medium", "high"]),
             "urgency": random.choice(["low", "medium", "high"]),
             "category": c, "subcategory": subcat, "service_name": svc,
-            "reported_by": random.choice(users_t) if users_t else None,
-            "assigned_to": random.choice(users_t) if users_t else None,
+            "reported_by": _choice_or_none(users_t),
+            "assigned_to": _choice_or_none(users_t),
             "assignment_group": random.choice(TENANT_META[t]["groups"]),
-            "ci_id": random.choice(cis_t) if cis_t else None,
-            "linked_ci_ids": random.sample(cis_t, min(len(cis_t), random.randint(1, 2))) if cis_t else [],
-            "related_problem": random.choice(probs_t) if probs_t and random.random() < 0.35 else None,
-            "related_change": random.choice(chgs_t) if chgs_t and random.random() < 0.2 else None,
+            "ci_id": _choice_or_none(cis_t),
+            "linked_ci_ids": _sample_or_empty(cis_t, 1, 2),
+            "related_problem": _maybe(probs_t, 0.35),
+            "related_change": _maybe(chgs_t, 0.2),
             "attachments": [], "work_notes": notes, "comments": [],
             "sla_due": iso(dt + timedelta(days=2)),
             "sla_breached": random.random() < 0.15,
@@ -383,13 +404,13 @@ def gen_requests(rows: list[dict], users: list[dict], cis: list[dict],
             "stage": random.choice(["approval", "fulfillment", "procurement", "closed"]),
             "priority": random.choice(["P2", "P3", "P4"]),
             "category": random.choice(CATEGORIES + ["hardware", "software", "access", "onboarding"]),
-            "catalog_item_id": random.choice(cat_t) if cat_t and random.random() < 0.6 else None,
-            "requested_for": random.choice(users_t) if users_t else None,
-            "requested_by": random.choice(users_t) if users_t else None,
+            "catalog_item_id": _maybe(cat_t, 0.6),
+            "requested_for": _choice_or_none(users_t),
+            "requested_by": _choice_or_none(users_t),
             "approved_by": random.sample(users_t, min(len(users_t), 1)) if users_t else [],
-            "assigned_to": random.choice(users_t) if users_t else None,
+            "assigned_to": _choice_or_none(users_t),
             "assignment_group": random.choice(TENANT_META[t]["groups"]),
-            "ci_id": random.choice(cis_t) if cis_t and random.random() < 0.4 else None,
+            "ci_id": _maybe(cis_t, 0.4),
             "sla_due": iso(dt + timedelta(days=3)), "sla_breached": random.random() < 0.12,
             "comments": [], "created_at": iso(dt),
             "updated_at": iso(dt + timedelta(hours=random.randint(1, 60))),
@@ -487,48 +508,76 @@ def backfill(problems, incidents, changes, kb):
             a["related_incidents"] = sorted(random.sample(pool, k))
 
 
-def validate(tables: dict[str, list[dict]]) -> None:
-    users = {(r["tenant_id"], r["user_id"]) for r in tables["sys_user"]}
-    cis = {(r["tenant_id"], r["ci_id"]) for r in tables["cmdb_ci"]}
-    probs = {(r["tenant_id"], r["problem_id"]) for r in tables["problem"]}
-    chgs = {(r["tenant_id"], r["change_id"]) for r in tables["change"]}
-    incs = {(r["tenant_id"], r["incident_id"]) for r in tables["incident"]}
-    cats = {(r["tenant_id"], r["catalog_item_id"]) for r in tables["catalog_item"]}
-    errors: list[str] = []
+def _chk_ref(errors: list[str], value, valid: set, tenant: str, msg: str) -> None:
+    """Record `msg` when `value` is set but its (tenant, value) key is not a
+    known reference. A falsy `value` (optional field absent) is a no-op."""
+    if value and (tenant, value) not in valid:
+        errors.append(msg)
 
-    def chk(cond, msg):
-        if not cond:
-            errors.append(msg)
 
-    for i in tables["incident"]:
+def _ref_key_sets(tables: dict[str, list[dict]]) -> dict[str, set]:
+    """(tenant, id) key sets for every table that can be referenced."""
+    return {
+        "users": {(r["tenant_id"], r["user_id"]) for r in tables["sys_user"]},
+        "cis": {(r["tenant_id"], r["ci_id"]) for r in tables["cmdb_ci"]},
+        "probs": {(r["tenant_id"], r["problem_id"]) for r in tables["problem"]},
+        "chgs": {(r["tenant_id"], r["change_id"]) for r in tables["change"]},
+        "incs": {(r["tenant_id"], r["incident_id"]) for r in tables["incident"]},
+        "cats": {(r["tenant_id"], r["catalog_item_id"]) for r in tables["catalog_item"]},
+    }
+
+
+def _validate_incidents(incidents: list[dict], errors: list[str], keys: dict[str, set]) -> None:
+    for i in incidents:
         t = i["tenant_id"]
         for f in ("reported_by", "assigned_to"):
-            if i.get(f):
-                chk((t, i[f]) in users, f"incident {i['incident_id']}.{f}={i[f]} dangling")
-        if i.get("ci_id"):
-            chk((t, i["ci_id"]) in cis, f"incident {i['incident_id']}.ci_id dangling")
-        if i.get("related_problem"):
-            chk((t, i["related_problem"]) in probs, f"incident {i['incident_id']}.related_problem dangling")
-        if i.get("related_change"):
-            chk((t, i["related_change"]) in chgs, f"incident {i['incident_id']}.related_change dangling")
+            _chk_ref(errors, i.get(f), keys["users"], t,
+                     f"incident {i['incident_id']}.{f}={i.get(f)} dangling")
+        _chk_ref(errors, i.get("ci_id"), keys["cis"], t,
+                 f"incident {i['incident_id']}.ci_id dangling")
+        _chk_ref(errors, i.get("related_problem"), keys["probs"], t,
+                 f"incident {i['incident_id']}.related_problem dangling")
+        _chk_ref(errors, i.get("related_change"), keys["chgs"], t,
+                 f"incident {i['incident_id']}.related_change dangling")
         for c in i.get("linked_ci_ids", []):
-            chk((t, c) in cis, f"incident {i['incident_id']}.linked_ci {c} dangling")
-    for c in tables["change"]:
+            _chk_ref(errors, c, keys["cis"], t,
+                     f"incident {i['incident_id']}.linked_ci {c} dangling")
+
+
+def _validate_changes(changes: list[dict], errors: list[str], keys: dict[str, set]) -> None:
+    for c in changes:
         t = c["tenant_id"]
-        if c.get("related_problem"):
-            chk((t, c["related_problem"]) in probs, f"change {c['change_id']}.related_problem dangling")
+        _chk_ref(errors, c.get("related_problem"), keys["probs"], t,
+                 f"change {c['change_id']}.related_problem dangling")
         for ci in c.get("affected_ci", []):
-            chk((t, ci) in cis, f"change {c['change_id']}.affected_ci {ci} dangling")
-    for r in tables["request"]:
+            _chk_ref(errors, ci, keys["cis"], t,
+                     f"change {c['change_id']}.affected_ci {ci} dangling")
+
+
+def _validate_ref_incidents(
+    rows: list[dict], id_field: str, label: str,
+    errors: list[str], incs: set,
+) -> None:
+    """Validate every row's `related_incidents` list against the incident keys."""
+    for r in rows:
         t = r["tenant_id"]
-        if r.get("catalog_item_id"):
-            chk((t, r["catalog_item_id"]) in cats, f"request {r['request_id']}.catalog_item_id dangling")
-    for p in tables["problem"]:
-        for i in p.get("related_incidents", []):
-            chk((p["tenant_id"], i) in incs, f"problem {p['problem_id']}.related_incident {i} dangling")
-    for a in tables["kb_knowledge"]:
-        for i in a.get("related_incidents", []):
-            chk((a["tenant_id"], i) in incs, f"kb {a['kb_id']}.related_incident {i} dangling")
+        for i in r.get("related_incidents", []):
+            _chk_ref(errors, i, incs, t,
+                     f"{label} {r[id_field]}.related_incident {i} dangling")
+
+
+def validate(tables: dict[str, list[dict]]) -> None:
+    keys = _ref_key_sets(tables)
+    errors: list[str] = []
+    _validate_incidents(tables["incident"], errors, keys)
+    _validate_changes(tables["change"], errors, keys)
+    for r in tables["request"]:
+        _chk_ref(errors, r.get("catalog_item_id"), keys["cats"], r["tenant_id"],
+                 f"request {r['request_id']}.catalog_item_id dangling")
+    _validate_ref_incidents(tables["problem"], "problem_id", "problem",
+                            errors, keys["incs"])
+    _validate_ref_incidents(tables["kb_knowledge"], "kb_id", "kb",
+                            errors, keys["incs"])
 
     if errors:
         raise SystemExit("REFERENTIAL VALIDATION FAILED:\n  " + "\n  ".join(errors[:30]))

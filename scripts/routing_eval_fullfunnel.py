@@ -34,6 +34,8 @@ except Exception:                                              # noqa: BLE001
     pass
 
 import asyncpg  # noqa: E402
+from routing_eval100 import DATASET as _ALL  # noqa: E402
+from routing_eval100 import NONE, _s, _verdict
 
 from oneops.authz.models import Principal  # noqa: E402
 from oneops.authz.service import AuthzService  # noqa: E402
@@ -45,12 +47,13 @@ from oneops.router.disambiguation import LlmDisambiguator  # noqa: E402
 from oneops.router.entity_id import EntityIdNormalizer  # noqa: E402
 from oneops.router.glossary import Glossary  # noqa: E402
 from oneops.router.retrieval import (  # noqa: E402
-    GatewayEmbedder, PgVectorRetriever, configure_hnsw_connection)
+    GatewayEmbedder,
+    PgVectorRetriever,
+    configure_hnsw_connection,
+)
 from oneops.router.rewrite import LlmRewriter  # noqa: E402
 from oneops.router.router import Router  # noqa: E402
 from oneops.router.signals import RequestSignals  # noqa: E402
-
-from routing_eval100 import DATASET as _ALL, NONE, _s, _verdict  # noqa: E402
 
 # chat-routable only — uc05/uc08 are API/button-only (filtered by Stage-3 in chat)
 DATASET = [(q, e, c) for (q, e, c) in _ALL if c not in ("uc05", "uc08")]
@@ -68,6 +71,44 @@ def _gateway() -> LlmGateway:
         base_url=os.environ.get("LLM_GATEWAY_URL", "http://localhost:4311"),
         api_key=(os.environ.get("LLM_GATEWAY_API_KEY")
                  or os.environ.get("LITELLM_MASTER_KEY") or "sk-1234")), redact=False)
+
+
+def _format_misroute(
+    q: str, exp: object, cat: str, chosen: set, err: str | None,
+) -> str:
+    """One mis-route line: expected vs got (got = ERROR text / chosen set / none)."""
+    exp_l = (_s("+".join(sorted(exp))) if isinstance(exp, (set, list, tuple))
+             else _s(exp) if exp != NONE else "none")
+    got_l = ("ERROR:" + err) if err else ("+".join(sorted(_s(a) for a in chosen)) or "none")
+    return f"  ✗ {q!r}\n      want {exp_l}  got {got_l}  [{cat}]"
+
+
+def _summarize(results: list, floor: str) -> int:
+    """Fold per-query results into overall + by-category accuracy, print the
+    report, and return the exit code (0 iff every query routed correctly)."""
+    by_cat: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    ok_total = 0
+    misroutes: list[str] = []
+    for q, exp, cat, chosen, err in results:
+        ok = (not err) and _verdict(exp, chosen)
+        by_cat[cat][1] += 1
+        by_cat[cat][0] += int(ok)
+        ok_total += int(ok)
+        if not ok:
+            misroutes.append(_format_misroute(q, exp, cat, chosen, err))
+
+    n = len(results)
+    print(f"=== FULL-FUNNEL routing — {n} chat-routable UNSEEN queries "
+          f"(real route(): decompose + Stage-3 + rerank), abstain={floor or 'off'} ===\n")
+    print(f"OVERALL: {ok_total}/{n} = {ok_total/n*100:.1f}%\n")
+    print("BY CATEGORY:")
+    for cat in sorted(by_cat):
+        ok, tot = by_cat[cat]
+        print(f"  {cat:<16} {ok}/{tot} = {ok/tot*100:3.0f}%")
+    if misroutes:
+        print(f"\nMISROUTES ({len(misroutes)}):")
+        print("\n".join(misroutes))
+    return 0 if ok_total == n else 1
 
 
 async def main() -> int:
@@ -116,32 +157,7 @@ async def main() -> int:
     finally:
         await pool.close()
 
-    by_cat: dict[str, list[int]] = defaultdict(lambda: [0, 0])
-    ok_total = 0
-    misroutes: list[str] = []
-    for q, exp, cat, chosen, err in results:
-        ok = (not err) and _verdict(exp, chosen)
-        by_cat[cat][1] += 1
-        by_cat[cat][0] += int(ok)
-        ok_total += int(ok)
-        if not ok:
-            exp_l = (_s("+".join(sorted(exp))) if isinstance(exp, (set, list, tuple))
-                     else _s(exp) if exp != NONE else "none")
-            got_l = ("ERROR:" + err) if err else ("+".join(sorted(_s(a) for a in chosen)) or "none")
-            misroutes.append(f"  ✗ {q!r}\n      want {exp_l}  got {got_l}  [{cat}]")
-
-    n = len(DATASET)
-    print(f"=== FULL-FUNNEL routing — {n} chat-routable UNSEEN queries "
-          f"(real route(): decompose + Stage-3 + rerank), abstain={floor or 'off'} ===\n")
-    print(f"OVERALL: {ok_total}/{n} = {ok_total/n*100:.1f}%\n")
-    print("BY CATEGORY:")
-    for cat in sorted(by_cat):
-        ok, tot = by_cat[cat]
-        print(f"  {cat:<16} {ok}/{tot} = {ok/tot*100:3.0f}%")
-    if misroutes:
-        print(f"\nMISROUTES ({len(misroutes)}):")
-        print("\n".join(misroutes))
-    return 0 if ok_total == n else 1
+    return _summarize(results, floor)
 
 
 if __name__ == "__main__":

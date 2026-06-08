@@ -41,7 +41,10 @@ from oneops.llm.transport import LiteLLMTransport  # noqa: E402
 from oneops.registry.loader import load_registry  # noqa: E402
 from oneops.router.disambiguation import LlmDisambiguator  # noqa: E402
 from oneops.router.retrieval import (  # noqa: E402
-    GatewayEmbedder, PgVectorRetriever, configure_hnsw_connection)
+    GatewayEmbedder,
+    PgVectorRetriever,
+    configure_hnsw_connection,
+)
 
 A1, A2, A3 = "uc01_summarization", "uc02_similar_tickets", "uc03_kb_lookup"
 A5, A8 = "uc05_triage", "uc08_fulfillment"
@@ -137,6 +140,47 @@ def _verdict(expected: object, chosen: set[str]) -> bool:
     return expected in chosen
 
 
+def _score_row(
+    q: str, exp: object, cat: str, chosen: set,
+    by_cat: dict, misroutes: list, rows: list,
+) -> int:
+    """Verdict one query, update by-category counts + rows + misroutes, and
+    return `int(ok)`."""
+    ok = _verdict(exp, chosen)
+    by_cat[cat][1] += 1
+    by_cat[cat][0] += int(ok)
+    exp_lbl = (_short("+".join(sorted(exp))) if isinstance(exp, (set, list, tuple))
+               else _short(exp) if exp != NONE else "none")
+    got_lbl = "+".join(sorted(_short(a) for a in chosen)) or "none"
+    rows.append((ok, q, exp_lbl, got_lbl, cat))
+    if not ok:
+        misroutes.append(f"  ✗ {q!r}\n      want {exp_lbl}  got {got_lbl}  [{cat}]")
+    return int(ok)
+
+
+def _report50(
+    rows: list, by_cat: dict, misroutes: list, ok_total: int,
+    n: int, top_k: int, floor: str,
+) -> int:
+    """Print the per-query lines + overall + by-category report; return the
+    exit code (0 iff every query routed correctly)."""
+    print(f"=== routing capability — {n} UNSEEN queries, top_k={top_k}, "
+          f"abstain={floor or 'off'} ===\n")
+    for ok, q, exp_lbl, got_lbl, _cat in rows:
+        print(f"  {'✓' if ok else '✗'} {q[:50]!r:<52} want={exp_lbl:<8} got={got_lbl}")
+    print("\n" + "=" * 60)
+    print(f"OVERALL: {ok_total}/{n} = {ok_total/n*100:.1f}%")
+    print("=" * 60)
+    print("BY CATEGORY:")
+    for cat in sorted(by_cat):
+        ok, tot = by_cat[cat]
+        print(f"  {cat:<16} {ok}/{tot} = {ok/tot*100:3.0f}%")
+    if misroutes:
+        print(f"\nMISROUTES ({len(misroutes)}):")
+        print("\n".join(misroutes))
+    return 0 if ok_total == n else 1
+
+
 async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--top-k", type=int, default=8)
@@ -160,35 +204,12 @@ async def main() -> int:
         for q, exp, cat in DATASET:
             cands = await retr.retrieve(q, tenant_id=args.tenant, top_k=args.top_k)
             chosen = set((await dis.disambiguate(q, cands, request_ctx={})).selected_agent_ids)
-            ok = _verdict(exp, chosen)
-            by_cat[cat][1] += 1
-            by_cat[cat][0] += int(ok)
-            ok_total += int(ok)
-            exp_lbl = (_short("+".join(sorted(exp))) if isinstance(exp, (set, list, tuple))
-                       else _short(exp) if exp != NONE else "none")
-            got_lbl = "+".join(sorted(_short(a) for a in chosen)) or "none"
-            rows.append((ok, q, exp_lbl, got_lbl, cat))
-            if not ok:
-                misroutes.append(f"  ✗ {q!r}\n      want {exp_lbl}  got {got_lbl}  [{cat}]")
+            ok_total += _score_row(q, exp, cat, chosen, by_cat, misroutes, rows)
     finally:
         await pool.close()
 
-    n = len(DATASET)
-    print(f"=== routing capability — {n} UNSEEN queries, top_k={args.top_k}, "
-          f"abstain={floor or 'off'} ===\n")
-    for ok, q, exp_lbl, got_lbl, cat in rows:
-        print(f"  {'✓' if ok else '✗'} {q[:50]!r:<52} want={exp_lbl:<8} got={got_lbl}")
-    print("\n" + "=" * 60)
-    print(f"OVERALL: {ok_total}/{n} = {ok_total/n*100:.1f}%")
-    print("=" * 60)
-    print("BY CATEGORY:")
-    for cat in sorted(by_cat):
-        ok, tot = by_cat[cat]
-        print(f"  {cat:<16} {ok}/{tot} = {ok/tot*100:3.0f}%")
-    if misroutes:
-        print(f"\nMISROUTES ({len(misroutes)}):")
-        print("\n".join(misroutes))
-    return 0 if ok_total == n else 1
+    return _report50(rows, by_cat, misroutes, ok_total,
+                     len(DATASET), args.top_k, floor)
 
 
 if __name__ == "__main__":

@@ -58,6 +58,47 @@ def _gateway() -> LlmGateway:
                  or os.environ.get("LITELLM_MASTER_KEY") or "sk-1234")), redact=False)
 
 
+def _score_record(
+    r: dict, q: str, chosen: set, violations: list[dict], rows: list[tuple],
+) -> tuple[int, int]:
+    """Score one counter-example: `(int(no must-not-route hit), int(correct
+    route achieved))`. Records any forbidden-agent hit in `violations` and the
+    display row in `rows`."""
+    cr = r["correct_route"]
+    cr_set = set(cr) if isinstance(cr, list) else {cr}
+    mnr = set(r.get("must_not_route") or [])
+    hit = sorted(mnr & chosen)               # must_not_route violations
+    ok_clean = not hit
+    ok_correct = cr_set.issubset(chosen)
+    if hit:
+        violations.append({"query": q, "landed_on": hit, "correct": sorted(cr_set)})
+    rows.append((q, sorted(cr_set), sorted(chosen), ok_clean, ok_correct,
+                 r.get("confusion", "")))
+    return int(ok_clean), int(ok_correct)
+
+
+def _report_counter(
+    rows: list[tuple], clean: int, correct: int, n: int,
+    abstain: float | None, top_k: int, violations: list[dict],
+) -> int:
+    """Print the per-case table + the CLEAN (gate) and correct-route lines +
+    any regressions; return the exit code (0 iff no must-not-route hit)."""
+    print(f"=== counter-example regression — {n} cases, abstain={abstain}, top_k={top_k} ===\n")
+    for q, _cr, ch, okc, okr, conf in rows:
+        mark = "✓" if okc else "✗ MUST-NOT-ROUTE HIT"
+        corr = "  +correct" if okr else ""
+        print(f"  {mark:<22} {q[:46]!r:<48} → {('+'.join(ch) or 'none')[:24]:<24} [{conf}]{corr}")
+    print("\n" + "=" * 60)
+    print(f"CLEAN (no must-not-route hit) : {clean}/{n} = {clean/n*100:.1f}%   ← the gate")
+    print(f"correct_route achieved        : {correct}/{n} = {correct/n*100:.1f}%   (info; button-only not chat-reachable)")
+    print("=" * 60)
+    if violations:
+        print("\n⚠ REGRESSIONS — a counter-example landed on a forbidden agent:")
+        for v in violations:
+            print(f"  ✗ {v['query']!r}  landed on {v['landed_on']}  (should be {v['correct']})")
+    return 0 if not violations else 1
+
+
 async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--top-k", type=int, default=5)
@@ -83,37 +124,16 @@ async def main() -> int:
     try:
         for r in records:
             q = r["query"]
-            cr = r["correct_route"]
-            cr_set = set(cr) if isinstance(cr, list) else {cr}
-            mnr = set(r.get("must_not_route") or [])
             cands = await retr.retrieve(q, tenant_id=args.tenant, top_k=args.top_k)
             chosen = set((await dis.disambiguate(q, cands, request_ctx={})).selected_agent_ids)
-            hit = sorted(mnr & chosen)               # must_not_route violations
-            ok_clean = not hit
-            ok_correct = cr_set.issubset(chosen)
-            clean += int(ok_clean)
-            correct += int(ok_correct)
-            if hit:
-                violations.append({"query": q, "landed_on": hit, "correct": sorted(cr_set)})
-            rows.append((q, sorted(cr_set), sorted(chosen), ok_clean, ok_correct, r.get("confusion", "")))
+            c_clean, c_correct = _score_record(r, q, chosen, violations, rows)
+            clean += c_clean
+            correct += c_correct
     finally:
         await pool.close()
 
-    n = len(records)
-    print(f"=== counter-example regression — {n} cases, abstain={abstain}, top_k={args.top_k} ===\n")
-    for q, cr, ch, okc, okr, conf in rows:
-        mark = "✓" if okc else "✗ MUST-NOT-ROUTE HIT"
-        corr = "  +correct" if okr else ""
-        print(f"  {mark:<22} {q[:46]!r:<48} → {('+'.join(ch) or 'none')[:24]:<24} [{conf}]{corr}")
-    print("\n" + "=" * 60)
-    print(f"CLEAN (no must-not-route hit) : {clean}/{n} = {clean/n*100:.1f}%   ← the gate")
-    print(f"correct_route achieved        : {correct}/{n} = {correct/n*100:.1f}%   (info; button-only not chat-reachable)")
-    print("=" * 60)
-    if violations:
-        print("\n⚠ REGRESSIONS — a counter-example landed on a forbidden agent:")
-        for v in violations:
-            print(f"  ✗ {v['query']!r}  landed on {v['landed_on']}  (should be {v['correct']})")
-    return 0 if not violations else 1
+    return _report_counter(rows, clean, correct, len(records),
+                           abstain, args.top_k, violations)
 
 
 if __name__ == "__main__":

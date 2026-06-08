@@ -16,6 +16,7 @@ import sys
 import urllib.error
 import urllib.request
 from collections import defaultdict
+from dataclasses import dataclass, field
 
 BASE = os.getenv("ONEOPS_EVAL_BASE", "http://localhost:8765")
 HDR = {
@@ -143,74 +144,106 @@ def _verdict(expected: object, routed: list[str], refusal: bool) -> tuple[bool, 
     return (expected in routed), actual
 
 
-def main() -> int:
+@dataclass
+class _EvalStats:
+    """Mutable accumulators for one routing-eval run."""
+    chat_ok: int = 0
+    chat_n: int = 0
+    chat_err: int = 0
+    per_agent: dict[str, list[int]] = field(
+        default_factory=lambda: defaultdict(lambda: [0, 0]))
+    confusion: dict[tuple[str, str], int] = field(
+        default_factory=lambda: defaultdict(int))
+    misroutes: list[str] = field(default_factory=list)
+    button_lines: list[str] = field(default_factory=list)
+
+
+def _check_server() -> int | None:
+    """Return a non-zero exit code if the server is unreachable, else None."""
     try:
         urllib.request.urlopen(  # noqa: S310
             urllib.request.Request(BASE + "/", method="GET"), timeout=5)
     except OSError as exc:
         print(f"✗ Cannot reach the server at {BASE} ({exc}).")
         return 2
+    return None
 
-    chat_ok = chat_n = chat_err = 0
-    per_agent: dict[str, list[int]] = defaultdict(lambda: [0, 0])
-    confusion: dict[tuple[str, str], int] = defaultdict(int)
-    misroutes: list[str] = []
-    button_lines: list[str] = []
+
+def _score_one(i: int, item: tuple, stats: _EvalStats) -> None:
+    """Route one dataset query and fold the verdict into `stats`. Button-only
+    rows are recorded informationally (not scored); chat rows update accuracy,
+    per-agent, and the confusion matrix."""
+    query, expected, channel = item
+    exp_label = expected if isinstance(expected, str) else "+".join(sorted(expected))
+    try:
+        resp = _post(query, f"eval-{i}")
+    except Exception as exc:  # noqa: BLE001
+        if channel == "chat":
+            stats.chat_err += 1
+            stats.chat_n += 1
+            stats.confusion[(exp_label, "ERROR")] += 1
+        stats.misroutes.append(f"  ERROR  {query!r}  ({exc})")
+        print(f"  ! {query!r} → ERROR ({exc})")
+        return
+    routed = _routed_agents(resp)
+    ok, actual = _verdict(expected, routed, _is_refusal(resp))
+    if channel == "button":
+        stats.button_lines.append(f"  {query!r}  [{exp_label}, button-only]  chat→{actual}")
+        print(f"  · {query!r}  [button-only]  chat→{actual}")
+        return
+    stats.chat_n += 1
+    stats.per_agent[exp_label][1] += 1
+    stats.per_agent[exp_label][0] += int(ok)
+    stats.confusion[(exp_label, exp_label if ok else actual)] += 1
+    stats.chat_ok += int(ok)
+    print(f"  {'✓' if ok else '✗'} {query!r}  expect={exp_label}  got={actual}")
+    if not ok:
+        stats.misroutes.append(f"  {query!r}\n      expected: {exp_label}   got: {actual}")
+
+
+def _print_report(stats: _EvalStats) -> None:
+    """Print the accuracy headline, per-agent table, confusion matrix, and the
+    mis-route / button-only lists."""
+    scored = stats.chat_n - stats.chat_err
+    acc = (stats.chat_ok / scored * 100.0) if scored else 0.0
+    print("\n" + "=" * 66)
+    print(f"CHAT ROUTING ACCURACY: {stats.chat_ok}/{scored} = {acc:.1f}%"
+          + (f"   ({stats.chat_err} errors)" if stats.chat_err else ""))
+    print("=" * 66)
+    print("\nPER-AGENT ACCURACY (chat-routable):")
+    for agent in sorted(stats.per_agent):
+        ok, n = stats.per_agent[agent]
+        print(f"  {agent:<26} {ok}/{n} = {(ok / n * 100.0) if n else 0:.0f}%")
+    print("\nCONFUSION MATRIX  (expected → got : count); off-diagonal = mis-route")
+    for e in sorted({x for x, _ in stats.confusion}):
+        rows = sorted(((a, c) for (ee, a), c in stats.confusion.items() if ee == e),
+                      key=lambda x: -x[1])
+        print(f"  {e:<26} → " + "  ".join(f"{a}:{c}{' ◄' if a != e else ''}" for a, c in rows))
+    if stats.misroutes:
+        print("\nCHAT MIS-ROUTES / ERRORS:")
+        for m in stats.misroutes:
+            print(m)
+    if stats.button_lines:
+        print("\nBUTTON-ONLY (not chat-wired today — informational):")
+        for b in stats.button_lines:
+            print(b)
+    print()
+
+
+def main() -> int:
+    rc = _check_server()
+    if rc is not None:
+        return rc
+
+    stats = _EvalStats()
     chat_total = sum(1 for _, _, c in DATASET if c == "chat")
     print(f"Rigorous routing eval — {chat_total} chat (+{len(DATASET) - chat_total} button) "
           f"against {BASE}\n")
-
-    for i, (query, expected, channel) in enumerate(DATASET):
-        exp_label = expected if isinstance(expected, str) else "+".join(sorted(expected))
-        try:
-            resp = _post(query, f"eval-{i}")
-        except Exception as exc:  # noqa: BLE001
-            if channel == "chat":
-                chat_err += 1
-                chat_n += 1
-                confusion[(exp_label, "ERROR")] += 1
-            misroutes.append(f"  ERROR  {query!r}  ({exc})")
-            print(f"  ! {query!r} → ERROR ({exc})")
-            continue
-        routed = _routed_agents(resp)
-        ok, actual = _verdict(expected, routed, _is_refusal(resp))
-        if channel == "button":
-            button_lines.append(f"  {query!r}  [{exp_label}, button-only]  chat→{actual}")
-            print(f"  · {query!r}  [button-only]  chat→{actual}")
-            continue
-        chat_n += 1
-        per_agent[exp_label][1] += 1
-        per_agent[exp_label][0] += int(ok)
-        confusion[(exp_label, exp_label if ok else actual)] += 1
-        chat_ok += int(ok)
-        print(f"  {'✓' if ok else '✗'} {query!r}  expect={exp_label}  got={actual}")
-        if not ok:
-            misroutes.append(f"  {query!r}\n      expected: {exp_label}   got: {actual}")
-
-    scored = chat_n - chat_err
-    acc = (chat_ok / scored * 100.0) if scored else 0.0
-    print("\n" + "=" * 66)
-    print(f"CHAT ROUTING ACCURACY: {chat_ok}/{scored} = {acc:.1f}%"
-          + (f"   ({chat_err} errors)" if chat_err else ""))
-    print("=" * 66)
-    print("\nPER-AGENT ACCURACY (chat-routable):")
-    for agent in sorted(per_agent):
-        ok, n = per_agent[agent]
-        print(f"  {agent:<26} {ok}/{n} = {(ok / n * 100.0) if n else 0:.0f}%")
-    print("\nCONFUSION MATRIX  (expected → got : count); off-diagonal = mis-route")
-    for e in sorted({x for x, _ in confusion}):
-        rows = sorted(((a, c) for (ee, a), c in confusion.items() if ee == e), key=lambda x: -x[1])
-        print(f"  {e:<26} → " + "  ".join(f"{a}:{c}{' ◄' if a != e else ''}" for a, c in rows))
-    if misroutes:
-        print("\nCHAT MIS-ROUTES / ERRORS:")
-        for m in misroutes:
-            print(m)
-    if button_lines:
-        print("\nBUTTON-ONLY (not chat-wired today — informational):")
-        for b in button_lines:
-            print(b)
-    print()
-    return 0 if (chat_err == 0 and chat_ok == scored) else 1
+    for i, item in enumerate(DATASET):
+        _score_one(i, item, stats)
+    _print_report(stats)
+    scored = stats.chat_n - stats.chat_err
+    return 0 if (stats.chat_err == 0 and stats.chat_ok == scored) else 1
 
 
 if __name__ == "__main__":

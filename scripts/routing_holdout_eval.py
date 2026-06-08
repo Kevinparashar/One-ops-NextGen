@@ -40,7 +40,10 @@ from oneops.llm.transport import LiteLLMTransport  # noqa: E402
 from oneops.registry.loader import load_registry  # noqa: E402
 from oneops.router.disambiguation import LlmDisambiguator  # noqa: E402
 from oneops.router.retrieval import (  # noqa: E402
-    GatewayEmbedder, PgVectorRetriever, configure_hnsw_connection)
+    GatewayEmbedder,
+    PgVectorRetriever,
+    configure_hnsw_connection,
+)
 
 A1, A2, A3 = "uc01_summarization", "uc02_similar_tickets", "uc03_kb_lookup"
 NONE = "NONE"
@@ -108,6 +111,49 @@ def _ok(expected: str, chosen: list[str]) -> bool:
     return expected in chosen
 
 
+def _format_holdout_row(
+    q: str, exp: str, co: list, cn: list, oo: bool, on: bool,
+) -> str:
+    """One A/B comparison row: OLD vs NEW verdict marks, agent sets, and a
+    FIXED/BROKE flip tag."""
+    mo = "✓" if oo else "✗"
+    mn = "✓" if on else "✗"
+    flip = "  ← FIXED" if (not oo and on) else ("  ← BROKE" if (oo and not on) else "")
+    exp_lbl = (exp.replace('uc0', 'u').replace('_summarization', '')
+               .replace('_similar_tickets', '').replace('_kb_lookup', '')
+               .replace('NONE', 'none'))
+    return (f"{q[:50]!r:<52} {exp_lbl:<6} "
+            f"{mo} {('+'.join(co) or 'none')[:20]:<20} "
+            f"{mn} {('+'.join(cn) or 'none')[:20]:<20}{flip}")
+
+
+def _report_holdout(
+    rows: list, old_ok: int, new_ok: int, n: int, top_k: int,
+    abstain: float, flips_fixed: list[str], flips_broke: list[str],
+) -> None:
+    """Print the OLD-vs-NEW A/B table, the two accuracy lines, and the
+    fixed/regressed flip lists."""
+    print(f"=== held-out A/B — {n} UNSEEN queries, top_k={top_k} "
+          f"(OLD=desc-only, NEW=+not_when +abstain@{abstain}) ===\n")
+    print(f"{'query':<52} {'want':<6} {'OLD':<22} {'NEW':<22}")
+    print("-" * 104)
+    for q, exp, co, cn, oo, on in rows:
+        print(_format_holdout_row(q, exp, co, cn, oo, on))
+    print("\n" + "=" * 60)
+    print(f"OLD (description-only catalog): {old_ok}/{n} = {old_ok/n*100:.1f}%")
+    print(f"NEW (not_when wired):          {new_ok}/{n} = {new_ok/n*100:.1f}%   "
+          f"({'+' if new_ok>=old_ok else ''}{new_ok-old_ok})")
+    print("=" * 60)
+    if flips_fixed:
+        print(f"\nFIXED by the wiring ({len(flips_fixed)}):")
+        for q in flips_fixed:
+            print(f"  ✓ {q!r}")
+    if flips_broke:
+        print(f"\n⚠ REGRESSED by the wiring ({len(flips_broke)}):")
+        for q in flips_broke:
+            print(f"  ✗ {q!r}")
+
+
 async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--top-k", type=int, default=5)
@@ -151,30 +197,8 @@ async def main() -> int:
     finally:
         await pool.close()
 
-    n = len(HOLDOUT)
-    print(f"=== held-out A/B — {n} UNSEEN queries, top_k={args.top_k} "
-          f"(OLD=desc-only, NEW=+not_when +abstain@{args.abstain}) ===\n")
-    print(f"{'query':<52} {'want':<6} {'OLD':<22} {'NEW':<22}")
-    print("-" * 104)
-    for q, exp, co, cn, oo, on in rows:
-        mo = "✓" if oo else "✗"
-        mn = "✓" if on else "✗"
-        flip = "  ← FIXED" if (not oo and on) else ("  ← BROKE" if (oo and not on) else "")
-        print(f"{q[:50]!r:<52} {exp.replace('uc0','u').replace('_summarization','').replace('_similar_tickets','').replace('_kb_lookup','').replace('NONE','none'):<6} "
-              f"{mo} {('+'.join(co) or 'none')[:20]:<20} {mn} {('+'.join(cn) or 'none')[:20]:<20}{flip}")
-    print("\n" + "=" * 60)
-    print(f"OLD (description-only catalog): {old_ok}/{n} = {old_ok/n*100:.1f}%")
-    print(f"NEW (not_when wired):          {new_ok}/{n} = {new_ok/n*100:.1f}%   "
-          f"({'+' if new_ok>=old_ok else ''}{new_ok-old_ok})")
-    print("=" * 60)
-    if flips_fixed:
-        print(f"\nFIXED by the wiring ({len(flips_fixed)}):")
-        for q in flips_fixed:
-            print(f"  ✓ {q!r}")
-    if flips_broke:
-        print(f"\n⚠ REGRESSED by the wiring ({len(flips_broke)}):")
-        for q in flips_broke:
-            print(f"  ✗ {q!r}")
+    _report_holdout(rows, old_ok, new_ok, len(HOLDOUT),
+                    args.top_k, args.abstain, flips_fixed, flips_broke)
     return 0
 
 

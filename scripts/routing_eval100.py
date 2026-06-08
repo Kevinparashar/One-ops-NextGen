@@ -189,6 +189,46 @@ def _verdict(expected: object, chosen: set[str]) -> bool:
     return expected in chosen
 
 
+def _format_misroute(
+    q: str, exp: object, cat: str, chosen: set, err: str | None,
+) -> str:
+    """One mis-route line: expected vs got (got = ERROR text, the chosen
+    agent set, or 'none')."""
+    exp_l = (_s("+".join(sorted(exp))) if isinstance(exp, (set, list, tuple))
+             else _s(exp) if exp != NONE else "none")
+    got_l = ("ERROR:" + err) if err else ("+".join(sorted(_s(a) for a in chosen)) or "none")
+    return f"  ✗ {q!r}\n      want {exp_l}  got {got_l}  [{cat}]"
+
+
+def _summarize(results: list, top_k: int, floor: str) -> int:
+    """Fold the per-query routing results into overall + by-category accuracy,
+    print the report, and return the process exit code (0 iff every query was
+    routed correctly)."""
+    by_cat: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    ok_total = 0
+    misroutes: list[str] = []
+    for q, exp, cat, chosen, err in results:
+        ok = (not err) and _verdict(exp, chosen)
+        by_cat[cat][1] += 1
+        by_cat[cat][0] += int(ok)
+        ok_total += int(ok)
+        if not ok:
+            misroutes.append(_format_misroute(q, exp, cat, chosen, err))
+
+    n = len(results)
+    print(f"=== 100-query routing — UNSEEN, real-user style, top_k={top_k}, "
+          f"abstain={floor or 'off'} ===\n")
+    print(f"OVERALL: {ok_total}/{n} = {ok_total/n*100:.1f}%\n")
+    print("BY CATEGORY:")
+    for cat in sorted(by_cat):
+        ok, tot = by_cat[cat]
+        print(f"  {cat:<16} {ok}/{tot} = {ok/tot*100:3.0f}%")
+    if misroutes:
+        print(f"\nMISROUTES ({len(misroutes)}):")
+        print("\n".join(misroutes))
+    return 0 if ok_total == n else 1
+
+
 async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--top-k", type=int, default=8)
@@ -225,32 +265,7 @@ async def main() -> int:
     finally:
         await pool.close()
 
-    by_cat: dict[str, list[int]] = defaultdict(lambda: [0, 0])
-    ok_total = 0
-    misroutes: list[str] = []
-    for q, exp, cat, chosen, err in results:
-        ok = (not err) and _verdict(exp, chosen)
-        by_cat[cat][1] += 1
-        by_cat[cat][0] += int(ok)
-        ok_total += int(ok)
-        if not ok:
-            exp_l = (_s("+".join(sorted(exp))) if isinstance(exp, (set, list, tuple))
-                     else _s(exp) if exp != NONE else "none")
-            got_l = ("ERROR:" + err) if err else ("+".join(sorted(_s(a) for a in chosen)) or "none")
-            misroutes.append(f"  ✗ {q!r}\n      want {exp_l}  got {got_l}  [{cat}]")
-
-    n = len(DATASET)
-    print(f"=== 100-query routing — UNSEEN, real-user style, top_k={args.top_k}, "
-          f"abstain={floor or 'off'} ===\n")
-    print(f"OVERALL: {ok_total}/{n} = {ok_total/n*100:.1f}%\n")
-    print("BY CATEGORY:")
-    for cat in sorted(by_cat):
-        ok, tot = by_cat[cat]
-        print(f"  {cat:<16} {ok}/{tot} = {ok/tot*100:3.0f}%")
-    if misroutes:
-        print(f"\nMISROUTES ({len(misroutes)}):")
-        print("\n".join(misroutes))
-    return 0 if ok_total == n else 1
+    return _summarize(results, args.top_k, floor)
 
 
 if __name__ == "__main__":
