@@ -374,6 +374,66 @@ def _build_user_prompt(
 # ── Public API ──────────────────────────────────────────────────────────
 
 
+async def _rerank_from_cache(cache, key: str, by_id: dict) -> RerankResult | None:
+    """Return a cached rerank verdict (validated against the live candidate
+    set), or None on miss / cache error / corrupted entry (caller falls
+    through to the LLM)."""
+    try:
+        cached_raw = await cache.get(key)
+    except Exception:                       # noqa: BLE001
+        return None
+    if cached_raw is None:
+        return None
+    try:
+        cached = (
+            json.loads(cached_raw)
+            if isinstance(cached_raw, (str, bytes))
+            else cached_raw
+        )
+        chosen_id = cached.get("chosen")
+        return RerankResult(
+            chosen=chosen_id if chosen_id in by_id else None,
+            chosen_match=by_id.get(chosen_id) if chosen_id in by_id else None,
+            confidence=float(cached.get("confidence", 0.5)),
+            reasoning=str(cached.get("reasoning", ""))[:200],
+            verdict=cached.get("verdict", "NO_MATCH"),
+            from_cache=True,
+        )
+    except Exception:                    # noqa: BLE001
+        return None  # corrupted cache entry — fall through to LLM
+
+
+def _classify_verdict(
+    parsed: dict[str, Any], by_id: dict, tenant_id: str,
+) -> tuple[str, str | None, Any, float]:
+    """Closed-taxonomy intent gate → (verdict, chosen, chosen_match,
+    confidence). Non-fulfilment intent → WRONG_INTENT; fulfilment with a valid
+    candidate id → CHOSEN; a hallucinated/absent id or unknown intent →
+    NO_MATCH (confidence clamped down)."""
+    intent_class = str(parsed.get("intent_class", "")).strip().lower()
+    confidence = float(parsed.get("confidence", 0.0) or 0.0)
+    chosen_raw = parsed.get("chosen")
+    chosen_raw = str(chosen_raw).strip() if chosen_raw is not None else ""
+
+    if intent_class in ("problem_report", "how_to") or intent_class == "off_topic":
+        return "WRONG_INTENT", None, None, confidence
+    if intent_class == "fulfilment":
+        if chosen_raw and chosen_raw in by_id:
+            return "CHOSEN", chosen_raw, by_id[chosen_raw], confidence
+        if chosen_raw and chosen_raw.upper() not in ("NULL", "NONE", "NO_MATCH", ""):
+            # Hallucinated id — refuse.
+            _log.warning("uc08.rerank.hallucinated_id",
+                         tenant_id=tenant_id,
+                         hallucinated=chosen_raw[:60],
+                         valid_ids=list(by_id.keys())[:5])
+            return "NO_MATCH", None, None, min(confidence, 0.4)
+        return "NO_MATCH", None, None, confidence
+    # Missing or unknown intent_class — refuse loudly.
+    _log.warning("uc08.rerank.unknown_intent_class",
+                 tenant_id=tenant_id, intent_class=intent_class[:40])
+    return "NO_MATCH", None, None, min(confidence, 0.3)
+
+
 async def rerank(
     *, tenant_id: str, sr_text: str,
     candidates: tuple[CatalogMatch, ...],
@@ -405,32 +465,14 @@ async def rerank(
         },
     ) as span:
         # 1. Cache lookup
+        key = None
         if cache is not None:
             key = _cache_key(
                 tenant_id=tenant_id, sr_text=sr_text, candidates=candidates,
             )
-            try:
-                cached_raw = await cache.get(key)
-            except Exception:                       # noqa: BLE001
-                cached_raw = None
-            if cached_raw is not None:
-                try:
-                    cached = (
-                        json.loads(cached_raw)
-                        if isinstance(cached_raw, (str, bytes))
-                        else cached_raw
-                    )
-                    chosen_id = cached.get("chosen")
-                    return RerankResult(
-                        chosen=chosen_id if chosen_id in by_id else None,
-                        chosen_match=by_id.get(chosen_id) if chosen_id in by_id else None,
-                        confidence=float(cached.get("confidence", 0.5)),
-                        reasoning=str(cached.get("reasoning", ""))[:200],
-                        verdict=cached.get("verdict", "NO_MATCH"),
-                        from_cache=True,
-                    )
-                except Exception:                    # noqa: BLE001
-                    pass  # corrupted cache entry — fall through to LLM
+            hit = await _rerank_from_cache(cache, key, by_id)
+            if hit is not None:
+                return hit
 
         # 2. Build prompt
         sys_prompt = compose(
@@ -480,39 +522,8 @@ async def rerank(
 
         # New schema (reasoning first, answer last — CoT chain-of-thought).
         reasoning = str(parsed.get("reasoning", ""))[:280]
-        intent_class = str(parsed.get("intent_class", "")).strip().lower()
-        confidence = float(parsed.get("confidence", 0.0) or 0.0)
-        chosen_raw = parsed.get("chosen")
-        chosen_raw = (
-            str(chosen_raw).strip() if chosen_raw is not None else ""
-        )
-
-        # Intent gate: if classifier says non-fulfilment, that's the verdict.
-        if intent_class in ("problem_report", "how_to") or intent_class == "off_topic":
-            verdict, chosen, chosen_match = "WRONG_INTENT", None, None
-        elif intent_class == "fulfilment":
-            if chosen_raw and chosen_raw in by_id:
-                verdict, chosen = "CHOSEN", chosen_raw
-                chosen_match = by_id[chosen_raw]
-            elif chosen_raw and chosen_raw.upper() not in (
-                "NULL", "NONE", "NO_MATCH", ""
-            ):
-                # Hallucinated id — refuse.
-                _log.warning("uc08.rerank.hallucinated_id",
-                             tenant_id=tenant_id,
-                             hallucinated=chosen_raw[:60],
-                             valid_ids=list(by_id.keys())[:5])
-                verdict, chosen, chosen_match = "NO_MATCH", None, None
-                confidence = min(confidence, 0.4)
-            else:
-                verdict, chosen, chosen_match = "NO_MATCH", None, None
-        else:
-            # Missing or unknown intent_class — refuse loudly.
-            _log.warning("uc08.rerank.unknown_intent_class",
-                         tenant_id=tenant_id,
-                         intent_class=intent_class[:40])
-            verdict, chosen, chosen_match = "NO_MATCH", None, None
-            confidence = min(confidence, 0.3)
+        verdict, chosen, chosen_match, confidence = _classify_verdict(
+            parsed, by_id, tenant_id)
 
         span.set_attribute("uc08.rerank.verdict", verdict)
         span.set_attribute("uc08.rerank.confidence", confidence)

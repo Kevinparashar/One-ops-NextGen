@@ -87,35 +87,38 @@ def _load_matrix_from_disk() -> dict[str, dict[str, str]]:
     with open(schema_path, encoding="utf-8") as fh:
         doc = json.load(fh)
 
-    def _walk(node):
-        if isinstance(node, dict):
-            if "priority_matrix" in node:
-                yield node["priority_matrix"]
-            for v in node.values():
-                yield from _walk(v)
-        elif isinstance(node, list):
-            for x in node:
-                yield from _walk(x)
-
-    for pm in _walk(doc):
+    for pm in _walk_priority_matrices(doc):
         matrix = pm.get("matrix")
-        if isinstance(matrix, dict):
-            # Sanity-check dimensions — must be 4x4.
-            if set(matrix.keys()) != VALID_IMPACTS:
-                continue
-            for row in matrix.values():
-                if not isinstance(row, dict):
-                    break
-                if set(row.keys()) != VALID_URGENCIES:
-                    break
-                if not all(v in VALID_PRIORITY_CANONICALS
-                           for v in row.values()):
-                    break
-            else:
-                return {k: dict(v) for k, v in matrix.items()}
+        if _is_valid_matrix(matrix):
+            return {k: dict(v) for k, v in matrix.items()}
     raise RuntimeError(
         "priority matrix structurally invalid in service-schema.json",
     )
+
+
+def _walk_priority_matrices(node: Any):
+    """Yield every `priority_matrix` block found anywhere in the document."""
+    if isinstance(node, dict):
+        if "priority_matrix" in node:
+            yield node["priority_matrix"]
+        for v in node.values():
+            yield from _walk_priority_matrices(v)
+    elif isinstance(node, list):
+        for x in node:
+            yield from _walk_priority_matrices(x)
+
+
+def _is_valid_matrix(matrix: Any) -> bool:
+    """True when `matrix` is a structurally valid 4x4 impact×urgency matrix
+    whose cells are all canonical priorities."""
+    if not isinstance(matrix, dict) or set(matrix.keys()) != VALID_IMPACTS:
+        return False
+    for row in matrix.values():
+        if not isinstance(row, dict) or set(row.keys()) != VALID_URGENCIES:
+            return False
+        if not all(v in VALID_PRIORITY_CANONICALS for v in row.values()):
+            return False
+    return True
 
 
 PRIORITY_MATRIX: Final[dict[str, dict[str, str]]] = _load_matrix_from_disk()
