@@ -369,126 +369,8 @@ class LlmRewriter:
             doc = json.loads(response.content)
             rewritten = str(doc.get("rewritten") or text)
             changed = bool(doc.get("changed")) and rewritten != text
-            # ── Self-routable message guard (deterministic, 2026-05-31) ──
-            # The rewriter's purpose is to RESOLVE implicit references.
-            # If the original message already contains a canonical entity
-            # id (e.g. "summarize INC0001003", "similar tickets to REQ…"),
-            # there is no implicit reference to resolve — the message is
-            # self-routable. The LLM occasionally rewrites these anyway,
-            # replacing the user's verb with one from a prior turn (e.g.
-            # turning "summarize INC0001003" into "similar tickets to
-            # INC0001003"). That destroys the routing signal and dispatches
-            # the wrong UC. Hard-rule: if the original has any canonical
-            # id token AND the LLM rewrote it, revert.
-            _CANONICAL_ID_RE = __import__("re").compile(
-                r"\b([A-Z]{2,4}\d{6,})\b")
-            if changed and _CANONICAL_ID_RE.search(text):
-                rewritten = text
-                changed = False
-            # ── Bare-digit completion guard (deterministic) ─────────────
-            # If the LLM left a bare-digit message unchanged but a focus
-            # record exists in history, apply the completion rule in
-            # code. Same shape as the linked-phrase guard: defence in
-            # depth for an LLM that occasionally ignores the prompt.
-            if not changed:
-                completed = _complete_bare_digit_id(text, history)
-                if completed and completed != text:
-                    rewritten = completed
-                    changed = True
-            # ── Hallucinated-id guard (deterministic) ───────────────────
-            # The rewriter's prompt says "Never invent. If the
-            # conversation does not unambiguously support a referent,
-            # return the message unchanged." The LLM occasionally
-            # ignores this — e.g. with empty history and "what is the
-            # priority", it may inject "INC0001001" anyway. Reject any
-            # rewriter-introduced canonical record id that does not
-            # appear anywhere in conversation history; fall back to the
-            # original text so the boundary classifier can ask for the
-            # missing reference instead of confidently serving the
-            # wrong record.
-            if changed:
-                rewritten = _reject_hallucinated_ids(
-                    original=text, rewritten=rewritten, history=history)
-                changed = rewritten != text
-            # ── Linked-record-phrase guard (deterministic) ──────────────
-            # The rewriter's "hard rule" forbids substituting a specific
-            # record id when the message contains "the linked X / the
-            # related X / its X". The LLM occasionally still does it.
-            # When the input has linked-record phrasing AND the rewrite
-            # contains a canonical id that was NOT in the input, reject
-            # the substitution and fall back to attaching just the
-            # focus id at the end (or unchanged when no focus is found).
-            if changed:
-                rewritten = _enforce_linked_phrase_guard(
-                    original=text, rewritten=rewritten, history=history)
-                changed = rewritten != text
-            # ── Self-contained-subject guard (deterministic) ────────────
-            # When the message has its own concrete subject — multi-word
-            # symptom-style query like "mail is delayed", "outlook is
-            # slow", "vpn keeps dropping", "salesforce sync lag", or
-            # a KB-search verb with a topic — the rewriter MUST NOT
-            # append a focus id from session history. Otherwise a new
-            # KB-shaped query in a warm session bleeds to UC-1 via the
-            # injected focus and serves a stale ticket summary (the
-            # 2026-05-27 demo regression). Python guard runs AFTER the
-            # prompt-level "Self-contained subject" rule because the LLM
-            # still leaks ~5-10% of the time.
-            if changed:
-                rewritten = _reject_focus_injection_into_self_contained(
-                    original=text, rewritten=rewritten)
-                changed = rewritten != text
-            # ── Topic-replacement guard (deterministic, 2026-06-02) ─────
-            # The rewriter RESOLVES implicit references; it must never
-            # REPLACE the topic. On a garbled/typo'd new message the LLM
-            # occasionally swaps in a PRIOR turn's subject (observed:
-            # "database conncection failes" -> "how to set vpn password
-            # for INC0001021"). If the rewrite preserves NONE of the
-            # original's content words, that is a topic swap, not a
-            # resolution — revert.
-            if changed:
-                rewritten = _reject_topic_replacement(
-                    original=text, rewritten=rewritten)
-                changed = rewritten != text
-            # ── Pure-rephrase guard (deterministic, 2026-06-02 RCA) ─────
-            # The rewriter's ONLY legitimate edit is RESOLVING a reference
-            # to a concrete record id (a pronoun / bare-digit / linked-phrase
-            # becoming an explicit id). If it "changed" the text but
-            # introduced NO new canonical id, it merely REPHRASED a
-            # self-contained query. That rephrase is non-deterministic across
-            # runs (LLMs are not bit-stable even at temperature 0), so the
-            # downstream KB embedding — hence the answer — flips run-to-run
-            # for the SAME input ("how do I configure a VPN client" scored
-            # 0.51 on one rephrase and 0.10 on another). Revert to the user's
-            # exact words → deterministic query → consistent routing.
-            # Reference resolutions (which add an id) are always kept.
-            if changed:
-                new_ids = (set(_extract_record_ids(rewritten))
-                           - set(_extract_record_ids(text)))
-                if not new_ids:
-                    rewritten = text
-                    changed = False
-            # ── Authoritative focus guard (Stage 2, 2026-05-28) ─────────
-            # For focus-bound messages (linked-record refs, pronouns,
-            # bare-attribute reads), enforce the LangGraph state's
-            # focus_entity_id over whatever the LLM rewriter chose.
-            # The state focus is the single source of truth — computed
-            # deterministically by `executor.update_focus` from current
-            # message + checkpointer-restored prior state. Any id the
-            # LLM picked that disagrees with state focus is drift.
-            authoritative_focus = (
-                request_ctx.get("focus_entity_id") or ""
-            ).strip()
-            if authoritative_focus:
-                rewritten = _enforce_authoritative_focus(
-                    original=text, rewritten=rewritten,
-                    authoritative_focus=authoritative_focus)
-            else:
-                # No state focus (fresh session / off-domain). Fall back
-                # to the older history-scan guard so the safety net is
-                # still in place — same behaviour as Stage 1.
-                rewritten = _enforce_most_recent_focus_for_focus_bound(
-                    original=text, rewritten=rewritten, history=history)
-            changed = rewritten != text
+            rewritten, changed = self._apply_rewrite_guards(
+                text, rewritten, changed, history, request_ctx)
             _span.set_attribute("oneops.router.rewrite.changed", changed)
             return RewriteResult(text=rewritten, changed=changed,
                                  rationale=str(doc.get("rationale", "")))
@@ -497,6 +379,81 @@ class LlmRewriter:
             _span.set_attribute("oneops.router.error", str(exc)[:120])
             _log.warning("rewriter.llm_failed_falling_back", error=str(exc))
             return RewriteResult.unchanged(text)
+
+    def _apply_rewrite_guards(
+        self, text: str, rewritten: str, changed: bool,
+        history: list[ConversationTurn], request_ctx: dict,
+    ) -> tuple[str, bool]:
+        """Deterministic post-LLM guard chain — defence-in-depth for prompt
+        rules the LLM leaks ~5-10% of the time. Every guard may only RESOLVE
+        a reference (a pronoun / bare-digit / linked-phrase becoming a
+        concrete id) or REVERT to the user's exact words; none may replace
+        the topic. Returns the final `(rewritten, changed)`.
+
+        Order matters:
+          1. Self-routable — original already has a canonical id ⇒ nothing
+             to resolve; a rewrite would only corrupt the routing verb.
+          2. Bare-digit completion when the LLM left it unchanged.
+          3. Revert-chain guards (hallucinated id / linked-phrase
+             substitution / focus-injection into a self-contained subject /
+             topic replacement) — each reverts when it detects a violation.
+          4. Pure-rephrase revert — a "change" adding NO new canonical id is
+             just a non-deterministic rephrase; revert for stable routing.
+          5. Authoritative focus — enforce the LangGraph state focus (or the
+             history-scan fallback) over whatever id the LLM chose.
+        """
+        if changed and _CANONICAL_ID_RE.search(text):
+            rewritten, changed = text, False
+        if not changed:
+            completed = _complete_bare_digit_id(text, history)
+            if completed and completed != text:
+                rewritten, changed = completed, True
+        # Each revert-guard takes the current rewrite and returns a possibly-
+        # reverted one; `changed` is recomputed against the original.
+        revert_guards = (
+            lambda r: _reject_hallucinated_ids(
+                original=text, rewritten=r, history=history),
+            lambda r: _enforce_linked_phrase_guard(
+                original=text, rewritten=r, history=history),
+            lambda r: _reject_focus_injection_into_self_contained(
+                original=text, rewritten=r),
+            lambda r: _reject_topic_replacement(original=text, rewritten=r),
+        )
+        for guard in revert_guards:
+            if changed:
+                rewritten = guard(rewritten)
+                changed = rewritten != text
+        if changed and not (set(_extract_record_ids(rewritten))
+                            - set(_extract_record_ids(text))):
+            rewritten, changed = text, False
+        rewritten = self._enforce_focus(text, rewritten, history, request_ctx)
+        changed = rewritten != text
+        return rewritten, changed
+
+    def _enforce_focus(
+        self, text: str, rewritten: str,
+        history: list[ConversationTurn], request_ctx: dict,
+    ) -> str:
+        """Stage-2 authoritative focus (2026-05-28): for focus-bound messages
+        (pronouns / bare-attribute reads / linked-record refs) enforce the
+        LangGraph state's `focus_entity_id` — the single source of truth,
+        computed deterministically by `executor.update_focus` — over the
+        LLM's choice. Fresh session / off-domain (no state focus) falls back
+        to the history-scan guard so the safety net stays in place."""
+        authoritative_focus = (
+            request_ctx.get("focus_entity_id") or "").strip()
+        if authoritative_focus:
+            return _enforce_authoritative_focus(
+                original=text, rewritten=rewritten,
+                authoritative_focus=authoritative_focus)
+        return _enforce_most_recent_focus_for_focus_bound(
+            original=text, rewritten=rewritten, history=history)
+
+
+# Canonical record-id token (e.g. INC0001003, REQ0000042). Its presence in
+# the user's own message means the user is being EXPLICIT about the record —
+# the rewriter must not substitute a different focus id (self-routable guard).
+_CANONICAL_ID_RE = re.compile(r"\b([A-Z]{2,4}\d{6,})\b")
 
 
 # Pronouns + back-references that LEGITIMATELY require focus injection.
@@ -889,30 +846,49 @@ def _history_focus_ids(history: list[ConversationTurn]) -> list[str]:
     user_ids: list[str] = []
     asst_ids: list[str] = []
     for turn in reversed(history):
-        content = turn.content or ""
-        if not content:
-            continue
-        role = (getattr(turn, "role", "") or "").lower()
+        role, ids = _collect_turn_ids(turn)
         if role == "assistant":
-            lower = content.lower()
-            if ("which ticket" in lower or "which record" in lower
-                    or "please share its id" in lower
-                    or "please share the record id" in lower
-                    or "please send the record id" in lower
-                    or "share its id" in lower):
-                continue
-            for hid in _extract_record_ids(content):
-                if hid not in asst_ids and hid not in user_ids:
-                    asst_ids.append(hid)
+            asst_ids.extend(h for h in ids
+                            if h not in asst_ids and h not in user_ids)
         else:                                               # user turns
-            for hid in _extract_record_ids(content):
-                if hid not in user_ids:
-                    user_ids.append(hid)
+            user_ids.extend(h for h in ids if h not in user_ids)
     # Concat: user-named first (authoritative), assistant-named second
     # (pronoun-resolution fallback).
+    return _dedup_preserve_order(user_ids + asst_ids)
+
+
+# Assistant clarification templates — their EXAMPLE ids ("e.g. INC0001234")
+# must not seed focus, or the next bare-attribute turn binds to the example.
+_CLARIFICATION_MARKERS = (
+    "which ticket", "which record", "please share its id",
+    "please share the record id", "please send the record id",
+    "share its id",
+)
+
+
+def _is_clarification_prompt(content_lower: str) -> bool:
+    """True when an assistant turn is a clarification template (its example
+    ids must not be treated as focus)."""
+    return any(m in content_lower for m in _CLARIFICATION_MARKERS)
+
+
+def _collect_turn_ids(turn: ConversationTurn) -> tuple[str, list[str]]:
+    """`(role, record-ids)` for one turn — ids empty when the turn should be
+    skipped (no content, or an assistant clarification template)."""
+    content = turn.content or ""
+    if not content:
+        return "", []
+    role = (getattr(turn, "role", "") or "").lower()
+    if role == "assistant" and _is_clarification_prompt(content.lower()):
+        return role, []
+    return role, _extract_record_ids(content)
+
+
+def _dedup_preserve_order(ids: list[str]) -> list[str]:
+    """De-duplicate while preserving first-seen order."""
     seen: set[str] = set()
     out: list[str] = []
-    for hid in user_ids + asst_ids:
+    for hid in ids:
         if hid not in seen:
             seen.add(hid)
             out.append(hid)
