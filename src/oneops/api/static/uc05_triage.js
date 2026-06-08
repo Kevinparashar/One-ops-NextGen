@@ -12,9 +12,9 @@
     const roleSel = $("#role");
     return {
       "Content-Type": "application/json",
-      "x-tenant-id": (tenantSel && tenantSel.value.trim()) || "T001",
-      "x-user-id":   (userSel && userSel.value.trim())   || "u_demo",
-      "x-role":      (roleSel && roleSel.value.trim())   || "service_desk_agent",
+      "x-tenant-id": tenantSel?.value.trim() || "T001",
+      "x-user-id":   userSel?.value.trim()   || "u_demo",
+      "x-role":      roleSel?.value.trim()   || "service_desk_agent",
     };
   }
 
@@ -110,7 +110,7 @@
       countIncident.textContent = inc;
       countRequest.textContent  = req;
       pillTotal.textContent     = String(inc + req);
-    } catch (e) {
+    } catch {
       countIncident.textContent = countRequest.textContent = "?";
       pillTotal.textContent = "?";
     }
@@ -193,7 +193,7 @@
     try {
       // Live agent/tool panel (shared with chat) + the normal proposal card.
       propFields.innerHTML = "";
-      const p = await window.oneopsLiveStream({
+      const p = await globalThis.oneopsLiveStream({
         url: "/api/uc05/propose/stream",
         body: { ticket_id: item.ticket_id, service_id: currentService },
         headers: headers(), mount: propFields,
@@ -251,7 +251,7 @@
       html += `<label>${humanLabel(col)}</label>${inputHtml}<span class="basis">${escapeHtml(basis)}</span>`;
     }
     // Tags row (read-only display)
-    if (p.suggested_tags && p.suggested_tags.length) {
+    if (p.suggested_tags?.length) {
       html += `<label>tags</label><div>${p.suggested_tags.map(escapeHtml).join(", ")}</div><span class="basis">LLM</span>`;
     }
     html += `</div>`;
@@ -276,17 +276,17 @@
   function proposalBasis(p, col) {
     // confidence_tier and rationale aren't per-field in the simple shortcuts; use generic
     if (["impact", "urgency", "priority"].includes(col)) {
-      return p.prioritization_basis && p.prioritization_basis[col] ? p.prioritization_basis[col] : "—";
+      return p.prioritization_basis?.[col] ? p.prioritization_basis[col] : "—";
     }
     if (col === "assignment_group") return `${p.assignment_basis} (${p.assignment_confidence})`;
     return "kNN";
   }
-  function humanLabel(col) { return col.replace(/_/g, " "); }
+  function humanLabel(col) { return col.replaceAll("_", " "); }
 
   // ── Apply / Cancel ────────────────────────────────────────────────────────
   applyBtn.addEventListener("click", () => sendDecide("yes"));
   discardBtn.addEventListener("click", () => {
-    if (!currentProposal) { if (currentService) loadList(currentService); return; }
+    if (!currentProposal) { if (currentService) { loadList(currentService); } return; }
     sendDecide("no");
   });
 
@@ -300,7 +300,7 @@
       const fields = TRIAGE_FIELDS[currentProposal.service_id] || [];
       for (const [col] of fields) {
         const el = $(`#tf-${col}`);
-        if (el && el.value && el.value.trim()) {
+        if (el?.value && el.value.trim()) {
           final[col] = el.value.trim();
         }
       }
@@ -355,5 +355,5 @@
   function escapeAttr(s) { return escapeHtml(s); }
 
   // Refresh counts initially after a short delay (so identity-options finish loading)
-  window.addEventListener("load", () => setTimeout(refreshCounts, 1200));
+  globalThis.addEventListener("load", () => setTimeout(refreshCounts, 1200));
 })();

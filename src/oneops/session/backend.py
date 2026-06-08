@@ -111,7 +111,7 @@ class InMemoryEventLog:
             raise ValueError("tenant_id is mandatory")
         removed = 0
         with self._lock:
-            for k, entries in list(self._log.items()):
+            for k, entries in self._log.items():
                 if k[0] != tenant_id:
                     continue
                 kept = [(s, e) for s, e in entries

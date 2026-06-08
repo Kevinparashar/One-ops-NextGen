@@ -35,15 +35,15 @@
 
   function loadStoredSessionId() {
     try {
-      const v = window.localStorage.getItem(LS_KEY);
+      const v = globalThis.localStorage.getItem(LS_KEY);
       return (typeof v === "string" && v.startsWith("sess_")) ? v : null;
-    } catch (_e) { return null; }
+    } catch { return null; }
   }
   function saveSessionId(id) {
-    try { window.localStorage.setItem(LS_KEY, id); } catch (_e) { /* ignore */ }
+    try { globalThis.localStorage.setItem(LS_KEY, id); } catch { /* ignore */ }
   }
   function clearStoredSessionId() {
-    try { window.localStorage.removeItem(LS_KEY); } catch (_e) { /* ignore */ }
+    try { globalThis.localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
   }
 
   // POST /api/sessions — mint a fresh server-side session.
@@ -54,8 +54,8 @@
       });
       if (!res.ok) return null;
       const payload = await res.json();
-      return (payload && payload.session_id) || null;
-    } catch (_e) { return null; }
+      return payload?.session_id || null;
+    } catch { return null; }
   }
 
   // GET /api/session/{id}/history — true iff Postgres has any durable
@@ -70,7 +70,7 @@
       if (!res.ok) return false;
       const payload = await res.json();
       return Array.isArray(payload.events) && payload.events.length > 0;
-    } catch (_e) { return false; }
+    } catch { return false; }
   }
 
   // GET /api/sessions/{id} — true iff server still has this session active.
@@ -80,7 +80,7 @@
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`,
                               { headers: envelopeHeaders() });
       return res.ok;
-    } catch (_e) { return false; }
+    } catch { return false; }
   }
 
   // Boot resolution: validate cached id; otherwise mint a new one.
@@ -119,10 +119,10 @@
 
   function _lsAvailable() {
     try {
-      window.localStorage.setItem("_oneops_probe", "1");
-      window.localStorage.removeItem("_oneops_probe");
+      globalThis.localStorage.setItem("_oneops_probe", "1");
+      globalThis.localStorage.removeItem("_oneops_probe");
       return true;
-    } catch (_e) { return false; }
+    } catch { return false; }
   }
 
   // Rehydrate the conversation panel from the server's session log when
@@ -213,7 +213,7 @@
         const payload = await res.json();
         rows = payload.sessions || [];
       }
-    } catch (_e) { /* fall through with empty rows */ }
+    } catch { /* fall through with empty rows */ }
     list.innerHTML = "";
     if (!rows.length) {
       const empty = document.createElement("div");
@@ -283,7 +283,7 @@
       await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
         method: "DELETE", headers: envelopeHeaders(),
       });
-    } catch (_e) { /* ignore — refresh will reflect server reality */ }
+    } catch { /* ignore — refresh will reflect server reality */ }
     if (id === sessionId) {
       // Deleted the active one — mint a fresh and clear the panel.
       const fresh = await mintServerSession();
@@ -480,7 +480,7 @@
     try {
       marked.setOptions({ breaks: true, gfm: true });
       return marked.parse(String(src));
-    } catch (_e) {
+    } catch {
       return escapeHtml(src);
     }
   }
@@ -579,7 +579,7 @@
     if (!steps.length) return null;
 
     const agentLabel = (id) =>
-      String(id || "").replace(/^uc\d+_/, "").replace(/_/g, " ")
+      String(id || "").replace(/^uc\d+_/, "").replaceAll("_", " ")
         .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
 
     const agents = new Set();
@@ -593,8 +593,8 @@
     details.className = "exec-trace";
 
     const summary = document.createElement("summary");
-    const total = (payload.latency_ms != null)
-      ? " · " + (payload.latency_ms / 1000).toFixed(1) + "s" : "";
+    const total = (payload.latency_ms == null)
+      ? "" : " · " + (payload.latency_ms / 1000).toFixed(1) + "s";
     const plural = (n) => (n === 1 ? "" : "s");
     summary.textContent =
       `How this was answered — ${agents.size} agent${plural(agents.size)}` +
@@ -607,10 +607,13 @@
       const li = document.createElement("li");
       const ok = s.status === "success";
       const failed = s.status === "failed";
-      li.className = "exec-trace-row " + (ok ? "ok" : (failed ? "bad" : "neutral"));
-      const badge = ok ? "✓" : (failed ? "✗" : "•");
+      let cls = "neutral";
+      let badge = "•";
+      if (ok) { cls = "ok"; badge = "✓"; }
+      else if (failed) { cls = "bad"; badge = "✗"; }
+      li.className = "exec-trace-row " + cls;
       const tool = s.tool_id ? " → " + s.tool_id : "";
-      const lat = (s.latency_ms != null) ? "  ·  " + s.latency_ms + " ms" : "";
+      const lat = (s.latency_ms == null) ? "" : "  ·  " + s.latency_ms + " ms";
       li.textContent = `${badge}  ${agentLabel(s.agent_id)}${tool}  (${s.status})${lat}`;
       ul.appendChild(li);
     });
@@ -841,7 +844,7 @@
   }
 
   function humanise(key) {
-    return String(key).replace(/_/g, " ").replace(/^(\w)/, (m) => m.toUpperCase());
+    return String(key).replaceAll("_", " ").replace(/^(\w)/, (m) => m.toUpperCase());
   }
   function humaniseUcId(ucId) {
     // uc01_summarization -> "Summarization"
@@ -891,7 +894,7 @@
     const MIN_PANEL_MS = 1100;
 
     const agentName = (id) => String(id || "")
-      .replace(/^uc\d+_/, "").replace(/_/g, " ")
+      .replace(/^uc\d+_/, "").replaceAll("_", " ")
       .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
     const rows = {};
     const keyOf = (ev) => ev.step_id || (ev.agent_id + "::" + ev.tool_id);
@@ -954,7 +957,7 @@
           buf = buf.slice(nl + 1);
           if (!line) continue;
           let ev;
-          try { ev = JSON.parse(line); } catch (_) { continue; }
+          try { ev = JSON.parse(line); } catch { continue; }
           if (ev.type === "final") finalPayload = ev.payload;
           else onEvent(ev);
         }
@@ -995,7 +998,7 @@
   // the SAME live agent/tool panel. Renders the panel into `mount`, streams
   // NDJSON from `url`, and returns the final payload (the UC's own response)
   // for the caller to render its existing results view beneath the panel.
-  window.oneopsLiveStream = async function ({ url, body, headers, mount }) {
+  globalThis.oneopsLiveStream = async function ({ url, body, headers, mount }) {
     const head = document.createElement("div");
     head.className = "live-head";
     head.textContent = "Working on it…";
@@ -1013,7 +1016,7 @@
     let routingCleared = false;
 
     const agentName = (id) => String(id || "")
-      .replace(/^uc\d+_/, "").replace(/_/g, " ")
+      .replace(/^uc\d+_/, "").replaceAll("_", " ")
       .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
     const rows = {};
     const keyOf = (ev) => ev.step_id || (ev.agent_id + "::" + ev.tool_id);
@@ -1066,7 +1069,7 @@
           buf = buf.slice(nl + 1);
           if (!ln) continue;
           let ev;
-          try { ev = JSON.parse(ln); } catch (_) { continue; }
+          try { ev = JSON.parse(ln); } catch { continue; }
           if (ev.type === "final") finalPayload = ev.payload;
           else onEvent(ev);
         }

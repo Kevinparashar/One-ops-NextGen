@@ -378,12 +378,16 @@ class _AbstainingClassifier:
 def _normalize(message: str) -> str:
     s = (message or "").strip().lower()
     s = re.sub(r"\s+", " ", s)
-    s = re.sub(r"[?.!,;:]+$", "", s)
+    s = s.rstrip("?.!,;:")          # trailing punctuation; rstrip = no-regex, no ReDoS (S5852)
     return s
 
 
 def _cache_key(*, tenant_id: str, message: str) -> str:
-    h = hashlib.md5(_normalize(message).encode("utf-8")).hexdigest()[:16]
+    # md5 is a cache-key digest only (non-cryptographic) — usedforsecurity=False
+    # marks intent and clears the weak-hash hotspot (S4790).
+    h = hashlib.md5(
+        _normalize(message).encode("utf-8"), usedforsecurity=False,
+    ).hexdigest()[:16]
     # Tenant prefix is structural — a cache entry can never leak across
     # tenants (defensive, even though the classification has no business
     # data — different tenants may have different scope conventions).

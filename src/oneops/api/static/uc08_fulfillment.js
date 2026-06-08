@@ -19,9 +19,9 @@
     const t = $("#tenant"), u = $("#user"), r = $("#role");
     return {
       "Content-Type": "application/json",
-      "x-tenant-id": (t && t.value.trim()) || "T001",
-      "x-user-id":   (u && u.value.trim()) || "USR00001",
-      "x-role":      (r && r.value.trim()) || "service_desk_agent",
+      "x-tenant-id": t?.value.trim() || "T001",
+      "x-user-id":   u?.value.trim() || "USR00001",
+      "x-role":      r?.value.trim() || "service_desk_agent",
     };
   }
 
@@ -88,7 +88,7 @@
     // throws "body stream already read".
     const raw = await res.text();
     let data;
-    try { data = raw ? JSON.parse(raw) : {}; } catch (_) { data = { _raw: raw }; }
+    try { data = raw ? JSON.parse(raw) : {}; } catch { data = { _raw: raw }; }
     if (!res.ok) {
       const detailMsg = typeof data.detail === "string"
         ? data.detail
@@ -158,7 +158,7 @@
       // require a persisted SR. Mark state.sr as null so the next-step
       // render knows this is a preview (no Proceed button).
       body.innerHTML = "";
-      const match = await window.oneopsLiveStream({
+      const match = await globalThis.oneopsLiveStream({
         url: "/api/uc08/match/stream",
         body: {
           sr_title: text.slice(0, 120),
@@ -168,7 +168,7 @@
         headers: headers(), mount: body,
       });
       if (!match || match.error || match.final_status === "failed") {
-        err.textContent = (match && match.error) || "match failed";
+        err.textContent = match?.error || "match failed";
         err.classList.remove("hidden");
         btn.disabled = false;
         btn.textContent = "🔍 Find match";
@@ -233,16 +233,17 @@
       return renderNoMatch(sr, m);
     }
 
-    const chosen = m.auto_pick || (m.candidates && m.candidates[0]) || null;
+    const chosen = m.auto_pick || m.candidates?.[0] || null;
     const e = m.enrichment || null;
 
     const isPreview = !sr;
 
-    const confPct = m.rerank_used
-      ? pct(m.rerank_confidence)
-      : (chosen ? Math.round(chosen.cosine_score * 100) : 0);
+    const cosinePct = chosen ? Math.round(chosen.cosine_score * 100) : 0;
+    const confPct = m.rerank_used ? pct(m.rerank_confidence) : cosinePct;
     const confLabel = m.rerank_used ? "rerank confidence" : "cosine similarity";
-    const confTone = confPct >= 80 ? "high" : confPct >= 60 ? "mid" : "low";
+    let confTone = "low";
+    if (confPct >= 80) confTone = "high";
+    else if (confPct >= 60) confTone = "mid";
     const judgeTone = m.judge_verdict ? m.judge_verdict.toLowerCase() : "none";
     const judgePct = pct(m.judge_confidence || 0);
 
@@ -280,7 +281,7 @@
             </div>
           </div>
 
-          ${chosen && chosen.description ? `
+          ${chosen?.description ? `
           <p class="uc08-cat-desc">${escapeHtml(chosen.description)}</p>` : ""}
 
           <!-- Confidence row -->
@@ -305,7 +306,7 @@
           <div class="uc08-judge uc08-judge-${judgeTone}">
             <div class="uc08-judge-header">
               <span class="uc08-judge-badge uc08-judge-badge-${judgeTone}">
-                ${m.judge_verdict === "FAITHFUL" ? "✓" : m.judge_verdict === "UNFAITHFUL" ? "✗" : "?"}
+                ${ { FAITHFUL: "✓", UNFAITHFUL: "✗" }[m.judge_verdict] || "?" }
                 ${escapeHtml(m.judge_verdict)}
               </span>
               <span class="uc08-judge-pct">verifier confidence ${judgePct}%</span>
@@ -325,7 +326,9 @@
           <div class="uc08-alts-list">
             ${alts.map((c, i) => {
               const altPct = Math.round(c.cosine_score * 100);
-              const altTone = altPct >= 80 ? "high" : altPct >= 60 ? "mid" : "low";
+              let altTone = "low";
+              if (altPct >= 80) altTone = "high";
+              else if (altPct >= 60) altTone = "mid";
               return `
               <div class="uc08-alt-card">
                 <div class="uc08-alt-rank">#${i + 2}</div>
@@ -414,14 +417,14 @@
       </div>`;
     }
     const histEvidence = (h) => {
-      if (!h || !h.evidence_label) return "";
+      if (!h?.evidence_label) return "";
       const tone = h.value ? "has" : "none";
       return `<span class="uc08-hist-tag uc08-hist-tag-${tone}">${escapeHtml(h.evidence_label)}</span>`;
     };
-    const histValue = (h) => (h && h.value) || "";
+    const histValue = (h) => h?.value || "";
     const pCanon = e.priority_canonical || "Medium";
     const pLetter = e.priority_p_letter || "P3";
-    const pTone = pLetter === "P1" ? "p1" : pLetter === "P2" ? "p2" : pLetter === "P4" ? "p4" : "p3";
+    const pTone = { P1: "p1", P2: "p2", P4: "p4" }[pLetter] || "p3";
 
     // SLA due — humanise
     const slaIso = e.sla_due_iso || "";
@@ -431,8 +434,8 @@
         const d = new Date(slaIso);
         const now = new Date();
         const hoursLeft = Math.round((d - now) / 36e5);
-        slaHuman = `${slaIso.replace("T", " ").slice(0, 16)} UTC · in ${hoursLeft}h`;
-      } catch (_) {}
+        slaHuman = `${slaIso.replaceAll("T", " ").slice(0, 16)} UTC · in ${hoursLeft}h`;
+      } catch { /* keep ISO string if date parse fails */ }
     }
 
     return `
@@ -594,7 +597,7 @@
   async function onProceed() {
     const sr = state.sr;
     const m  = state.match;
-    const chosen = m.auto_pick || (m.candidates && m.candidates[0]);
+    const chosen = m.auto_pick || m.candidates?.[0];
     if (!chosen) return;
 
     // Variables collected from the form go into the fulfill payload.
@@ -664,11 +667,11 @@
       renderTaskRows(s);
       // Continue polling unless terminal
       const term = ["fulfilled", "failed", "cancelled", "partial"];
-      if (!term.includes(s.state)) {
-        state.pollTimer = setTimeout(pollStatus, 2000);
-      } else {
+      if (term.includes(s.state)) {
         state.completion = s;
         setTimeout(() => { state.step = "completion"; render(); }, 800);
+      } else {
+        state.pollTimer = setTimeout(pollStatus, 2000);
       }
     } catch (e) {
       const out = $("#uc08-tasks");
@@ -700,7 +703,7 @@
         </div>
       </div>
       <div class="uc08-state-label">RITM state: <strong>${escapeHtml(s.state)}</strong></div>
-      ${s.pending_approvals && s.pending_approvals.length ?
+      ${s.pending_approvals?.length ?
         `<div class="uc08-approvals">⚠️ Awaiting approval(s): ${
           s.pending_approvals.map(a => `<code>${escapeHtml(a)}</code>`).join(", ")
         }</div>` : ""}
@@ -712,22 +715,23 @@
   // ═════════════════════════════════════════════════════════════════
   function renderCompletion() {
     const s = state.completion;
-    const ok = s && s.state === "fulfilled";
-    const partial = s && (s.state === "partial" || (s.tasks_by_state && s.tasks_by_state.failed > 0));
+    const ok = s?.state === "fulfilled";
+    const partial = s?.state === "partial" || s?.tasks_by_state?.failed > 0;
+    let heading = "❌ Fulfillment failed";
+    if (ok) heading = "🎉 Fulfillment complete";
+    else if (partial) heading = "🟡 Partially complete";
     body.innerHTML = `
       <div class="uc08-step uc08-completion">
         <div class="uc08-sr-pill">
           🆕 ${escapeHtml(state.sr.request_id)} → RITM <strong>${escapeHtml(state.ritm.ritm_id)}</strong>
         </div>
-        <h4>${ok ? "🎉 Fulfillment complete" :
-                  partial ? "🟡 Partially complete" :
-                  "❌ Fulfillment failed"}</h4>
-        <p class="uc08-help">${escapeHtml((s && s.display_text) || "")}</p>
+        <h4>${heading}</h4>
+        <p class="uc08-help">${escapeHtml(s?.display_text || "")}</p>
         <ul class="uc08-final-counts">
-          <li>✅ Done: ${(s && s.tasks_by_state && s.tasks_by_state.done) || 0} of ${(s && s.tasks_total) || 0}</li>
-          ${(s && s.tasks_by_state && s.tasks_by_state.failed) ?
+          <li>✅ Done: ${s?.tasks_by_state?.done || 0} of ${s?.tasks_total || 0}</li>
+          ${s?.tasks_by_state?.failed ?
             `<li>❌ Failed: ${s.tasks_by_state.failed}</li>` : ""}
-          ${(s && s.tasks_by_state && s.tasks_by_state.skipped) ?
+          ${s?.tasks_by_state?.skipped ?
             `<li>⏸ Skipped: ${s.tasks_by_state.skipped}</li>` : ""}
         </ul>
         <div class="uc08-actions">

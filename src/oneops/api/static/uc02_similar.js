@@ -13,9 +13,9 @@
     const roleSel = $("#role");
     return {
       "Content-Type": "application/json",
-      "x-tenant-id": (tenantSel && tenantSel.value.trim()) || "T001",
-      "x-user-id":   (userSel && userSel.value.trim())   || "u_demo",
-      "x-role":      (roleSel && roleSel.value.trim())   || "service_desk_agent",
+      "x-tenant-id": tenantSel?.value.trim() || "T001",
+      "x-user-id":   userSel?.value.trim()   || "u_demo",
+      "x-role":      roleSel?.value.trim()   || "service_desk_agent",
     };
   }
 
@@ -46,7 +46,7 @@
   function fmtDate(s) {
     if (!s) return "—";
     const d = new Date(s);
-    if (isNaN(d.getTime())) return s;
+    if (Number.isNaN(d.getTime())) return s;
     return d.toISOString().slice(0, 10);
   }
   function flagBadge(flag) {
@@ -57,8 +57,8 @@
 
   // ── render source ticket panel (the one the user queried) ──────────────
   function renderSourcePanel(src) {
-    if (!src || !src.ticket_id) return "";
-    const status = (src.status || "open").replace(/_/g, " ");
+    if (!src?.ticket_id) return "";
+    const status = (src.status || "open").replaceAll("_", " ");
     const meta = [
       src.category    && `<span><strong>Category:</strong> ${escapeHtml(src.category)}</span>`,
       src.service_name && `<span><strong>Service:</strong> ${escapeHtml(src.service_name)}</span>`,
@@ -81,8 +81,8 @@
 
   // ── render one result row with click-to-expand ─────────────────────────
   function renderResultItem(r, i) {
-    const status = (r.status || "open").replace(/_/g, " ");
-    const why = (r.why_similar || []).map(s => s.replace(/_/g, " ")).join(", ");
+    const status = (r.status || "open").replaceAll("_", " ");
+    const why = (r.why_similar || []).map(s => s.replaceAll("_", " ")).join(", ");
     const details = [
       r.priority         && ["Priority",       r.priority],
       r.category         && ["Category",       r.category],
@@ -126,7 +126,7 @@
       return `${srcHtml}<p class="muted">${escapeHtml(cap)}.</p>${note}`;
     }
 
-    const tfLabel = d.time_filter && d.time_filter.label
+    const tfLabel = d.time_filter?.label
       ? ` from <em>${escapeHtml(d.time_filter.label)}</em>` : "";
     const cached = d.cached ? '<span class="similar-cache-pill">cached</span>' : "";
     const header = `<h4>Found ${d.results.length} similar ticket${d.results.length === 1 ? "" : "s"}${tfLabel} ${cached}</h4>`;
@@ -159,7 +159,7 @@
 
     const body = {
       ticket_id:           $("#similar-ticket-id").value.trim(),
-      max_results:         parseInt($("#similar-max-results").value, 10) || 5,
+      max_results:         Number.parseInt($("#similar-max-results").value, 10) || 5,
       same_category_only:  $("#similar-same-cat").checked,
       prefer_status:       $("#similar-prefer-status").value || "any",
     };
@@ -169,19 +169,19 @@
     // The dropdown values are pre-canned multiples of 24h for chat parity.
     const winH = $("#similar-window").value;
     if (winH) {
-      const hours = parseInt(winH, 10);
+      const hours = Number.parseInt(winH, 10);
       const days = Math.max(1, Math.round(hours / 24));
       const labelEl = $("#similar-window").selectedOptions[0];
       body.time_filter = {
         relative_days: days,
-        label: (labelEl && labelEl.textContent) || `last ${days} days`,
+        label: labelEl?.textContent || `last ${days} days`,
       };
     }
 
     try {
       // Live agent/tool panel (shared with chat) + the normal results view.
       out.innerHTML = "";
-      const data = await window.oneopsLiveStream({
+      const data = await globalThis.oneopsLiveStream({
         url: "/api/uc02/similar-tickets/stream",
         body, headers: headers(), mount: out,
       });
