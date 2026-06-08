@@ -76,6 +76,42 @@ DEFAULT_MAX_GENERATION_DEPTH = int(os.getenv("ONEOPS_MAX_GENERATION_DEPTH", "3")
 DEFAULT_MAX_GENERATED_PER_STEP = int(os.getenv("ONEOPS_MAX_GENERATED_PER_STEP", "8"))
 
 
+def _inherited_overrides(parent_step: dict[str, Any]) -> dict[str, Any]:
+    """Budget overrides to carry down the generated subtree — only when the
+    parent set them explicitly, so the env default still applies otherwise."""
+    inherited: dict[str, Any] = {}
+    if parent_step.get("_gen_max_depth") is not None:
+        inherited["_gen_max_depth"] = parent_step["_gen_max_depth"]
+    if parent_step.get("_gen_max_width") is not None:
+        inherited["_gen_max_width"] = parent_step["_gen_max_width"]
+    return inherited
+
+
+def _namespace_generated_steps(
+    capped: list[dict[str, Any]], *, parent_id: str, depth: int,
+    inherited: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Build the namespaced, parent-dependent step dicts. Returns
+    `(steps, missing_notes)` where each missing agent_id yields one note
+    (never a silent drop). `step_id` is `<parent>.g<i>`."""
+    out: list[dict[str, Any]] = []
+    notes: list[str] = []
+    for i, raw in enumerate(capped):
+        agent_id = (raw or {}).get("agent_id")
+        if not agent_id:
+            notes.append("a generated step had no agent_id")
+            continue
+        out.append({
+            "step_id": f"{parent_id}.g{i}",
+            "agent_id": agent_id,
+            "parameters": dict((raw or {}).get("parameters") or {}),
+            "depends_on": list((raw or {}).get("depends_on") or [parent_id]),
+            "_gen_depth": depth + 1,
+            **inherited,
+        })
+    return out, notes
+
+
 def _normalise_generated_steps(
     parent_step: dict[str, Any], raw_steps: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], str]:
@@ -112,29 +148,68 @@ def _normalise_generated_steps(
         note = (f"generation width limit ({max_width}) at '{parent_id}' "
                 f"— {len(raw_steps) - max_width} step(s) dropped")
 
-    # Carry budget overrides down the subtree (only when explicitly set, so the
-    # env default still applies when no override was given).
-    inherited: dict[str, Any] = {}
-    if parent_step.get("_gen_max_depth") is not None:
-        inherited["_gen_max_depth"] = parent_step["_gen_max_depth"]
-    if parent_step.get("_gen_max_width") is not None:
-        inherited["_gen_max_width"] = parent_step["_gen_max_width"]
+    out, missing_notes = _namespace_generated_steps(
+        capped, parent_id=parent_id, depth=depth,
+        inherited=_inherited_overrides(parent_step))
+    notes = ([note] if note else []) + missing_notes
+    return out, "; ".join(notes)
 
-    out: list[dict[str, Any]] = []
-    for i, raw in enumerate(capped):
-        agent_id = (raw or {}).get("agent_id")
-        if not agent_id:
-            note = (note + "; " if note else "") + "a generated step had no agent_id"
+
+def _overall_status(ordered: list[dict[str, Any]], unrouted: list) -> str:
+    """Turn-level status from the per-step results: executed (all good),
+    partial (some succeeded), blocked (nothing ran, a dependency stopped it),
+    else failed."""
+    succeeded = [r for r in ordered if r.get("status") == "success"]
+    failed = [r for r in ordered if r.get("status") in ("failed", "denied")]
+    blocked = [r for r in ordered if r.get("status") == "blocked"]
+    if succeeded and not failed and not blocked and not unrouted:
+        return "executed"
+    if succeeded:
+        return "partial"            # some worked, some blocked/failed
+    if blocked and not failed:
+        return "blocked"            # nothing ran; a dependency stopped it
+    return "failed"
+
+
+def _compose_response(
+    ordered: list[dict[str, Any]],
+    plan_by_step: dict[Any, dict[str, Any]],
+    unrouted: list,
+) -> str:
+    """User-facing response: a canned (policy) reply wins over the structural
+    summary; otherwise join the per-step friendly messages (dedup'd, plan
+    order) and append any unrouted fragments."""
+    # A canned (policy) response is the user-facing answer — compliance wins.
+    canned = next(
+        (r["output"]["canned_response"] for r in ordered
+         if isinstance(r.get("output"), dict)
+         and r["output"].get("canned_response")),
+        None)
+    if canned:
+        return canned
+    # Per-step friendly messages. Multi-step turns (compound actions,
+    # multi-sub-query) join with blank lines so each step reads independently.
+    parts: list[str] = []
+    seen: set[str] = set()
+    for r in ordered:
+        step = plan_by_step.get(r.get("step_id"), {})
+        rendered = friendly_step_response(step, r)
+        if not rendered:
             continue
-        out.append({
-            "step_id": f"{parent_id}.g{i}",
-            "agent_id": agent_id,
-            "parameters": dict((raw or {}).get("parameters") or {}),
-            "depends_on": list((raw or {}).get("depends_on") or [parent_id]),
-            "_gen_depth": depth + 1,
-            **inherited,
-        })
-    return out, note
+        # Dedup identical step messages — "summarize X and find KB for X"
+        # against a missing X produces the same not-found text twice; once is
+        # enough. Keep the first occurrence in plan order.
+        key = " ".join(rendered.split())
+        if key in seen:
+            continue
+        seen.add(key)
+        parts.append(rendered)
+    response = "\n\n".join(parts) or "Nothing to do."
+    if unrouted:
+        response += (
+            "\n\nI couldn't act on: "
+            + "; ".join(f'"{u}"' for u in unrouted))
+    return response
 
 
 # ── data-flow binding (previous_results) ──────────────────────────────────
@@ -979,53 +1054,8 @@ class ExecutorNodes:
             increment("ai.agent.runs.total", agent_id=r.get("agent_id", ""),
                       status=r.get("status", "unknown"))
 
-        succeeded = [r for r in ordered if r.get("status") == "success"]
-        failed = [r for r in ordered if r.get("status") in ("failed", "denied")]
-        blocked = [r for r in ordered if r.get("status") == "blocked"]
-
-        if succeeded and not failed and not blocked and not unrouted:
-            status = "executed"
-        elif succeeded:
-            status = "partial"            # some worked, some blocked/failed
-        elif blocked and not failed:
-            status = "blocked"            # nothing ran; a dependency stopped it
-        else:
-            status = "failed"
-
-        # A canned (policy) response is the user-facing answer — compliance
-        # wins over the structural summary.
-        canned = next(
-            (r["output"]["canned_response"] for r in ordered
-             if isinstance(r.get("output"), dict)
-             and r["output"].get("canned_response")),
-            None)
-        if canned:
-            response = canned
-        else:
-            # NEW: per-step friendly messages. Multi-step turns (compound
-            # actions, multi-sub-query) join with blank lines so each step
-            # reads independently.
-            parts: list[str] = []
-            seen: set[str] = set()
-            for r in ordered:
-                step = plan_by_step.get(r.get("step_id"), {})
-                rendered = friendly_step_response(step, r)
-                if not rendered:
-                    continue
-                # Dedup identical step messages — "summarize X and find KB
-                # for X" against a missing X produces the same not-found
-                # text twice; surfacing it once is enough. Keep the first
-                # occurrence in plan order.
-                key = " ".join(rendered.split())
-                if key in seen:
-                    continue
-                seen.add(key)
-                parts.append(rendered)
-            response = "\n\n".join(parts) or "Nothing to do."
-            if unrouted:
-                response += (
-                    "\n\nI couldn't act on: "
-                    + "; ".join(f'"{u}"' for u in unrouted))
+        status = _overall_status(ordered, unrouted)
+        response = _compose_response(ordered, plan_by_step, unrouted)
 
         # The turn acted on the valid IDs, but the message also held a
         # malformed one — append the correction request so the bad reference
