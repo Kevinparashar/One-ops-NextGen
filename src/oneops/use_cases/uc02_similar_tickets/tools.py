@@ -115,6 +115,33 @@ def _find_similar_error_response(
     raise exc
 
 
+def _gather_inputs(
+    arguments: dict[str, Any], context: dict[str, Any],
+) -> tuple[str, str, str, str, str | None]:
+    """Resolve (tenant_id, user_id, role, ticket_id_raw, service_id) from the
+    tool arguments + context, with multi-turn focus fallback (the executor sets
+    focus_entity_id / focus_service_id on the context after the previous turn,
+    so a follow-up like "are there any similar?" still binds). Raises ValueError
+    when tenant_id or a ticket is missing."""
+    tenant_id = str(context.get("tenant_id") or arguments.get("tenant_id") or "").strip()
+    user_id = str(context.get("user_id") or arguments.get("user_id") or "").strip()
+    role = str(context.get("role") or arguments.get("role") or "").strip()
+    ticket_id_raw = str(
+        arguments.get("ticket_id") or context.get("focus_entity_id") or ""
+    ).strip()
+    service_id = str(
+        arguments.get("service_id") or context.get("focus_service_id") or ""
+    ).strip().lower() or None
+    if not tenant_id:
+        raise ValueError("tenant_id missing from context and arguments")
+    if not ticket_id_raw:
+        raise ValueError(
+            "ticket_id is required — provide it explicitly (e.g. "
+            "'similar to INC0001234') or first set focus by summarising a "
+            "ticket")
+    return tenant_id, user_id, role, ticket_id_raw, service_id
+
+
 async def find_similar_entities(
     arguments: dict[str, Any], context: dict[str, Any],
 ) -> dict[str, Any]:
@@ -125,32 +152,8 @@ async def find_similar_entities(
     UC-1's `summarize_entity` fast-path contract. The id_resolver is the
     single source of truth for canonicalisation across button + chat.
     """
-    tenant_id = str(context.get("tenant_id") or arguments.get("tenant_id") or "").strip()
-    user_id = str(context.get("user_id") or arguments.get("user_id") or "").strip()
-    role = str(context.get("role") or arguments.get("role") or "").strip()
-
-    # Multi-turn focus binding (LangGraph state channel — see [[project_poc5mw1_focus_state_channel_2026_05_28]]).
-    # Follow-up turns like "are there any similar?" carry no ticket in the
-    # arguments; the executor sets focus_entity_id / focus_service_id on the
-    # tool context after the previous turn. We read both as fallbacks.
-    ticket_id_raw = str(
-        arguments.get("ticket_id")
-        or context.get("focus_entity_id")
-        or ""
-    ).strip()
-    service_id = str(
-        arguments.get("service_id")
-        or context.get("focus_service_id")
-        or ""
-    ).strip().lower() or None
-
-    if not tenant_id:
-        raise ValueError("tenant_id missing from context and arguments")
-    if not ticket_id_raw:
-        raise ValueError(
-            "ticket_id is required — provide it explicitly (e.g. "
-            "'similar to INC0001234') or first set focus by summarising a "
-            "ticket")
+    tenant_id, user_id, role, ticket_id_raw, service_id = _gather_inputs(
+        arguments, context)
 
     # Canonicalise + (when missing) auto-derive service_id from the prefix.
     try:
