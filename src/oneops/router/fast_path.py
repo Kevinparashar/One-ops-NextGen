@@ -29,13 +29,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from oneops.errors import OneOpsError
-from oneops.observability import get_logger, get_tracer
+from oneops.observability import get_logger
 from oneops.registry.models import FastPathInputField, FastPathSpec
 from oneops.registry.service import RegistryService
 from oneops.router.plan import PlanStep, RoutePlan
 
 _log = get_logger("oneops.router.fast_path")
-_tracer = get_tracer("oneops.router.fast_path")
 
 
 class FastPathError(OneOpsError):
@@ -248,57 +247,57 @@ class FastPathDispatcher:
         if not uc_id:
             raise FastPathError("uc_id is required")
 
-        with _tracer.start_as_current_span(
-            "router.fast_path.dispatch",
-            attributes={"oneops.uc_id": uc_id},
-        ) as span:
-            agent = self._registry.agents.get_optional(uc_id)
-            if agent is None:
-                raise FastPathError(f"unknown use case {uc_id!r}")
-            if agent.status.value != "active":
-                raise FastPathError(
-                    f"use case {uc_id!r} is not active "
-                    f"(status={agent.status.value})")
-            spec = agent.fast_path
-            if spec is None or not spec.enabled:
-                raise FastPathError(
-                    f"use case {uc_id!r} does not expose a fast-path entry")
+        # No OTel span here. Dispatch is sub-millisecond plan-building that runs
+        # at the HTTP edge BEFORE the turn's trace exists — a span would emit as
+        # its own empty root trace (trace fragmentation: one button press → two
+        # Langfuse traces, one blank). The dispatch facts are captured in the
+        # `fast_path.dispatched` log and the executor's turn span
+        # (entry_mode=fast_path + the plan). One turn = one trace, like chat.
+        agent = self._registry.agents.get_optional(uc_id)
+        if agent is None:
+            raise FastPathError(f"unknown use case {uc_id!r}")
+        if agent.status.value != "active":
+            raise FastPathError(
+                f"use case {uc_id!r} is not active "
+                f"(status={agent.status.value})")
+        spec = agent.fast_path
+        if spec is None or not spec.enabled:
+            raise FastPathError(
+                f"use case {uc_id!r} does not expose a fast-path entry")
 
-            # Validate input field set: every required field is present, no
-            # unknown fields are passed through.
-            declared_names = {f.name for f in spec.input_fields}
-            supplied_names = set(request.inputs.keys())
-            unknown = supplied_names - declared_names
-            if unknown:
-                raise FastPathError(
-                    f"use case {uc_id!r} received unknown fast-path "
-                    f"fields: {sorted(unknown)}")
+        # Validate input field set: every required field is present, no
+        # unknown fields are passed through.
+        declared_names = {f.name for f in spec.input_fields}
+        supplied_names = set(request.inputs.keys())
+        unknown = supplied_names - declared_names
+        if unknown:
+            raise FastPathError(
+                f"use case {uc_id!r} received unknown fast-path "
+                f"fields: {sorted(unknown)}")
 
-            params = self._coerce_inputs(spec, request, uc_id)
+        params = self._coerce_inputs(spec, request, uc_id)
 
-            # Build the one-step plan. The executor's direct-plan entry will
-            # run load_session → policy → authz_recheck → handler → persist
-            # exactly as if a router had produced the same plan.
-            step = PlanStep(
-                step_id="step_1",
-                agent_id=uc_id,
-                # PlanStep carries (str, str) pairs — coerce ints/bools back
-                # to their canonical string repr for the wire (the handler
-                # re-parses against its own tool schema).
-                parameters=tuple(
-                    (k, str(v)) for k, v in params.items()
-                ),
-                depends_on=(),
-            )
-            plan = RoutePlan(steps=(step,))
-            span.set_attribute("fast_path.fields", ",".join(sorted(params)))
-            span.set_attribute("fast_path.primary_tool_id", spec.primary_tool_id)
-            _log.info(
-                "fast_path.dispatched",
-                uc_id=uc_id, fields=sorted(params),
-                primary_tool_id=spec.primary_tool_id,
-            )
-            return FastPathDispatchResult(plan=plan, parameters=params)
+        # Build the one-step plan. The executor's direct-plan entry will
+        # run load_session → policy → authz_recheck → handler → persist
+        # exactly as if a router had produced the same plan.
+        step = PlanStep(
+            step_id="step_1",
+            agent_id=uc_id,
+            # PlanStep carries (str, str) pairs — coerce ints/bools back
+            # to their canonical string repr for the wire (the handler
+            # re-parses against its own tool schema).
+            parameters=tuple(
+                (k, str(v)) for k, v in params.items()
+            ),
+            depends_on=(),
+        )
+        plan = RoutePlan(steps=(step,))
+        _log.info(
+            "fast_path.dispatched",
+            uc_id=uc_id, fields=sorted(params),
+            primary_tool_id=spec.primary_tool_id,
+        )
+        return FastPathDispatchResult(plan=plan, parameters=params)
 
 
 __all__ = [
