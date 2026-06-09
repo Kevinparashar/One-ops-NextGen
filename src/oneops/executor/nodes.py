@@ -20,6 +20,7 @@ import os
 import time
 from typing import Any
 
+from langgraph.errors import GraphInterrupt
 from langgraph.types import Send, interrupt
 
 from oneops.authz.models import Principal
@@ -1032,13 +1033,17 @@ class ExecutorNodes:
         """Run the step executor, delivering dependency outputs to the handler.
         Only build a request copy when there is something to add (no-binding
         steps pass the original envelope unchanged). A raised exception is
-        typed into a failed result, never propagated."""
+        typed into a failed result, never propagated — EXCEPT a GraphInterrupt,
+        which is the interrupt protocol pausing the turn and must propagate to
+        LangGraph (the API catches it and returns the interrupt to the user)."""
         try:
             run_request = (
                 {**request, "previous_results": previous_results,
                  "bound_inputs": bound_inputs}
                 if (previous_results or bound_inputs) else request)
             return await self._step_executor.run(step, run_request)
+        except GraphInterrupt:
+            raise
         except Exception as exc:  # noqa: BLE001 — typed into a failed result
             _log.warning("executor.step_executor_raised",
                          agent_id=agent_id, error=str(exc))

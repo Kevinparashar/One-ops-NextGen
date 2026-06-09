@@ -142,11 +142,16 @@ class DragonflyChatTurnCache:
 
 
 def should_cache(response_dict: Mapping[str, Any]) -> bool:
-    """Cache only successful, useful responses. Refusals, clarifications
-    and empty replies always re-run on the next turn."""
+    """Cache only successful, useful responses. Refusals, clarifications,
+    empty replies — and interrupted turns — always re-run on the next turn.
+
+    An `interrupted` turn is STATEFUL: its continuation lives in a per-session
+    LangGraph checkpoint. Caching it (or serving it to another session) hands
+    back a pause whose checkpoint doesn't exist, so the next turn can't resume
+    and falls back through the control gate. Never cache it."""
     status = str(response_dict.get("final_status") or "").lower()
     text = str(response_dict.get("final_response") or "")
-    if status in ("clarification", "refused", "error", ""):
+    if status in ("clarification", "refused", "error", "interrupted", ""):
         return False
     if not text or len(text.strip()) < 20:
         return False

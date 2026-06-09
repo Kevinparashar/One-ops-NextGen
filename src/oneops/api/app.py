@@ -346,6 +346,22 @@ _MAX_FAST_PATH_INPUT_DEPTH = 6
 _MAX_FAST_PATH_INPUT_BYTES = 64 * 1024
 
 
+def _extract_interrupt_payload(out: Any) -> dict[str, Any] | None:
+    """A turn paused by the Conversational Interrupt Protocol. With a
+    checkpointer configured, LangGraph does NOT raise GraphInterrupt — it
+    RETURNS the state with `__interrupt__` populated (a sequence of Interrupt
+    objects, each carrying `.value`). Normalise that into the typed payload
+    dict the frontend renders, or None when the turn did not pause."""
+    pending = out.get("__interrupt__") if isinstance(out, dict) else None
+    if not pending:
+        return None
+    val = pending[0] if isinstance(pending, (list, tuple)) else pending
+    if hasattr(val, "value"):
+        inner = val.value
+        return inner if isinstance(inner, dict) else {"value": inner}
+    return val if isinstance(val, dict) else {"value": val}
+
+
 def _nesting_depth(value: Any, _depth: int = 1) -> int:
     """Max container-nesting depth of a JSON-like value (scalars = 0)."""
     if isinstance(value, dict):
@@ -1723,7 +1739,10 @@ def build_app() -> FastAPI:
                         timeout=_s.turn_timeout_seconds)
                 except Exception:                             # noqa: BLE001
                     out = {}
-                _intr2 = out.get("interrupt")
+                # The resumed turn may pause AGAIN (a multi-step flow: pick →
+                # fields → confirm). Detect the next interrupt from the returned
+                # state and re-arm the marker so the following turn resumes too.
+                _intr2 = _extract_interrupt_payload(out)
                 if _intr2 is not None and cache is not None:
                     with suppress(Exception):
                         await cache.put(
@@ -1734,10 +1753,13 @@ def build_app() -> FastAPI:
                         tenant_id=tenant_id, session_id=session_id,
                         user_id=user_id,
                         title=(req.message or "")[:120], bump_turn_count=True)
+                _resp = (_intr2.get("prompt", _intr2.get("question", ""))
+                         if _intr2 else str(out.get("final_response") or ""))
                 return TurnResponse(
                     door="chat",
-                    final_status=str(out.get("final_status") or "interrupted"),
-                    final_response=str(out.get("final_response") or ""),
+                    final_status=("interrupted" if _intr2
+                                  else str(out.get("final_status") or "executed")),
+                    final_response=_resp,
                     step_results=list(out.get("step_results") or []),
                     session_id=session_id,
                     request_id=request_id,
@@ -1817,7 +1839,12 @@ def build_app() -> FastAPI:
         from oneops.api.chat_turn_cache import should_cache as _should_cache
         from oneops.api.semantic_turn_cache import is_standalone as _is_standalone
         sem = getattr(request.app.state, "semantic_cache", None)
+        # A resume turn (mid-interrupt-flow) must NEVER hit the semantic cache —
+        # it has to run resume_turn against the live checkpoint, not return a
+        # cached standalone answer. Excluding it keeps the UC-8 flow on the
+        # resume path instead of falling back through the control gate.
         sem_eligible = (door == "chat" and sem is not None
+                        and not envelope.get("interrupt_resume")
                         and _is_standalone(message))
         if sem_eligible:
             cached = await sem.get(tenant_id=tenant_id, role=role, query=message)
@@ -1929,6 +1956,12 @@ def build_app() -> FastAPI:
             "session_id": session_id, "user_id": user_id, "role": role,
             "message": req.message,
         }
+        # Forward an interrupt reply so the browser's widget answer RESUMES the
+        # paused flow (pick → fields → confirm → create) instead of starting a
+        # new turn. `_run` routes these to resume_turn.
+        if req.interrupt_resume and req.interrupt_answer is not None:
+            envelope["interrupt_resume"] = True
+            envelope["interrupt_answer"] = req.interrupt_answer
         return StreamingResponse(
             _stream_turn(request, envelope, door="chat"),
             media_type=_APPLICATION_X_NDJSON)
@@ -2323,11 +2356,22 @@ async def _run(
 
             # in-process path (default)
             graph = request.app.state.graph
-            out = await asyncio.wait_for(
-                run_turn(graph, envelope,
-                         config={"configurable": {"thread_id": thread_id}}),
-                timeout=_s.turn_timeout_seconds,
-            )
+            _cfg = {"configurable": {"thread_id": thread_id}}
+            # Resume a paused turn when the envelope carries the interrupt
+            # answer (the streaming door threads it here so the browser's
+            # widget reply continues the SAME flow instead of starting fresh).
+            if (envelope.get("interrupt_resume")
+                    and envelope.get("interrupt_answer") is not None):
+                out = await asyncio.wait_for(
+                    resume_turn(graph, envelope["interrupt_answer"],
+                                config=_cfg),
+                    timeout=_s.turn_timeout_seconds,
+                )
+            else:
+                out = await asyncio.wait_for(
+                    run_turn(graph, envelope, config=_cfg),
+                    timeout=_s.turn_timeout_seconds,
+                )
             set_langfuse_io(span, output=out.get("final_response"))
             trace_id = format(span.get_span_context().trace_id, "032x") \
                 if span.get_span_context().trace_id else None
@@ -2425,6 +2469,32 @@ async def _run(
         raise HTTPException(
             status_code=500,
             detail=f"engine failure (request_id={req_id})") from exc
+    # Interrupt protocol (checkpointer path): ainvoke RETURNED a paused state
+    # rather than raising — surface the interrupt the same way as the raised
+    # path above so the frontend renders the widget and can resume.
+    _intr = _extract_interrupt_payload(out)
+    if _intr is not None:
+        _log.info("oneops.api.interrupt_captured", door=door,
+                  session_id=session_id, kind=_intr.get("kind", "unknown"))
+        _cache = getattr(request.app.state, "chat_turn_cache", None)
+        if _cache is not None:
+            with suppress(Exception):
+                await _cache.put(
+                    tenant_id=envelope.get("tenant_id", ""),
+                    key=f"__interrupt__{session_id}",
+                    value={"interrupt": _intr})
+        return TurnResponse(
+            door=door,
+            final_status="interrupted",
+            final_response=_intr.get(
+                "prompt", _intr.get("question", "Input required.")),
+            step_results=[],
+            session_id=session_id,
+            request_id=envelope["request_id"],
+            trace_id=trace_id,
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            interrupt=_intr,
+        )
     return TurnResponse(
         door=door,
         final_status=out.get("final_status") or "",

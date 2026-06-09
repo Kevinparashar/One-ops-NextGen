@@ -453,13 +453,30 @@ def _query_from(arguments: dict[str, Any], context: dict[str, Any]) -> str:
     return ""
 
 
+# Per-flow memo. LangGraph replays this whole handler from the top on every
+# interrupt resume — with field-by-field collection that is N+2 replays per
+# request. Memoising the (idempotent) catalog search + schema per session keeps
+# replay cheap: no re-embedding the query or re-reading the form on each turn.
+# Bounded + process-local; a memo miss (e.g. another worker) just re-fetches.
+_FLOW_MEMO_CAP = 512
+_search_memo: dict[str, dict[str, Any]] = {}
+_fields_memo: dict[str, dict[str, Any]] = {}
+
+
+def _memo_put(memo: dict[str, dict[str, Any]], key: str,
+              val: dict[str, Any]) -> None:
+    if len(memo) >= _FLOW_MEMO_CAP:
+        memo.clear()
+    memo[key] = val
+
+
 async def request_catalog_item(
     arguments: dict[str, Any], context: dict[str, Any],
 ) -> dict[str, Any]:
     """Guided new-service-request flow (runbook Playbook 3). One conductor that
-    drives search → pick → fields → confirm → create across turns via the
-    interrupt protocol. The LLM does not pick tools here — this is deterministic
-    sequencing; the user makes the choices through the interrupt widgets."""
+    drives search → pick → fields (one at a time) → confirm → create across
+    turns via the interrupt protocol. The LLM does not pick tools here — this is
+    deterministic sequencing; the user makes the choices through the widgets."""
     # Lazy import — avoid an import cycle with the executor package at load.
     from oneops.executor.nodes import (
         interrupt_for_confirmation,
@@ -472,13 +489,18 @@ async def request_catalog_item(
         "uc08.tool.request_catalog_item",
         attributes={_ONEOPS_TENANT_ID: tenant_id},
     ):
+        session_id = str(context.get("session_id") or "")
         # ── Step 1: search the catalog (has-form items only) ──────────────
         query = _query_from(arguments, context)
         if not query:
             return {"ok": True, "display_text":
                     "What would you like to request from IT?"}
-        listing = await get_service_request_list(
-            {"service_catalogs": [query]}, context)
+        _skey = f"{tenant_id}:{session_id}:{query}"
+        listing = _search_memo.get(_skey)
+        if listing is None:
+            listing = await get_service_request_list(
+                {"service_catalogs": [query]}, context)
+            _memo_put(_search_memo, _skey, listing)
         matches = listing.get("matches") or []
 
         # ── Fallback: no catalog match → graceful decline (no incident) ───
@@ -507,8 +529,13 @@ async def request_catalog_item(
         catalog_label = str(chosen.get("label") or catalog_id)
 
         # ── Step 3: fetch the intake form for the chosen item ─────────────
-        fields_resp = await get_service_request_fields(
-            {"catalog_id": catalog_id}, context)
+        _fkey = f"{tenant_id}:{catalog_id}"
+        fields_resp = _fields_memo.get(_fkey)
+        if fields_resp is None:
+            fields_resp = await get_service_request_fields(
+                {"catalog_id": catalog_id}, context)
+            if fields_resp.get("ok"):
+                _memo_put(_fields_memo, _fkey, fields_resp)
         if not fields_resp.get("ok"):
             return {"ok": False,
                     "error_code": fields_resp.get("error_code", "UC08_ERROR"),
@@ -517,20 +544,31 @@ async def request_catalog_item(
                         "I couldn't load that item's request form.")}
         schema = fields_resp.get("fields") or []
 
-        # ── Step 4: collect values for EXACTLY the schema fields ──────────
+        # ── Step 4: collect each field ONE AT A TIME (runbook: "one or two
+        #    questions at a time, not a full-schema dump"). Each ask is its own
+        #    interrupt so the user fills + sends per field; types/options are
+        #    preserved so dates and selects render the right widget. ─────────
         values: dict[str, Any] = {}
-        if schema:
-            collected = interrupt_for_input(
-                f"Please provide a few details for “{catalog_label}”:",
-                [{"name": f["field_name"], "label": f.get("label") or f["field_name"],
-                  "type": f.get("type") or "text",
-                  "required": bool(f.get("required")),
-                  **({"options": f["options"]} if f.get("options") else {})}
-                 for f in schema if f.get("field_name")],
+        for f in schema:
+            name = f.get("field_name")
+            if not name:
+                continue
+            req = bool(f.get("required"))
+            label = f.get("label") or name
+            answer = interrupt_for_input(
+                f"{label}{' (required)' if req else ' (optional)'} — "
+                f"for “{catalog_label}”",
+                [{"name": name, "label": label,
+                  "type": f.get("type") or "text", "required": req,
+                  **({"options": f["options"]} if f.get("options") else {})}],
             )
-            values = dict(_unwrap(collected, "fields") or {})
+            got = _unwrap(answer, "fields")
+            val = got.get(name) if isinstance(got, dict) else got
+            if val not in (None, ""):
+                values[name] = val
 
-        # ── Step 5: review + confirm (the SOLE approval gate) ─────────────
+        # ── Step 5: show the filled template + confirm before submit (the
+        #    SOLE approval gate, runbook step 5). ──────────────────────────
         confirmation = interrupt_for_confirmation(
             {"Item": catalog_label,
              **{k: v for k, v in values.items() if str(v).strip()}},

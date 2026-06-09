@@ -56,9 +56,7 @@
       "determinism_level": "medium",
       "excludes": [],
       "hooks": {
-        "after_invocation": [
-          "builtin:emit_audit"
-        ],
+        "after_invocation": [],
         "before_invocation": [
           "builtin:authz_recheck"
         ]
@@ -116,18 +114,6 @@
       ],
       "routing_shape": "single_agent",
       "manages_own_approval": true,
-      "fast_path": {
-        "enabled": false,
-        "primary_tool_id": "request_catalog_item",
-        "input_fields": [
-          {
-            "name": "query",
-            "type": "str",
-            "required": false,
-            "description": "What the user wants to request (free text)."
-          }
-        ]
-      },
       "status": "active",
       "tool_refs": [
         {

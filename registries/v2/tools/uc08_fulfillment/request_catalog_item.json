@@ -26,8 +26,8 @@
         {
           "name": "query",
           "type": "str",
-          "required": false,
-          "description": "What the user wants to request (free text); defaults to the latest user message.",
+          "required": true,
+          "description": "What the user wants to request (free text); the router threads the user message here. This is the chat entry tool, selected by this param shape.",
           "data_classification": "internal"
         }
       ],

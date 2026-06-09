@@ -77,10 +77,15 @@ def _provider(conn: _FakeConn):
 
 @pytest.fixture(autouse=True)
 def _reset_module_state():
-    """Snapshot + restore the module globals each test touches."""
+    """Snapshot + restore the module globals each test touches, and clear the
+    conductor's per-flow memo so module state never leaks across tests."""
     saved = (tools._gateway, tools._nats_client, tools._connection_provider)
+    tools._search_memo.clear()
+    tools._fields_memo.clear()
     yield
     tools._gateway, tools._nats_client, tools._connection_provider = saved
+    tools._search_memo.clear()
+    tools._fields_memo.clear()
 
 
 # ── get_service_request_list ────────────────────────────────────────────────
@@ -366,6 +371,29 @@ async def test_conductor_happy_path_runs_full_sequence(monkeypatch):
     assert calls["created"] == {"catalog_id": "CAT_HW_LAPTOP_DEV",
                                 "fields": {"model": "XPS 15"}}
     assert out["ok"] is True and out["request_id"] == "REQ0000000001"
+
+
+async def test_conductor_collects_fields_one_at_a_time(monkeypatch):
+    # runbook step 4: "one or two questions at a time, not a full-schema dump".
+    fields3 = [
+        {"field_name": "f1", "label": "F1", "type": "text", "required": True},
+        {"field_name": "f2", "label": "F2", "type": "date", "required": True},
+        {"field_name": "f3", "label": "F3", "type": "text", "required": False},
+    ]
+    calls = _stub_flow(
+        monkeypatch, matches=_MATCHES, fields=fields3,
+        selection={"selected": {"id": "CAT_HW_LAPTOP_DEV", "label": "Dev Laptop"}},
+        inputs={"fields": {"f1": "a", "f2": "2026-01-01", "f3": "c"}},
+        confirmed={"confirmed": True})
+    out = await tools.request_catalog_item({"query": "laptop"}, _CTX)
+    kinds = [k for k, _ in calls["interrupts"]]
+    # ONE input interrupt PER field, then a single final confirmation.
+    assert kinds == ["selection", "input", "input", "input", "confirmation"]
+    # each input asked for exactly one field (not the whole form at once).
+    assert all(len(flds) == 1 for k, flds in calls["interrupts"] if k == "input")
+    assert calls["created"]["fields"] == {
+        "f1": "a", "f2": "2026-01-01", "f3": "c"}
+    assert out["ok"] is True
 
 
 async def test_conductor_no_match_declines_without_interrupting(monkeypatch):

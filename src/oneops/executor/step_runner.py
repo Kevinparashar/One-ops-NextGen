@@ -24,6 +24,8 @@ import asyncio
 import time
 from typing import Any, Protocol
 
+from langgraph.errors import GraphInterrupt
+
 from oneops.errors import ToolHandlerError
 from oneops.observability import get_logger, get_tracer, set_langfuse_io
 from oneops.observability.event_sink import publish as _publish_event
@@ -407,6 +409,13 @@ class HandlerStepExecutor:
                 output = await asyncio.wait_for(
                     handler(arguments, context), timeout=timeout_s,
                 )
+            except GraphInterrupt:
+                # The handler PAUSED the turn (Conversational Interrupt
+                # Protocol — e.g. UC-8 catalog asking the user to pick an
+                # item). This is control flow, not a failure: it must
+                # propagate to LangGraph so the graph checkpoints and the API
+                # returns the interrupt. Never type it into a failed result.
+                raise
             except Exception as exc:                      # noqa: BLE001 — boundary
                 # TimeoutError (a subclass of Exception) and any other handler
                 # exception both land here; `_handler_error_result` branches on
