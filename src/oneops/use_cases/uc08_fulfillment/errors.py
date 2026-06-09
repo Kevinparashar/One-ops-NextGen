@@ -5,16 +5,14 @@ discriminates by exception type, not by parsing error strings. Each error
 extends `OneOpsError` so the API boundary maps it to a deterministic HTTP
 status code.
 
-Mapping to HTTP responses (used by uc08_routes.py in Phase 7):
+These typed errors are raised by the fulfilment engine and surfaced through
+the conversational boundary (UC-8 is chat-only as of 2026-06-09 — the bespoke
+REST routes were removed). Each extends `OneOpsError` so any boundary maps it
+deterministically:
 
-    CatalogItemNotFoundError       → 404
-    RequestNotFoundError           → 404
-    RequestItemAlreadyExistsError  → 409
-    InvalidPlanError               → 422
-    DuplicateRequestError          → 409
-    AdapterInvocationError         → 502 (Bad Gateway)
-    FulfillmentPersistenceError    → 500
-    FulfillmentTimeoutError        → 504
+    CatalogItemNotFoundError · RequestNotFoundError · RequestItemAlreadyExistsError
+    InvalidPlanError · DuplicateRequestError · AdapterInvocationError
+    FulfillmentPersistenceError · FulfillmentTimeoutError
 
 Every raise site logs a structured event (`uc08.error.<class>`) so post-
 mortems don't depend on string matching.

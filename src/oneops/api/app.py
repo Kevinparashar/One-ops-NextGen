@@ -988,9 +988,9 @@ async def _lifespan(app: FastAPI):
                       error=str(exc)[:160])
 
     # ── UC-8 Fulfillment NATS agent wiring ──────────────────────────────
-    # When NATS is available, the /api/uc08/fulfill route publishes the
-    # executor-kick over NATS instead of running it in-process. Symmetric
-    # with UC-5. Graceful fallback to asyncio task if NATS is down.
+    # Starts the fulfilment-engine worker (runs the task DAG over NATS).
+    # UC-8 is chat-only; the worker is triggered by the chat
+    # create_service_request tool (Step 2). Graceful skip if NATS is down.
     try:
         import os as _os
 
@@ -1018,9 +1018,9 @@ async def _lifespan(app: FastAPI):
         )
         await uc08_agent.start()
         app.state.uc08_agent = uc08_agent
-
-        from oneops.api import uc08_routes as _uc08_routes
-        _uc08_routes.set_nats_dispatcher(nats_client_uc08)
+        # The fulfilment engine worker (runs the task DAG). Its trigger is the
+        # chat create_service_request tool (Step 2), not the removed REST route.
+        app.state.uc08_nats = nats_client_uc08
         _log.info("oneops.api.uc08_agent_started", dispatch="nats")
     except Exception as exc:                                      # noqa: BLE001
         _log.warning("oneops.api.uc08_wiring_failed",
@@ -1304,22 +1304,10 @@ def build_app() -> FastAPI:
     from oneops.api.uc02_routes import router as _uc02_router
     app.include_router(_uc02_router)
 
-    # ── UC-8 Catalog Fulfillment — /api/uc08/match + fulfill + status ──────
-    from oneops.api import uc08_routes
-    from oneops.api.uc08_routes import router as _uc08_router
-    app.include_router(_uc08_router)
-    # Inject the LiteLLM gateway + cache so the routes can call them.
-    try:
-        uc08_routes.set_gateway(gateway)
-    except Exception as exc:                                  # noqa: BLE001
-        _log.warning("oneops.api.uc08_routes.gateway_wire_failed",
-                     error=str(exc)[:160])
-    try:
-        if getattr(app.state, "edge_cache", None) is not None:
-            uc08_routes.set_cache(app.state.edge_cache)
-    except Exception:                                          # noqa: BLE001
-        pass
-    _log.info("oneops.api.uc08_routes_registered")
+    # UC-8 Catalog Fulfillment is CHAT-ONLY (2026-06-09): the bespoke REST/
+    # button routes (uc08_routes.py) + button frontend were removed. UC-8 is
+    # reached via the conversational router (card-driven routing) and runs
+    # through its 4 chat tools + the fulfilment engine; there is no button path.
 
     # ── frontend ──────────────────────────────────────────────────────
     static_dir = os.path.join(os.path.dirname(__file__), "static")
