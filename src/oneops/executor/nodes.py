@@ -1370,4 +1370,90 @@ def dispatch_wave(state: ExecutorState) -> list[Send] | str:
     return sends
 
 
-__all__ = ["ExecutorNodes", "route_branch", "dispatch_wave"]
+# ── Typed Conversational Interrupt Protocol ──────────────────────────────
+#
+# Any UC tool handler can call these helpers to pause execution and ask the
+# user for input. LangGraph persists the graph state to the checkpointer under
+# thread_id=session_id; the API layer catches GraphInterrupt, returns the
+# payload to the frontend, and resumes with Command(resume=answer) on the
+# next turn that carries an interrupt_resume flag.
+#
+# All four kinds are additive: existing UCs (1/2/3/5) never call these and
+# are completely unaffected. Only new action UCs (8+) will use them.
+
+
+def interrupt_for_selection(
+    prompt: str,
+    options: list[dict[str, Any]],
+    *,
+    allow_none: bool = False,
+) -> Any:
+    """Pause execution and ask the user to pick one option from a list.
+
+    `options` is a list of dicts; each must have at least `id` and `label`.
+    Returns the user's selected option dict (or None if allow_none=True and
+    the user declines)."""
+    return interrupt({
+        "kind": "user_selection",
+        "prompt": prompt,
+        "options": options,
+        "allow_none": allow_none,
+    })
+
+
+def interrupt_for_input(
+    prompt: str,
+    fields: list[dict[str, Any]],
+) -> Any:
+    """Pause execution and ask the user to fill in one or more fields.
+
+    Each field dict must have `name` (str) and `required` (bool); `label`,
+    `placeholder`, and `type` (text/date/number) are optional.
+    Returns the user-submitted dict keyed by field name."""
+    return interrupt({
+        "kind": "user_input",
+        "prompt": prompt,
+        "fields": fields,
+    })
+
+
+def interrupt_for_confirmation(
+    summary: dict[str, Any],
+    action: str,
+) -> Any:
+    """Pause execution and ask the user to confirm a state-changing action.
+
+    `summary` is displayed as a key→value table. `action` is the verb shown
+    on the confirm button (e.g. "create_service_request").
+    Returns dict with key "confirmed" (bool)."""
+    return interrupt({
+        "kind": "user_confirmation",
+        "summary": summary,
+        "action": action,
+    })
+
+
+def interrupt_for_clarification(
+    question: str,
+    hints: list[str] | None = None,
+) -> Any:
+    """Pause execution and ask the user an open-ended clarifying question.
+
+    `hints` is an optional list of example answers shown as chips.
+    Returns dict with key "answer" (str)."""
+    return interrupt({
+        "kind": "user_clarification",
+        "question": question,
+        "hints": hints or [],
+    })
+
+
+__all__ = [
+    "ExecutorNodes",
+    "route_branch",
+    "dispatch_wave",
+    "interrupt_for_selection",
+    "interrupt_for_input",
+    "interrupt_for_confirmation",
+    "interrupt_for_clarification",
+]

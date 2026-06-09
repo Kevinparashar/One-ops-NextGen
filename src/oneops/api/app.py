@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from oneops.config import get_settings
 from oneops.errors import NATSUnavailableError, OneOpsError
-from oneops.executor.graph import build_executor_graph, run_turn
+from oneops.executor.graph import build_executor_graph, resume_turn, run_turn
 from oneops.executor.memory import NoopTrimmer, TokenBudgetTrimmer
 from oneops.executor.step_runner import HandlerStepExecutor
 from oneops.observability import (
@@ -328,6 +328,12 @@ class ChatRequest(BaseModel):
     # them directly. Bounded to cap the surface; ids with no active record are
     # dropped downstream (never invent). None/empty → normal routing.
     forced_agent_ids: list[str] | None = Field(default=None, max_length=16)
+    # Conversational Interrupt Protocol: set by the frontend when the user
+    # responds to a paused interrupt. interrupt_resume=True signals that
+    # interrupt_answer should be forwarded to the waiting LangGraph node via
+    # Command(resume=answer). Both fields are None on ordinary turns.
+    interrupt_resume: bool | None = None
+    interrupt_answer: dict[str, Any] | None = None
 
 
 # Bounds on the free-form fast-path `inputs` dict. Real fast-path inputs are a
@@ -391,6 +397,10 @@ class TurnResponse(BaseModel):
     request_id: str
     trace_id: str | None = None
     latency_ms: int
+    # Conversational Interrupt Protocol: non-None when the executor paused
+    # mid-turn waiting for user input. Frontend renders the appropriate widget
+    # and sends interrupt_resume=True + interrupt_answer on the next turn.
+    interrupt: dict[str, Any] | None = None
 
 
 # ── envelope construction ───────────────────────────────────────────────
@@ -1668,6 +1678,65 @@ def build_app() -> FastAPI:
                     message=req.message or "", cached=cached)
                 return TurnResponse(**cached)
 
+        # ── Conversational Interrupt Protocol — resume path ───────────────
+        # When the frontend sends interrupt_resume=True, the user is answering
+        # a paused interrupt. Resume the checkpointed LangGraph state instead
+        # of starting a fresh turn. The pending interrupt record stored in the
+        # turn cache (key __interrupt__:{session_id}) is cleared on resume so
+        # subsequent turns start fresh.
+        if req.interrupt_resume and req.interrupt_answer is not None:
+            _ikey = f"__interrupt__{session_id}"
+            _pending: dict[str, Any] | None = None
+            if cache is not None:
+                with suppress(Exception):
+                    _pending = await cache.get(
+                        tenant_id=tenant_id, key=_ikey)
+            if _pending is not None:
+                # Clear the pending-interrupt marker before resuming — a resume
+                # that fails mid-flight must not leave a stale marker that
+                # causes the next turn to also be treated as a resume.
+                with suppress(Exception):
+                    if hasattr(cache, "delete"):
+                        await cache.delete(tenant_id=tenant_id, key=_ikey)
+                    else:
+                        # Overwrite with empty sentinel (TTL=1s); works on any
+                        # ChatTurnCache impl including InMemory.
+                        await cache.put(
+                            tenant_id=tenant_id, key=_ikey, value={})
+                graph = request.app.state.graph
+                import asyncio as _aio
+                _s = get_settings()
+                try:
+                    out = await _aio.wait_for(
+                        resume_turn(
+                            graph, req.interrupt_answer,
+                            config={"configurable": {"thread_id": session_id}}),
+                        timeout=_s.turn_timeout_seconds)
+                except Exception:                             # noqa: BLE001
+                    out = {}
+                _intr2 = out.get("interrupt")
+                if _intr2 is not None and cache is not None:
+                    with suppress(Exception):
+                        await cache.put(
+                            tenant_id=tenant_id, key=_ikey,
+                            value={"interrupt": _intr2})
+                with suppress(Exception):
+                    await lifecycle.touch(
+                        tenant_id=tenant_id, session_id=session_id,
+                        user_id=user_id,
+                        title=(req.message or "")[:120], bump_turn_count=True)
+                return TurnResponse(
+                    door="chat",
+                    final_status=str(out.get("final_status") or "interrupted"),
+                    final_response=str(out.get("final_response") or ""),
+                    step_results=list(out.get("step_results") or []),
+                    session_id=session_id,
+                    request_id=request_id,
+                    trace_id=None,
+                    latency_ms=0,
+                    interrupt=_intr2,
+                )
+
         envelope: dict[str, Any] = {
             "request_id": request_id,
             "tenant_id": tenant_id,
@@ -1679,7 +1748,7 @@ def build_app() -> FastAPI:
         if req.forced_agent_ids:
             envelope["forced_agent_ids"] = list(req.forced_agent_ids)
         response = await _run(request, envelope, door="chat",
-                              thread_id=request_id, session_id=session_id)
+                              thread_id=session_id, session_id=session_id)
         # Slide the idle TTL and bump turn_count + title on every
         # successful turn. Failures are non-fatal — the chat reply is
         # already produced.
@@ -1754,7 +1823,7 @@ def build_app() -> FastAPI:
 
         q = open_sink(rid)
         task = _asyncio.ensure_future(
-            _run(request, envelope, door=door, thread_id=rid, session_id=sid))
+            _run(request, envelope, door=door, thread_id=sid, session_id=sid))
         try:
             yield _line({"type": "turn_start", "request_id": rid,
                          "session_id": sid})
@@ -1939,7 +2008,7 @@ def build_app() -> FastAPI:
                         # _RequestShim duck-types the bits _run reads (.app);
                         # cast keeps the type-checker honest (sonar S5655).
                         cast(Request, _RequestShim(ws.app)), envelope, door="chat",
-                        thread_id=request_id, session_id=session_id)
+                        thread_id=session_id, session_id=session_id)
                 except Exception as exc:                  # noqa: BLE001
                     _log.warning("oneops.ws.turn_failed", error=str(exc)[:200])
                     reply = TurnResponse(
@@ -2301,6 +2370,46 @@ async def _run(
             status_code=500,
             detail=f"engine failure (request_id={req_id})") from exc
     except Exception as exc:                  # noqa: BLE001 — boundary
+        # ── Conversational Interrupt Protocol — interrupt capture ─────────
+        # LangGraph raises GraphInterrupt (subclass of Exception) when a
+        # node calls interrupt(). Intercept here, persist in the turn
+        # cache keyed by session_id, and return a typed TurnResponse with
+        # final_status="interrupted" so the frontend can render the
+        # appropriate widget. All other exceptions fall through to the
+        # HTTP 500 path below.
+        from langgraph.errors import GraphInterrupt as _GraphInterrupt
+        if isinstance(exc, _GraphInterrupt):
+            _interrupts = exc.args[0] if exc.args else ()
+            _payload: dict[str, Any] = {}
+            if _interrupts:
+                _val = _interrupts[0]
+                _payload = (_val.value
+                            if hasattr(_val, "value") else dict(_val)
+                            if isinstance(_val, dict) else {"value": _val})
+            _log.info(
+                "oneops.api.interrupt_captured",
+                door=door, session_id=session_id,
+                kind=_payload.get("kind", "unknown"))
+            _cache = getattr(request.app.state, "chat_turn_cache", None)
+            if _cache is not None:
+                with suppress(Exception):
+                    await _cache.put(
+                        tenant_id=envelope.get("tenant_id", ""),
+                        key=f"__interrupt__{session_id}",
+                        value={"interrupt": _payload})
+            return TurnResponse(
+                door=door,
+                final_status="interrupted",
+                final_response=_payload.get(
+                    "prompt",
+                    _payload.get("question", "Input required.")),
+                step_results=[],
+                session_id=session_id,
+                request_id=envelope["request_id"],
+                trace_id=None,
+                latency_ms=int((time.monotonic() - t0) * 1000),
+                interrupt=_payload,
+            )
         req_id = envelope.get("request_id", "")
         _log.warning("oneops.api.turn_failed",
                      door=door, request_id=req_id, error=str(exc)[:200])
