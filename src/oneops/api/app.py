@@ -1717,6 +1717,12 @@ def build_app() -> FastAPI:
                     _pending = await cache.get(
                         tenant_id=tenant_id, key=_ikey)
             if _pending is not None:
+                # Resume on the EXACT thread the paused turn ran on (stored when
+                # it interrupted) — not session_id, so independent turns keep
+                # their own per-request threads and don't cross-contaminate.
+                _paused_thread = (str(_pending.get("thread"))
+                                  if isinstance(_pending, dict)
+                                  and _pending.get("thread") else session_id)
                 # Clear the pending-interrupt marker before resuming — a resume
                 # that fails mid-flight must not leave a stale marker that
                 # causes the next turn to also be treated as a resume.
@@ -1735,7 +1741,7 @@ def build_app() -> FastAPI:
                     out = await _aio.wait_for(
                         resume_turn(
                             graph, req.interrupt_answer,
-                            config={"configurable": {"thread_id": session_id}}),
+                            config={"configurable": {"thread_id": _paused_thread}}),
                         timeout=_s.turn_timeout_seconds)
                 except Exception:                             # noqa: BLE001
                     out = {}
@@ -1747,7 +1753,8 @@ def build_app() -> FastAPI:
                     with suppress(Exception):
                         await cache.put(
                             tenant_id=tenant_id, key=_ikey,
-                            value={"interrupt": _intr2})
+                            value={"interrupt": _intr2,
+                                   "thread": _paused_thread})
                 with suppress(Exception):
                     await lifecycle.touch(
                         tenant_id=tenant_id, session_id=session_id,
@@ -2318,6 +2325,9 @@ async def _run(
     only the transport differs."""
     t0 = time.monotonic()
     mode = getattr(request.app.state, "invoker_mode", "local")
+    # The checkpoint thread this turn runs on (request-scoped by default; a
+    # resume reuses the paused turn's thread — set in the in-process path).
+    graph_thread = str(envelope.get("request_id") or "")
     try:
         with _tracer.start_as_current_span(
             "oneops.api.turn",
@@ -2356,12 +2366,27 @@ async def _run(
 
             # in-process path (default)
             graph = request.app.state.graph
-            _cfg = {"configurable": {"thread_id": thread_id}}
-            # Resume a paused turn when the envelope carries the interrupt
-            # answer (the streaming door threads it here so the browser's
-            # widget reply continues the SAME flow instead of starting fresh).
-            if (envelope.get("interrupt_resume")
-                    and envelope.get("interrupt_answer") is not None):
+            # Each INDEPENDENT turn runs on its OWN checkpoint thread (the
+            # request id) so it never resumes the previous turn's plan/results
+            # — cross-turn memory comes from the session store, not the
+            # checkpointer (ADR-0004). Using session_id as the thread made every
+            # turn-2+ continue turn-1's completed graph state, so the new
+            # message inherited the prior turn's agent. A turn that PAUSED
+            # stored its thread under the session; a resume reuses EXACTLY that
+            # thread to continue the same paused flow.
+            _is_resume = bool(envelope.get("interrupt_resume")
+                              and envelope.get("interrupt_answer") is not None)
+            graph_thread = str(envelope["request_id"])
+            _cache0 = getattr(request.app.state, "chat_turn_cache", None)
+            if _is_resume and _cache0 is not None:
+                with suppress(Exception):
+                    _pend = await _cache0.get(
+                        tenant_id=envelope.get("tenant_id", ""),
+                        key=f"__interrupt__{session_id}")
+                    if isinstance(_pend, dict) and _pend.get("thread"):
+                        graph_thread = str(_pend["thread"])
+            _cfg = {"configurable": {"thread_id": graph_thread}}
+            if _is_resume:
                 out = await asyncio.wait_for(
                     resume_turn(graph, envelope["interrupt_answer"],
                                 config=_cfg),
@@ -2449,7 +2474,7 @@ async def _run(
                     await _cache.put(
                         tenant_id=envelope.get("tenant_id", ""),
                         key=f"__interrupt__{session_id}",
-                        value={"interrupt": _payload})
+                        value={"interrupt": _payload, "thread": graph_thread})
             return TurnResponse(
                 door=door,
                 final_status="interrupted",
@@ -2482,7 +2507,7 @@ async def _run(
                 await _cache.put(
                     tenant_id=envelope.get("tenant_id", ""),
                     key=f"__interrupt__{session_id}",
-                    value={"interrupt": _intr})
+                    value={"interrupt": _intr, "thread": graph_thread})
         return TurnResponse(
             door=door,
             final_status="interrupted",

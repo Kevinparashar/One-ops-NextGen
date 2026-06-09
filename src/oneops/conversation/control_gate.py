@@ -283,33 +283,19 @@ Off-topic chat:
                          composer is the right place to say "no
                          article found."
 
-                         **Focus-aware override (2026-05-29).** When the
-                         conversation has an ACTIVE FOCUS RECORD (an
-                         incident, problem, change, asset, or CI the
-                         user is currently working on), a query whose
-                         subject is clearly unrelated to that focused
-                         record AND to general IT/ITSM is
-                         `out_of_scope`. The off-topic signal is the
-                         change of subject, not the verb shape.
-
-                         Examples (use the principle, not the words):
-                           * focus = INC0001005 (Exchange mailbox
-                             issue), user asks "how to fix the
-                             bluetooth connectivity" → `out_of_scope`
-                             (bluetooth on a personal device is not
-                             on this incident and not an enterprise
-                             IT subject).
-                           * focus = INC0001005, user asks "lets meet
-                             tomorrow now" → `out_of_scope` (meeting
-                             scheduling is not ITSM).
-                           * focus = INC0001005, user asks "any data
-                             on this" → `none` (legitimate follow-up
-                             about the focused incident).
-                           * focus = INC0001005, user asks "outlook
-                             keeps crashing" → `none` (outlook IS the
-                             focused incident's subject; legitimate).
-                           * no focus, user asks "how do I fix VPN"
-                             → `none` (general IT how-to, in-domain).
+                         **Scope is decided by ONE test only: is the
+                         subject inside the IT / ITSM / ITOM domain?**
+                         An active focus record is irrelevant to that
+                         test. A user may, at any turn, drop the record
+                         in focus and start a brand-new, unrelated IT
+                         request — a new ticket, a service/catalog ask,
+                         knowledge, anything in the domain. A subject
+                         change that stays INSIDE IT is a new request,
+                         never out_of_scope; the only out_of_scope
+                         signal is the subject leaving IT entirely (the
+                         categories listed above), whether or not a
+                         record is in focus. Judge the message on its
+                         own subject, exactly as if there were no focus.
 
 Catch-all:
 - none                 : ANYTHING that is not clearly one of the labels

@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from datetime import UTC
 from typing import Any
 
 import structlog
@@ -488,22 +489,36 @@ _EXTRACT_TIMEOUT_S = float(os.environ.get("UC08_FIELD_EXTRACT_TIMEOUT_S", "30"))
 _MAX_FIELD_ROUNDS = int(os.environ.get("UC08_MAX_FIELD_ROUNDS", "4"))
 
 _DRAFT_FIELDS_INSTRUCTION = """
-You pre-fill a service-request intake form from a user's request.
+You are the intake assistant for an IT SERVICE CATALOG. Your job is to PRE-FILL
+a request form for a specific catalog item from the user's request, so the human
+only has to review and adjust — fill in as much as you reasonably can.
 
-Given the user's free-text request and the form fields, return a JSON object
-mapping every field_name to the value you can confidently infer FROM THE
-REQUEST. This is a DRAFT a human will review and edit — be helpful but never
-fabricate.
+You are given the catalog item (name + what it is for), the form fields (each
+with a label, type, and any options), and the user's request. Use ALL of it:
 
-RULES
-- Fill a field only when the value is clearly stated or strongly implied in the
-  request. If it is not present, return "" for that field (do NOT invent names,
-  emails, dates, or numbers).
-- type=date  → ISO format YYYY-MM-DD. Resolve relative dates only if the
-  request gives enough to do so; otherwise "".
-- type=select → choose EXACTLY one of the provided options, or "".
-- type=email → only a real email present in the request; else "".
-- Return ONLY a JSON object with one key per field_name listed. No prose.
+- Understand the catalog item's PURPOSE and each field's LABEL/type to know what
+  the field is asking for, then map the user's words to it INTELLIGENTLY even
+  when phrased differently — a job title → a "role"/"position" field, a team or
+  org name → a "department" field, a city/site → a "location" field, a product
+  or model → the relevant item field, a quantity word → a "quantity" field, etc.
+- Use general IT / service-catalog knowledge to interpret terms and pick the
+  best-fitting value (e.g. map a stated need to the closest provided `options`).
+- Be generous in what you infer from the request, BUT never FABRICATE identity
+  or contact data the user did not give — names, emails, employee ids, phone
+  numbers, asset tags, cost codes. If such a field is not in the request, "".
+
+TYPES
+- type=date   → ISO YYYY-MM-DD. Resolve relative dates ("next monday",
+  "tomorrow", "in two weeks", "end of month") against the "Today is …" line at
+  the top. No date stated → "".
+- type=select → choose EXACTLY one of the provided options (the closest match to
+  the user's intent), else "".
+- type=email  → only a real email present in the request, else "".
+- type=number → digits only.
+
+Return ONLY a JSON object with one key per field_name listed. No prose. A field
+you cannot fill confidently MUST be "" (an empty box is fine; a wrong guess is
+not).
 """
 
 
@@ -579,21 +594,34 @@ async def _extract_search_keywords(
 
 async def _draft_field_values(
     *, query: str, schema: list[dict[str, Any]], tenant_id: str, user_id: str,
+    catalog_name: str = "", catalog_description: str = "",
 ) -> dict[str, str]:
     """Draft the form values from the user's request via ONE gateway call
-    (single egress, §2.5). Returns {field_name: value} for what it could infer;
-    unknown fields are omitted (the human fills them). Never raises — a failure
-    just yields an empty draft so the form renders blank."""
+    (single egress, §2.5). The catalog item name + description give the model
+    the SERVICE-CATALOG context so it maps the request to fields intelligently.
+    Returns {field_name: value} for what it could infer; unknown fields are
+    omitted (the human fills them). Never raises — a failure just yields an
+    empty draft so the form renders blank."""
     if _gateway is None or not schema:
         return {}
     specs = [{"field_name": f.get("field_name"), "label": f.get("label"),
               "type": f.get("type") or "text", "options": f.get("options")}
              for f in schema if f.get("field_name")]
+    from datetime import datetime
+
     from oneops.llm.models import LlmMessage, LlmRequest, ResponseFormat
     from oneops.policy.composer import Profile, compose
     sys_prompt = compose(Profile.FEATURE_AGENT_JSON,
                          extra_sections=[_DRAFT_FIELDS_INSTRUCTION])
-    user_msg = (f"User request:\n{query}\n\n"
+    # Anchor relative dates ("next monday", "tomorrow", "in two weeks") to the
+    # actual current date — the model cannot otherwise resolve them.
+    now = datetime.now(UTC)
+    catalog_ctx = (f"Catalog item: {catalog_name}"
+                   + (f" — {catalog_description}" if catalog_description else "")
+                   + "\n\n") if catalog_name else ""
+    user_msg = (f"Today is {now:%Y-%m-%d} ({now:%A}).\n\n"
+                f"{catalog_ctx}"
+                f"User request:\n{query}\n\n"
                 f"Form fields:\n{json.dumps(specs, ensure_ascii=False)}")
     with _tracer.start_as_current_span(
         "uc08.tool.draft_field_values",
@@ -717,7 +745,9 @@ async def request_catalog_item(
             if draft is None:
                 draft = await _draft_field_values(
                     query=query, schema=schema, tenant_id=tenant_id,
-                    user_id=str(context.get("user_id") or ""))
+                    user_id=str(context.get("user_id") or ""),
+                    catalog_name=catalog_label,
+                    catalog_description=str(chosen.get("description") or ""))
                 _memo_put(_draft_memo, _dkey, draft)
 
             def _missing(vals: dict[str, Any]) -> list[dict[str, Any]]:

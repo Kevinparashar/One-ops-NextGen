@@ -342,7 +342,7 @@ def _stub_flow(monkeypatch, *, matches, fields, selection, inputs, confirmed,
                 "ritm_id": "RITM1", "dispatched": True,
                 "display_text": "Done — service request REQ0000000001 submitted."}
 
-    async def _draft(*, query, schema, tenant_id, user_id):
+    async def _draft(*, query, schema, tenant_id, user_id, **_kw):
         return dict(draft or {})
 
     monkeypatch.setattr(tools, "get_service_request_list", _list)

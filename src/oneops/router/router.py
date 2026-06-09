@@ -46,7 +46,12 @@ from oneops.router.disambiguation import Disambiguator
 from oneops.router.glossary import Glossary
 from oneops.router.plan import RouteResult, SubQueryRoute, assemble_plan
 from oneops.router.retrieval import CandidateRetriever
-from oneops.router.rewrite import ConversationTurn, PassthroughRewriter, Rewriter
+from oneops.router.rewrite import (
+    ConversationTurn,
+    PassthroughRewriter,
+    Rewriter,
+    is_followup_reference,
+)
 from oneops.router.signals import RequestSignals, Ternary, with_intents
 
 _log = get_logger("oneops.router")
@@ -402,13 +407,24 @@ class Router:
 
         state_focus_id = (request_ctx.get("focus_entity_id") or "").strip()
         state_focus_service = (request_ctx.get("focus_service_id") or "").strip()
-        if state_focus_id and state_focus_service:
+        # Bind the focus as the subject ONLY for a genuine bare follow-up (a
+        # pronoun / linked-record reference). An independent intent ("I need a
+        # second monitor") has its own subject and must route on its own merits
+        # — binding the focus here is what made every entity-less request
+        # inherit the focused record's agent (the topic-switch / midflow-intent
+        # bug). Card-driven, scales to 100 UCs (no per-UC vocabulary).
+        if (state_focus_id and state_focus_service
+                and is_followup_reference(sq_text_for_extract)):
             diag.append(
                 f"[{sq.id}] stage0b: focus-bound follow-up → "
-                f"{state_focus_id} (state authoritative)")
+                f"{state_focus_id} (explicit reference)")
             return _replace(
                 signals,
                 present_entities=((state_focus_id, state_focus_service),))
+        if state_focus_id:
+            diag.append(
+                f"[{sq.id}] stage0b: independent intent — focus NOT bound "
+                f"(routes on its own intent)")
         if _references_linked_record(sq_text_for_extract):
             # Belt-and-braces fallback when state focus is somehow missing —
             # scan history. Only fires when state focus is empty (rare).

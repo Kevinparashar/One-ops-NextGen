@@ -492,6 +492,26 @@ _WORD_RE = re.compile(r"\b\w+\b")
 _NEAR_CANONICAL_RE = re.compile(r"\b[A-Za-z]{2,5}\s*\d+\b")
 
 
+def is_followup_reference(text: str) -> bool:
+    """True only when the message is an EXPLICIT reference to the conversation's
+    focused record — a pronoun ('it', 'this', 'that', 'the incident') or a
+    linked-record phrase ('the related problem', 'its parent change'). Such a
+    message has no subject of its own and needs the focus to supply one.
+
+    Everything else carries its OWN intent and must route on its own merits.
+    This is the topic-switch gate (CHIQ / the runbook's "classify each message
+    fresh; a user can start a new request mid-conversation"): an independent
+    request ('I need a second monitor') is NOT a follow-up, so the focus entity
+    must NOT be bound to it — otherwise it inherits the focused record's agent.
+
+    Deliberately card-agnostic and keyword-catalog-free (rule §2.1): it tests
+    sentence STRUCTURE (does it point back at something?), never a vocabulary of
+    intents/services. Adding the 101st UC needs no change here."""
+    if not text:
+        return False
+    return bool(_PRONOUN_RE.search(text) or _LINKED_REF_RE.search(text))
+
+
 def _enforce_authoritative_focus(
     *, original: str, rewritten: str, authoritative_focus: str,
 ) -> str:
