@@ -71,7 +71,7 @@ _tracer = trace.get_tracer("oneops.uc08.catalog_search")
 COSINE_FLOOR = float(os.environ.get("UC08_CATALOG_COSINE_FLOOR", "0.50"))
 AUTO_PICK_THRESHOLD = float(
     os.environ.get("UC08_CATALOG_AUTO_PICK_THRESHOLD", "0.60"))
-TOP_K = int(os.environ.get("UC08_CATALOG_TOP_K", "3"))
+TOP_K = int(os.environ.get("UC08_CATALOG_TOP_K", "5"))
 EMBED_MODEL = os.environ.get(
     "UC08_CATALOG_EMBED_MODEL", "text-embedding-3-large")
 EMBED_DIM = int(os.environ.get("UC08_CATALOG_EMBED_DIM", "1536"))

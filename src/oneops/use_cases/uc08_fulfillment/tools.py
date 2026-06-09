@@ -28,6 +28,9 @@ Phase 6 adds (alongside the orchestrator):
 """
 from __future__ import annotations
 
+import asyncio
+import json
+import os
 from typing import Any
 
 import structlog
@@ -44,6 +47,7 @@ from oneops.use_cases.uc08_fulfillment.contracts import (
 from oneops.use_cases.uc08_fulfillment.errors import (
     CatalogItemNotFoundError,
     DuplicateRequestError,
+    RequesterNotFoundError,
     RequestItemNotFoundError,
     RequestNotFoundError,
 )
@@ -175,11 +179,17 @@ async def get_service_request_list(
                     "display_text": "I couldn't search the catalog just now."}
         finally:
             await conn.close()
+        # Show the top-K for the USER to choose from when the search is
+        # relevant (the best match cleared the floor). We return the whole
+        # top-K — not just the items over the floor — so the user always has a
+        # few candidates to pick from; they are the relevance judge. A search
+        # whose best match is below the floor is a genuine no-match.
+        relevant = bool(result.matches) and result.matches[0].above_floor
         matches = [
             {"catalog_id": m.catalog_item_id, "name": m.name,
              "description": m.description, "category": m.category,
              "score": round(m.cosine_score, 4)}
-            for m in result.matches if m.above_floor
+            for m in (result.matches if relevant else ())
         ]
         if matches:
             lines = "\n".join(
@@ -298,10 +308,18 @@ async def create_service_request(
                             "Before I can submit this I still need: "
                             f"{', '.join(missing)}.")}
             # 2. Open the parent SR.
-            request_id = await _db.insert_request(
-                tenant_id=tenant_id, title=f"{catalog_name} request",
-                catalog_item_id=catalog_id, requested_for=requested_for,
-                requested_by=user_id, category=None, fields=fields, conn=conn)
+            try:
+                request_id = await _db.insert_request(
+                    tenant_id=tenant_id, title=f"{catalog_name} request",
+                    catalog_item_id=catalog_id, requested_for=requested_for,
+                    requested_by=user_id, category=None, fields=fields,
+                    conn=conn)
+            except RequesterNotFoundError as exc:
+                return {"ok": False, "error_code": exc.code, "error": str(exc),
+                        "display_text": (
+                            f"I couldn't submit this — “{requested_for}” isn't a "
+                            "recognised user in this tenant. Pick a valid "
+                            "requester and try again.")}
         finally:
             await conn.close()
 
@@ -454,13 +472,39 @@ def _query_from(arguments: dict[str, Any], context: dict[str, Any]) -> str:
 
 
 # Per-flow memo. LangGraph replays this whole handler from the top on every
-# interrupt resume — with field-by-field collection that is N+2 replays per
-# request. Memoising the (idempotent) catalog search + schema per session keeps
-# replay cheap: no re-embedding the query or re-reading the form on each turn.
-# Bounded + process-local; a memo miss (e.g. another worker) just re-fetches.
+# interrupt resume. Memoising the (idempotent) catalog search + schema + the AI
+# field draft per session keeps replay cheap: no re-embedding the query,
+# re-reading the form, or re-calling the LLM on each turn. Bounded +
+# process-local; a memo miss (e.g. another worker) just re-fetches.
 _FLOW_MEMO_CAP = 512
 _search_memo: dict[str, dict[str, Any]] = {}
 _fields_memo: dict[str, dict[str, Any]] = {}
+_draft_memo: dict[str, dict[str, Any]] = {}
+
+_EXTRACT_MODEL = os.environ.get("UC08_FIELD_EXTRACT_MODEL", "gpt-4o-mini")
+_EXTRACT_TIMEOUT_S = float(os.environ.get("UC08_FIELD_EXTRACT_TIMEOUT_S", "30"))
+# Max times the intake form is re-shown to fill missing required fields before
+# giving up (a guard against an infinite loop if the user keeps submitting blank).
+_MAX_FIELD_ROUNDS = int(os.environ.get("UC08_MAX_FIELD_ROUNDS", "4"))
+
+_DRAFT_FIELDS_INSTRUCTION = """
+You pre-fill a service-request intake form from a user's request.
+
+Given the user's free-text request and the form fields, return a JSON object
+mapping every field_name to the value you can confidently infer FROM THE
+REQUEST. This is a DRAFT a human will review and edit — be helpful but never
+fabricate.
+
+RULES
+- Fill a field only when the value is clearly stated or strongly implied in the
+  request. If it is not present, return "" for that field (do NOT invent names,
+  emails, dates, or numbers).
+- type=date  → ISO format YYYY-MM-DD. Resolve relative dates only if the
+  request gives enough to do so; otherwise "".
+- type=select → choose EXACTLY one of the provided options, or "".
+- type=email → only a real email present in the request; else "".
+- Return ONLY a JSON object with one key per field_name listed. No prose.
+"""
 
 
 def _memo_put(memo: dict[str, dict[str, Any]], key: str,
@@ -468,6 +512,117 @@ def _memo_put(memo: dict[str, dict[str, Any]], key: str,
     if len(memo) >= _FLOW_MEMO_CAP:
         memo.clear()
     memo[key] = val
+
+
+_SEARCH_KEYWORDS_INSTRUCTION = """
+You extract catalog SEARCH terms from a user's IT service request.
+
+Return 2-4 SHORT phrases (1-4 words each) that capture WHAT the user wants from
+the service catalog — the item, service, software, hardware, or access itself —
+and nothing else. STRIP every specific: person names, dates, emails, quantities,
+departments, job titles. Those specifics dilute the search and must not appear.
+
+Examples:
+- "onboard Jane Doe starting July 1 in Engineering, manager bob@x.com"
+    → {"keywords": ["onboarding", "new employee onboarding", "onboard employee"]}
+- "I need a MacBook for the new designer"
+    → {"keywords": ["laptop", "macbook", "developer laptop"]}
+- "please give Bob VPN access to the prod network"
+    → {"keywords": ["vpn access", "remote access", "vpn"]}
+
+Return ONLY a JSON object: {"keywords": ["...", "..."]}. No prose.
+"""
+
+
+async def _extract_search_keywords(
+    *, query: str, tenant_id: str, user_id: str,
+) -> list[str]:
+    """Reduce a (possibly verbose) request to 2-4 catalog-search phrases via ONE
+    gateway call (runbook Playbook 3 step 1). Stripping the specifics keeps the
+    semantic match on the ITEM, not the person/date/email. Returns [] on any
+    failure so the caller falls back to the raw query."""
+    if _gateway is None or not query:
+        return []
+    from oneops.llm.models import LlmMessage, LlmRequest, ResponseFormat
+    from oneops.policy.composer import Profile, compose
+    sys_prompt = compose(Profile.FEATURE_AGENT_JSON,
+                         extra_sections=[_SEARCH_KEYWORDS_INSTRUCTION])
+    with _tracer.start_as_current_span(
+        "uc08.tool.extract_search_keywords",
+        attributes={_ONEOPS_TENANT_ID: tenant_id},
+    ):
+        try:
+            resp = await asyncio.wait_for(
+                _gateway.call(LlmRequest(
+                    messages=(LlmMessage(role="system", content=sys_prompt),
+                              LlmMessage(role="user", content=query)),
+                    model=_EXTRACT_MODEL, tenant_id=tenant_id, user_id=user_id,
+                    temperature=0.0, max_tokens=120,
+                    response_format=ResponseFormat.JSON)),
+                timeout=_EXTRACT_TIMEOUT_S)
+        except Exception as exc:                              # noqa: BLE001
+            _log.warning("uc08.keyword_extract_failed",
+                         tenant_id=tenant_id, error=str(exc)[:160])
+            return []
+        raw = (resp.content or "").strip().lstrip("`").rstrip("`")
+        if raw.startswith("json"):
+            raw = raw[4:].strip()
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return []
+        kws = parsed.get("keywords") if isinstance(parsed, dict) else None
+        if not isinstance(kws, list):
+            return []
+        return [str(k).strip() for k in kws[:4] if str(k).strip()]
+
+
+async def _draft_field_values(
+    *, query: str, schema: list[dict[str, Any]], tenant_id: str, user_id: str,
+) -> dict[str, str]:
+    """Draft the form values from the user's request via ONE gateway call
+    (single egress, §2.5). Returns {field_name: value} for what it could infer;
+    unknown fields are omitted (the human fills them). Never raises — a failure
+    just yields an empty draft so the form renders blank."""
+    if _gateway is None or not schema:
+        return {}
+    specs = [{"field_name": f.get("field_name"), "label": f.get("label"),
+              "type": f.get("type") or "text", "options": f.get("options")}
+             for f in schema if f.get("field_name")]
+    from oneops.llm.models import LlmMessage, LlmRequest, ResponseFormat
+    from oneops.policy.composer import Profile, compose
+    sys_prompt = compose(Profile.FEATURE_AGENT_JSON,
+                         extra_sections=[_DRAFT_FIELDS_INSTRUCTION])
+    user_msg = (f"User request:\n{query}\n\n"
+                f"Form fields:\n{json.dumps(specs, ensure_ascii=False)}")
+    with _tracer.start_as_current_span(
+        "uc08.tool.draft_field_values",
+        attributes={_ONEOPS_TENANT_ID: tenant_id, "uc08.field_count": len(specs)},
+    ):
+        try:
+            resp = await asyncio.wait_for(
+                _gateway.call(LlmRequest(
+                    messages=(LlmMessage(role="system", content=sys_prompt),
+                              LlmMessage(role="user", content=user_msg)),
+                    model=_EXTRACT_MODEL, tenant_id=tenant_id, user_id=user_id,
+                    temperature=0.0, max_tokens=400,
+                    response_format=ResponseFormat.JSON)),
+                timeout=_EXTRACT_TIMEOUT_S)
+        except Exception as exc:                              # noqa: BLE001
+            _log.warning("uc08.field_draft_failed",
+                         tenant_id=tenant_id, error=str(exc)[:160])
+            return {}
+        raw = (resp.content or "").strip().lstrip("`").rstrip("`")
+        if raw.startswith("json"):
+            raw = raw[4:].strip()
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        valid = {s["field_name"] for s in specs}
+        return {k: str(v).strip() for k, v in
+                (parsed.items() if isinstance(parsed, dict) else [])
+                if k in valid and v not in (None, "")}
 
 
 async def request_catalog_item(
@@ -498,8 +653,14 @@ async def request_catalog_item(
         _skey = f"{tenant_id}:{session_id}:{query}"
         listing = _search_memo.get(_skey)
         if listing is None:
+            # Runbook step 1: search on 2-4 keyword variations of the ask, not
+            # the verbose request (names/dates/emails dilute the match). Fall
+            # back to the raw query if extraction is unavailable.
+            keywords = await _extract_search_keywords(
+                query=query, tenant_id=tenant_id,
+                user_id=str(context.get("user_id") or "")) or [query]
             listing = await get_service_request_list(
-                {"service_catalogs": [query]}, context)
+                {"service_catalogs": keywords}, context)
             _memo_put(_search_memo, _skey, listing)
         matches = listing.get("matches") or []
 
@@ -544,31 +705,57 @@ async def request_catalog_item(
                         "I couldn't load that item's request form.")}
         schema = fields_resp.get("fields") or []
 
-        # ── Step 4: collect each field ONE AT A TIME (runbook: "one or two
-        #    questions at a time, not a full-schema dump"). Each ask is its own
-        #    interrupt so the user fills + sends per field; types/options are
-        #    preserved so dates and selects render the right widget. ─────────
+        # ── Step 4: AI DRAFTS the field values from the user's request, then
+        #    presents them in ONE editable form (pre-filled, human edits any
+        #    field). Runbook "draft → present → approve": the AI fills what it
+        #    can from context; the human is never asked to retype what they
+        #    already said, but stays in control of every value. ──────────────
         values: dict[str, Any] = {}
-        for f in schema:
-            name = f.get("field_name")
-            if not name:
-                continue
-            req = bool(f.get("required"))
-            label = f.get("label") or name
-            answer = interrupt_for_input(
-                f"{label}{' (required)' if req else ' (optional)'} — "
-                f"for “{catalog_label}”",
-                [{"name": name, "label": label,
-                  "type": f.get("type") or "text", "required": req,
-                  **({"options": f["options"]} if f.get("options") else {})}],
-            )
-            got = _unwrap(answer, "fields")
-            val = got.get(name) if isinstance(got, dict) else got
-            if val not in (None, ""):
-                values[name] = val
+        if schema:
+            _dkey = f"{tenant_id}:{session_id}:{catalog_id}"
+            draft = _draft_memo.get(_dkey)
+            if draft is None:
+                draft = await _draft_field_values(
+                    query=query, schema=schema, tenant_id=tenant_id,
+                    user_id=str(context.get("user_id") or ""))
+                _memo_put(_draft_memo, _dkey, draft)
+
+            def _missing(vals: dict[str, Any]) -> list[dict[str, Any]]:
+                return [f for f in schema if f.get("field_name")
+                        and f.get("required")
+                        and not str(vals.get(f["field_name"], "")).strip()]
+
+            def _form(vals: dict[str, Any]) -> list[dict[str, Any]]:
+                return [{"name": f["field_name"],
+                         "label": f.get("label") or f["field_name"],
+                         "type": f.get("type") or "text",
+                         "required": bool(f.get("required")),
+                         "value": vals.get(f["field_name"], ""),
+                         **({"options": f["options"]} if f.get("options") else {})}
+                        for f in schema if f.get("field_name")]
+
+            # Re-prompt the form until every REQUIRED field is filled, rather
+            # than letting the create fail and dead-end. The form is re-shown
+            # pre-filled with what the user already entered, flagging what's
+            # still missing — they fill the gap in place, never restarting.
+            current: dict[str, Any] = dict(draft)
+            for _round in range(_MAX_FIELD_ROUNDS):
+                if _round > 0 and not _missing(current):
+                    break
+                if _round == 0:
+                    prompt = (f"I've drafted these details for “{catalog_label}” "
+                              "from your request — edit anything, then send:")
+                else:
+                    names = ", ".join(f.get("label") or f["field_name"]
+                                      for f in _missing(current))
+                    prompt = (f"Almost there — “{catalog_label}” still needs: "
+                              f"{names}. Please complete and send:")
+                answer = interrupt_for_input(prompt, _form(current))
+                current = {**current, **(dict(_unwrap(answer, "fields") or {}))}
+            values = current
 
         # ── Step 5: show the filled template + confirm before submit (the
-        #    SOLE approval gate, runbook step 5). ──────────────────────────
+        #    SOLE approval gate, runbook step 5 — the human's final approval). ─
         confirmation = interrupt_for_confirmation(
             {"Item": catalog_label,
              **{k: v for k, v in values.items() if str(v).strip()}},

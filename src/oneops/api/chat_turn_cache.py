@@ -153,6 +153,13 @@ def should_cache(response_dict: Mapping[str, Any]) -> bool:
     text = str(response_dict.get("final_response") or "")
     if status in ("clarification", "refused", "error", "interrupted", ""):
         return False
+    # Interactive / stateful flows (UC-8 catalog conductor) must never be
+    # cached: their outputs depend on the live catalog + the per-session
+    # interrupt checkpoint. A cached "no match" or "SR created" would be wrongly
+    # served to the next request, and a cached step would skip the live flow.
+    for s in (response_dict.get("step_results") or []):
+        if str((s or {}).get("agent_id") or "") == "uc08_fulfillment":
+            return False
     if not text or len(text.strip()) < 20:
         return False
     return "out of my scope" not in text.lower()

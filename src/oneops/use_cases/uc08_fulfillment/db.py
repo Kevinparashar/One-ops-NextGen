@@ -38,6 +38,7 @@ from oneops.use_cases.uc08_fulfillment.contracts import (
 from oneops.use_cases.uc08_fulfillment.errors import (
     CatalogItemNotFoundError,
     FulfillmentPersistenceError,
+    RequesterNotFoundError,
     RequestItemNotFoundError,
     RequestNotFoundError,
 )
@@ -225,6 +226,16 @@ async def insert_request(
         except asyncpg.UniqueViolationError as exc:  # pragma: no cover — uuid
             raise FulfillmentPersistenceError(
                 f"failed to insert SR (uniqueness violation): {exc}",
+                cause=exc,
+            ) from exc
+        except asyncpg.ForeignKeyViolationError as exc:
+            # requested_for / requested_by must be a known itsm.sys_user. A
+            # caller identity that isn't a provisioned user (e.g. an unsynced
+            # federated login) lands here — surface it clearly instead of a
+            # generic engine failure.
+            raise RequesterNotFoundError(
+                f"requester {requested_for!r} is not a known user in tenant "
+                f"{tenant_id!r}",
                 cause=exc,
             ) from exc
         return request_id

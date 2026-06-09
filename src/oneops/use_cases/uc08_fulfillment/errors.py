@@ -43,6 +43,14 @@ class RequestNotFoundError(FulfillmentError):
     code = "UC08_REQUEST_NOT_FOUND"
 
 
+class RequesterNotFoundError(FulfillmentError):
+    """`requested_for`/`requested_by` is not a provisioned itsm.sys_user — the
+    SR's foreign key would be violated. Surfaced clearly so the caller can fix
+    the identity instead of seeing a generic engine failure."""
+
+    code = "UC08_REQUESTER_NOT_FOUND"
+
+
 class RequestItemNotFoundError(FulfillmentError):
     """Status query references a `ritm_id` we don't have."""
 
@@ -127,6 +135,7 @@ __all__ = [
     "FulfillmentError",
     "CatalogItemNotFoundError",
     "RequestNotFoundError",
+    "RequesterNotFoundError",
     "RequestItemNotFoundError",
     "RequestItemAlreadyExistsError",
     "DuplicateRequestError",

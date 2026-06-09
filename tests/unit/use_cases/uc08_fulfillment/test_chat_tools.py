@@ -80,25 +80,27 @@ def _reset_module_state():
     """Snapshot + restore the module globals each test touches, and clear the
     conductor's per-flow memo so module state never leaks across tests."""
     saved = (tools._gateway, tools._nats_client, tools._connection_provider)
-    tools._search_memo.clear()
-    tools._fields_memo.clear()
+    for m in (tools._search_memo, tools._fields_memo, tools._draft_memo):
+        m.clear()
     yield
     tools._gateway, tools._nats_client, tools._connection_provider = saved
-    tools._search_memo.clear()
-    tools._fields_memo.clear()
+    for m in (tools._search_memo, tools._fields_memo, tools._draft_memo):
+        m.clear()
 
 
 # ── get_service_request_list ────────────────────────────────────────────────
 
 
-async def test_list_returns_only_above_floor_matches():
+async def test_list_shows_topk_when_best_is_relevant():
+    # When the BEST match clears the floor, show the whole top-K so the USER
+    # has a few candidates to choose from (they are the relevance judge).
     rows = [
         {"catalog_item_id": "CAT_AC_VPN", "name": "VPN / Remote Access",
          "description": "Request VPN remote access", "category": "access",
          "owner_group": "network", "cosine_score": 0.71},
         {"catalog_item_id": "CAT_HW_LAPTOP_STD", "name": "Standard Laptop",
          "description": "A standard business laptop", "category": "hardware",
-         "owner_group": "hardware", "cosine_score": 0.40},  # below floor
+         "owner_group": "hardware", "cosine_score": 0.45},  # below floor, still shown
     ]
     tools.set_gateway(_FakeGateway())
     tools.set_connection_provider(_provider(_FakeConn(fetch=rows)))
@@ -108,8 +110,22 @@ async def test_list_returns_only_above_floor_matches():
 
     assert out["ok"] is True
     ids = [m["catalog_id"] for m in out["matches"]]
-    assert ids == ["CAT_AC_VPN"]          # the 0.40 row is filtered out
-    assert out["count"] == 1
+    assert ids == ["CAT_AC_VPN", "CAT_HW_LAPTOP_STD"]   # top-K, user chooses
+    assert out["count"] == 2
+
+
+async def test_list_no_match_when_best_below_floor():
+    # The best match is below the floor → genuine no-match (not a noisy list).
+    rows = [
+        {"catalog_item_id": "CAT_X", "name": "Something", "description": "x",
+         "category": "c", "owner_group": "g", "cosine_score": 0.30},
+    ]
+    tools.set_gateway(_FakeGateway())
+    tools.set_connection_provider(_provider(_FakeConn(fetch=rows)))
+    out = await tools.get_service_request_list({"query": "pizza party"}, _CTX)
+    assert out["ok"] is True
+    assert out["matches"] == []
+    assert "incident" in out["display_text"].lower()
 
 
 async def test_list_no_match_offers_incident_path():
@@ -307,7 +323,8 @@ async def test_tenant_bound_from_context_not_arguments():
 # ════════════════════════════════════════════════════════════════════════════
 
 
-def _stub_flow(monkeypatch, *, matches, fields, selection, inputs, confirmed):
+def _stub_flow(monkeypatch, *, matches, fields, selection, inputs, confirmed,
+               draft=None):
     """Wire the conductor's collaborators. Returns a dict capturing calls."""
     calls: dict[str, Any] = {"created": None, "interrupts": []}
 
@@ -325,16 +342,26 @@ def _stub_flow(monkeypatch, *, matches, fields, selection, inputs, confirmed):
                 "ritm_id": "RITM1", "dispatched": True,
                 "display_text": "Done — service request REQ0000000001 submitted."}
 
+    async def _draft(*, query, schema, tenant_id, user_id):
+        return dict(draft or {})
+
     monkeypatch.setattr(tools, "get_service_request_list", _list)
     monkeypatch.setattr(tools, "get_service_request_fields", _fields)
     monkeypatch.setattr(tools, "create_service_request", _create)
+    monkeypatch.setattr(tools, "_draft_field_values", _draft)
 
     def _sel(prompt, options, **kw):
         calls["interrupts"].append(("selection", options))
         return selection
 
+    # `inputs` may be a single answer (returned every round) or a list of
+    # answers consumed one per form round (for the re-prompt loop).
+    _seq = list(inputs) if isinstance(inputs, list) else None
+
     def _inp(prompt, flds):
         calls["interrupts"].append(("input", flds))
+        if _seq is not None:
+            return _seq.pop(0) if _seq else {"fields": {}}
         return inputs
 
     def _conf(summary, action):
@@ -373,26 +400,67 @@ async def test_conductor_happy_path_runs_full_sequence(monkeypatch):
     assert out["ok"] is True and out["request_id"] == "REQ0000000001"
 
 
-async def test_conductor_collects_fields_one_at_a_time(monkeypatch):
-    # runbook step 4: "one or two questions at a time, not a full-schema dump".
+async def test_conductor_ai_drafts_and_prefills_single_editable_form(monkeypatch):
+    # runbook "draft → present → approve": the AI pre-fills what it can from the
+    # request; the human gets ONE editable form (not field-by-field) pre-filled
+    # with the draft, edits, then approves.
     fields3 = [
-        {"field_name": "f1", "label": "F1", "type": "text", "required": True},
-        {"field_name": "f2", "label": "F2", "type": "date", "required": True},
-        {"field_name": "f3", "label": "F3", "type": "text", "required": False},
+        {"field_name": "employee_name", "label": "Name", "type": "text",
+         "required": True},
+        {"field_name": "start_date", "label": "Start", "type": "date",
+         "required": True},
+        {"field_name": "role", "label": "Role", "type": "text",
+         "required": False},
     ]
     calls = _stub_flow(
         monkeypatch, matches=_MATCHES, fields=fields3,
-        selection={"selected": {"id": "CAT_HW_LAPTOP_DEV", "label": "Dev Laptop"}},
-        inputs={"fields": {"f1": "a", "f2": "2026-01-01", "f3": "c"}},
-        confirmed={"confirmed": True})
-    out = await tools.request_catalog_item({"query": "laptop"}, _CTX)
+        selection={"selected": {"id": "CAT_HR_ONBOARD", "label": "Onboarding"}},
+        # the human's final (edited) values come back from the form:
+        inputs={"fields": {"employee_name": "Jane Doe",
+                           "start_date": "2026-07-01", "role": "Engineer"}},
+        confirmed={"confirmed": True},
+        # the AI inferred two of the three from the query:
+        draft={"employee_name": "Jane Doe", "start_date": "2026-07-01"})
+    out = await tools.request_catalog_item(
+        {"query": "onboard Jane Doe starting 2026-07-01"}, _CTX)
     kinds = [k for k, _ in calls["interrupts"]]
-    # ONE input interrupt PER field, then a single final confirmation.
-    assert kinds == ["selection", "input", "input", "input", "confirmation"]
-    # each input asked for exactly one field (not the whole form at once).
-    assert all(len(flds) == 1 for k, flds in calls["interrupts"] if k == "input")
-    assert calls["created"]["fields"] == {
-        "f1": "a", "f2": "2026-01-01", "f3": "c"}
+    # ONE form for all fields (not one interrupt per field), then confirm.
+    assert kinds == ["selection", "input", "confirmation"]
+    form = [flds for k, flds in calls["interrupts"] if k == "input"][0]
+    assert len(form) == 3
+    by_name = {f["name"]: f for f in form}
+    assert by_name["employee_name"]["value"] == "Jane Doe"   # AI-drafted
+    assert by_name["start_date"]["value"] == "2026-07-01"     # AI-drafted
+    assert by_name["role"]["value"] == ""                     # not inferable → blank
+    assert out["ok"] is True
+    assert calls["created"]["fields"]["role"] == "Engineer"   # human-supplied
+
+
+async def test_conductor_reprompts_form_until_required_filled(monkeypatch):
+    # If a required field comes back blank, the conductor RE-SHOWS the form
+    # (loop-back) instead of dead-ending at create. Here the first submission
+    # omits the required manager_email; the second supplies it.
+    fields = [
+        {"field_name": "employee_name", "label": "Name", "type": "text",
+         "required": True},
+        {"field_name": "manager_email", "label": "Manager email",
+         "type": "email", "required": True},
+    ]
+    calls = _stub_flow(
+        monkeypatch, matches=_MATCHES, fields=fields,
+        selection={"selected": {"id": "CAT_HR_ONBOARD", "label": "Onboarding"}},
+        inputs=[
+            {"fields": {"employee_name": "Jane", "manager_email": ""}},   # incomplete
+            {"fields": {"employee_name": "Jane",
+                        "manager_email": "m@x.com"}},                      # completed
+        ],
+        confirmed={"confirmed": True},
+        draft={})
+    out = await tools.request_catalog_item({"query": "onboard Jane"}, _CTX)
+    kinds = [k for k, _ in calls["interrupts"]]
+    # the form is shown TWICE (re-prompt), then confirm, then create succeeds.
+    assert kinds == ["selection", "input", "input", "confirmation"]
+    assert calls["created"]["fields"]["manager_email"] == "m@x.com"
     assert out["ok"] is True
 
 

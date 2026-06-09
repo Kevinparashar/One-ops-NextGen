@@ -898,10 +898,32 @@
         const label = document.createElement("label");
         label.className = "interrupt-field-label";
         label.textContent = (f.label || f.name) + (f.required ? " *" : "");
-        const input = document.createElement("input");
-        input.type = f.type || "text";
-        input.placeholder = f.placeholder || "";
-        input.className = "interrupt-field-input";
+        let input;
+        const preset = (f.value != null) ? String(f.value) : "";
+        if (f.type === "select" && Array.isArray(f.options)) {
+          // option field → dropdown, pre-selected to the AI draft if any
+          input = document.createElement("select");
+          input.className = "interrupt-field-input";
+          f.options.forEach((opt) => {
+            const o = document.createElement("option");
+            o.value = String(opt); o.textContent = String(opt);
+            input.appendChild(o);
+          });
+          if (preset) input.value = preset;
+        } else if (f.type === "textarea") {
+          input = document.createElement("textarea");
+          input.className = "interrupt-field-input";
+          input.rows = 2;
+          input.placeholder = f.placeholder || "";
+          input.value = preset;                 // AI draft, editable
+        } else {
+          input = document.createElement("input");
+          // email / date / number / text all map to native input types
+          input.type = f.type || "text";
+          input.placeholder = f.placeholder || "";
+          input.className = "interrupt-field-input";
+          input.value = preset;                 // AI draft, editable
+        }
         fieldEls[f.name] = input;
         bubble.appendChild(label);
         bubble.appendChild(input);
