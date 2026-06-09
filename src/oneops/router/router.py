@@ -67,6 +67,38 @@ def parallel_embed_enabled() -> bool:
         "1", "true", "yes", "on")
 
 
+def confidence_skip_enabled() -> bool:
+    """Latency flag (default OFF). When ON, Stage 3.6 skips the LLM
+    disambiguator when the top surviving candidate's retrieval score
+    OVERWHELMINGLY dominates the runner-up AND it is a definite PASS — the
+    choice is then unambiguous, so the ~1.5s LLM call is wasted.
+
+    Quality guard: the hard semantic cases (axis A "what do we know about X"
+    vs axis B "what info available for X") retrieve uc01 AND uc03 with CLOSE
+    scores → small margin → they NEVER qualify for the skip and still go to
+    the LLM. Only a definite PASS top (activation already admits it
+    deterministically, no intent classification needed) with a large margin
+    skips — exactly the cases the LLM would agree on. Conservative by default.
+    Set ONEOPS_ROUTER_CONFIDENCE_SKIP to 1/true/yes/on to enable."""
+    return os.getenv("ONEOPS_ROUTER_CONFIDENCE_SKIP", "0").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def _confidence_skip_thresholds() -> tuple[float, float]:
+    """(min_top_score, min_margin) for the Stage 3.6 skip — env-tunable so the
+    band can be calibrated against real agent-retrieval scores without a code
+    change. Conservative defaults: only a strong, clearly-dominant top skips."""
+    try:
+        score = float(os.getenv("ONEOPS_ROUTER_CONFIDENCE_SKIP_MIN_SCORE", "0.62"))
+    except ValueError:
+        score = 0.62
+    try:
+        margin = float(os.getenv("ONEOPS_ROUTER_CONFIDENCE_SKIP_MIN_MARGIN", "0.15"))
+    except ValueError:
+        margin = 0.15
+    return score, margin
+
+
 @dataclass
 class _FunnelOutcome:
     """The funnel result for one sub-query — either a routed selection or a
@@ -577,10 +609,56 @@ class Router:
             return _FunnelOutcome([sole.agent_id], {sole.agent_id: bound},
                                   "", False)
 
+        # Stage 3.6 — confidence-gated disambiguator skip (flag-gated).
+        # When 2+ survive but the top candidate's retrieval score
+        # OVERWHELMINGLY dominates the runner-up AND it is a definite PASS,
+        # the choice is unambiguous — the ~1.5s LLM call would only confirm
+        # it. The hard axis-A/B cases retrieve uc01/uc03 with CLOSE scores
+        # (small margin) → they never qualify and still run Stage 4. Only a
+        # definite PASS top skips: activation already admits it
+        # deterministically, so no intent classification is needed (the same
+        # safety the single-survivor shortcut relies on).
+        skip = self._try_confidence_skip(
+            survivors, survivors_with_verdict, signals, text, sq_id, diag)
+        if skip is not None:
+            return skip
+
         # Stage 4 — LLM disambiguation over survivors only.
         return await self._stage4_disambiguate(
             normalized, survivors, survivors_with_verdict, signals,
             request_ctx, text, sq_id, diag)
+
+    def _try_confidence_skip(
+        self, survivors: list, survivors_with_verdict: list[tuple[Any, Ternary]],
+        signals: RequestSignals, text: str, sq_id: str, diag: list[str],
+    ) -> _FunnelOutcome | None:
+        """Stage 3.6 — skip the LLM disambiguator when the top survivor's
+        retrieval score clearly dominates the runner-up AND it is a definite
+        PASS. Returns the routed outcome, or None when the band is not met
+        (→ Stage 4 LLM runs). Flag-gated; off ⇒ always None (unchanged)."""
+        if not confidence_skip_enabled() or len(survivors) < 2:
+            return None
+        # survivors preserve retrieval order (Stage 3 iterates candidates
+        # best-score-first); [0] is the top, [1] the runner-up.
+        top, second = survivors[0], survivors[1]
+        top_verdict = survivors_with_verdict[0][1]
+        top_score = float(getattr(top, "score", 0.0) or 0.0)
+        second_score = float(getattr(second, "score", 0.0) or 0.0)
+        margin = top_score - second_score
+        min_score, min_margin = _confidence_skip_thresholds()
+        qualifies = (
+            top_verdict is Ternary.PASS
+            and top_score >= min_score
+            and margin >= min_margin)
+        if not qualifies:
+            return None
+        diag.append(
+            f"[{sq_id}] stage3.6: confidence-skip → {top.agent_id} "
+            f"(score={top_score:.3f}, margin={margin:.3f} ≥ {min_margin}, PASS) "
+            "— skipping LLM disambiguation")
+        increment("oneops.router.confidence_skip")
+        bound = self._chat_bind(top.agent_id, signals, text)
+        return _FunnelOutcome([top.agent_id], {top.agent_id: bound}, "", False)
 
     async def _stage3_filter(
         self,
