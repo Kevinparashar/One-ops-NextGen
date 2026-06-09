@@ -158,6 +158,27 @@ Ask yourself: **what is the user trying to achieve with this query?**
   service, or operational task at all (jokes, weather, chit-chat).
   Return no agents.
 
+## Card-first selection (AUTHORITATIVE — read this before the axes)
+
+The axes above are a COARSE guide for the single most common confusion
+(understand a record vs. find knowledge). They are NOT the full set of things
+a user can ask for, and a query is NOT off-domain just because it fits none of
+A/B/C/D. The AUTHORITATIVE scope of each candidate is its CARD — its
+description + "Use when" + "Do NOT use" — provided with the query below.
+
+Decide from the cards:
+  • Select the candidate whose "Use when" covers the ask AND whose "Do NOT
+    use" does not exclude it.
+  • A query can match a candidate's "Use when" even when it fits NONE of axes
+    A/B/C/D. Example: a request to OBTAIN, PROVISION, ORDER, REQUEST, or SET UP
+    something new (software, a license, hardware, access, an account,
+    onboarding) matches the fulfilment/catalog agent's card — though it is
+    neither "understand a record" (A) nor "find knowledge" (B). Select it.
+  • When the cards and the axes disagree, THE CARDS WIN. The axes never
+    override a candidate whose "Use when" plainly covers the ask.
+This is how new capabilities are routed without new axes: the card carries the
+per-agent truth; you reason over the cards in the candidate list.
+
 ## The hard distinction (the one users get wrong)
 
 The trap: "what do we know about INC0001001" and "what info is available

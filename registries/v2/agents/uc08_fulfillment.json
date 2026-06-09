@@ -20,14 +20,33 @@
         "tier": "action"
       },
       "activation_condition": {
-        "clauses": [],
+        "operator": "any_of",
         "negate": false,
-        "operator": "leaf",
-        "signal": "intent_in",
-        "values": [
-          "fulfillment_orchestrate",
-          "fulfillment_read",
-          "fulfillment_execute"
+        "signal": null,
+        "values": [],
+        "clauses": [
+          {
+            "clauses": [],
+            "negate": false,
+            "operator": "leaf",
+            "signal": "entity_service_in",
+            "values": [
+              "request",
+              "catalog"
+            ]
+          },
+          {
+            "clauses": [],
+            "negate": false,
+            "operator": "leaf",
+            "signal": "intent_in",
+            "values": [
+              "fulfillment_orchestrate",
+              "fulfillment_read",
+              "fulfillment_execute",
+              "action"
+            ]
+          }
         ]
       },
       "compound_of": [],

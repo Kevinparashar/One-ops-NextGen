@@ -39,6 +39,20 @@ The ONLY allowed fixes when a routing/intent bug surfaces:
 3. Pass new structured context to an LLM that does not have it today.
 4. Fix a regex if and only if it is matching *grammar* wrong (entity-ID format, pronoun shape) — never *meaning*.
 
+**No AXIS approach (decided 2026-06-09).** Do NOT route by a fixed, hardcoded
+list of axes/intent-categories baked into the disambiguator prompt (the old
+`AXIS A/B/C/D` "ONE semantic test"). A fixed axis taxonomy is a closed
+ontology in disguise — it does not scale (you cannot add an axis per UC toward
+100/1000 UCs, and the prompt rots), and it failed even at 5 UCs (UC-8 didn't
+fit A/B/C/D). **Routing decisions are driven by the retrieved candidates' own
+agent CARDS — `description` + `use_when` + `not_when` per UC** — which the
+disambiguator reasons over (retrieve-then-decide). The card is the per-UC
+source of truth; adding a new UC = a new card, never a new axis. The existing
+A/B/C/D axes are NOT to be ripped out reactively (they correctly serve the
+current UCs and the golden set); they are retired only after a card-driven
+selection is proven to preserve every golden route. **From now: new routing
+work is card-driven; never add a new axis.**
+
 ### 2.2 LLM is the decision maker, prompts are dynamic
 Every routing/classification/response decision goes through an LLM whose prompt is assembled at request time from live context (turns, role, focus, capabilities, locale, schema). No static templates. No code branching on user text content.
 
