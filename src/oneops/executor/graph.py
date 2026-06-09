@@ -341,4 +341,48 @@ async def build_postgres_checkpointer() -> Any:
     return saver
 
 
-__all__ = ["build_executor_graph", "run_turn", "build_postgres_checkpointer"]
+async def resume_turn(
+    graph: Any, answer: Any, *, config: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Resume a graph paused by interrupt().
+
+    Calls graph.ainvoke(Command(resume=answer), config) with the same
+    thread_id=session_id so the checkpointer finds the persisted state.
+
+    answer shape per interrupt kind:
+      user_selection    → {"selected": <option dict>}
+      user_input        → {"fields": {name: value, ...}}
+      user_confirmation → {"confirmed": True|False}
+      user_clarification → {"answer": <str>}
+    """
+    from langgraph.types import Command as _Command
+
+    cfg: dict[str, Any] = dict(config or {})
+    configurable = dict(cfg.get("configurable") or {})
+    configurable.setdefault("thread_id", "default")
+    cfg["configurable"] = configurable
+    cfg.setdefault("recursion_limit", _safe_recursion_limit(
+        int(os.getenv("ONEOPS_EXECUTOR_RECURSION_LIMIT", "60"))))
+
+    import time as _time
+    t0 = _time.monotonic()
+    with _tracer.start_as_current_span(
+        "oneops.request.resume",
+        attributes={"oneops.thread_id": configurable.get("thread_id", "")},
+    ) as span:
+        try:
+            result = await graph.ainvoke(_Command(resume=answer), config=cfg)
+        except GraphRecursionError:
+            _log.warning("executor.resume.recursion_limit_exceeded",
+                         thread_id=configurable.get("thread_id", ""))
+            span.set_attribute("oneops.final_status", "recursion_limit_exceeded")
+            raise
+        final_status = str(result.get("final_status") or "unknown")
+        span.set_attribute("oneops.final_status", final_status)
+        latency_ms = int((_time.monotonic() - t0) * 1000)
+        histogram("ai.request.latency_ms", value=latency_ms, tenant_id="")
+        increment("ai.requests.total", final_status=final_status, tenant_id="")
+        return result
+
+
+__all__ = ["build_executor_graph", "run_turn", "resume_turn", "build_postgres_checkpointer"]

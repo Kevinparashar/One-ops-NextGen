@@ -820,6 +820,188 @@
     return spec?.display_name || humaniseUcId(spec?.uc_id);
   }
 
+  // ── Conversational Interrupt Protocol — widgets ──────────────────────
+  // Each interrupt kind renders a self-contained interactive widget inside
+  // the conversation. When the user completes it, `resumeInterrupt` sends
+  // interrupt_resume=true + interrupt_answer to /api/chat and then renders
+  // the resumed turn's response normally.
+
+  async function resumeInterrupt(answer, widgetEl) {
+    widgetEl.innerHTML = '<span class="live-spin">⏳</span> Sending…';
+    setStatus("Working…", "busy");
+    await streamTurnInto({
+      url: "/api/chat/stream",
+      body: {
+        message: "continue",
+        session_id: sessionId,
+        interrupt_resume: true,
+        interrupt_answer: answer,
+      },
+      door: "chat",
+      statusLabel: "Working…",
+    });
+    setStatus("Ready.");
+  }
+
+  function renderInterruptWidget({ door, payload }) {
+    const intr = payload.interrupt || {};
+    const kind = intr.kind || "user_clarification";
+
+    const turn = document.createElement("div");
+    turn.className = "turn assistant interrupt-widget";
+    const chip = document.createElement("span");
+    chip.className = "door-chip chat";
+    chip.textContent = "input required";
+    const metaRow = document.createElement("div");
+    metaRow.className = "meta";
+    metaRow.appendChild(chip);
+    turn.appendChild(metaRow);
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble interrupt-bubble";
+
+    if (kind === "user_selection") {
+      const prompt = document.createElement("p");
+      prompt.className = "interrupt-prompt";
+      prompt.textContent = intr.prompt || "Please select one:";
+      bubble.appendChild(prompt);
+      const opts = intr.options || [];
+      opts.forEach((opt) => {
+        const btn = document.createElement("button");
+        btn.className = "interrupt-option";
+        btn.textContent = opt.label || opt.id || JSON.stringify(opt);
+        btn.addEventListener("click", () => {
+          turn.remove();
+          resumeInterrupt({ selected: opt }, bubble);
+        });
+        bubble.appendChild(btn);
+      });
+      if (intr.allow_none) {
+        const skip = document.createElement("button");
+        skip.className = "interrupt-option interrupt-skip";
+        skip.textContent = "None / Skip";
+        skip.addEventListener("click", () => {
+          turn.remove();
+          resumeInterrupt({ selected: null }, bubble);
+        });
+        bubble.appendChild(skip);
+      }
+
+    } else if (kind === "user_input") {
+      const prompt = document.createElement("p");
+      prompt.className = "interrupt-prompt";
+      prompt.textContent = intr.prompt || "Please fill in the fields:";
+      bubble.appendChild(prompt);
+      const fields = intr.fields || [];
+      const fieldEls = {};
+      fields.forEach((f) => {
+        const label = document.createElement("label");
+        label.className = "interrupt-field-label";
+        label.textContent = (f.label || f.name) + (f.required ? " *" : "");
+        const input = document.createElement("input");
+        input.type = f.type || "text";
+        input.placeholder = f.placeholder || "";
+        input.className = "interrupt-field-input";
+        fieldEls[f.name] = input;
+        bubble.appendChild(label);
+        bubble.appendChild(input);
+      });
+      const btn = document.createElement("button");
+      btn.className = "interrupt-submit";
+      btn.textContent = "Submit";
+      btn.addEventListener("click", () => {
+        const values = {};
+        Object.entries(fieldEls).forEach(([name, el]) => {
+          values[name] = el.value;
+        });
+        turn.remove();
+        resumeInterrupt({ fields: values }, bubble);
+      });
+      bubble.appendChild(btn);
+
+    } else if (kind === "user_confirmation") {
+      const summary = intr.summary || {};
+      const action = intr.action || "confirm";
+      const heading = document.createElement("p");
+      heading.className = "interrupt-prompt";
+      heading.textContent = `Please confirm: ${action}`;
+      bubble.appendChild(heading);
+      const table = document.createElement("table");
+      table.className = "interrupt-summary-table";
+      Object.entries(summary).forEach(([k, v]) => {
+        const tr = document.createElement("tr");
+        const td1 = document.createElement("td");
+        td1.className = "interrupt-summary-key";
+        td1.textContent = k;
+        const td2 = document.createElement("td");
+        td2.textContent = String(v);
+        tr.appendChild(td1); tr.appendChild(td2);
+        table.appendChild(tr);
+      });
+      bubble.appendChild(table);
+      const row = document.createElement("div");
+      row.className = "interrupt-confirm-row";
+      const yes = document.createElement("button");
+      yes.className = "interrupt-submit";
+      yes.textContent = "Confirm";
+      yes.addEventListener("click", () => {
+        turn.remove();
+        resumeInterrupt({ confirmed: true }, bubble);
+      });
+      const no = document.createElement("button");
+      no.className = "interrupt-option interrupt-skip";
+      no.textContent = "Cancel";
+      no.addEventListener("click", () => {
+        turn.remove();
+        resumeInterrupt({ confirmed: false }, bubble);
+      });
+      row.appendChild(yes); row.appendChild(no);
+      bubble.appendChild(row);
+
+    } else {
+      // user_clarification (default)
+      const question = document.createElement("p");
+      question.className = "interrupt-prompt";
+      question.textContent = intr.question || intr.prompt || "Please clarify:";
+      bubble.appendChild(question);
+      const hints = intr.hints || [];
+      if (hints.length > 0) {
+        hints.forEach((h) => {
+          const chip2 = document.createElement("button");
+          chip2.className = "interrupt-hint-chip";
+          chip2.textContent = h;
+          chip2.addEventListener("click", () => {
+            input.value = h;
+          });
+          bubble.appendChild(chip2);
+        });
+      }
+      const row2 = document.createElement("div");
+      row2.className = "interrupt-clarify-row";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "interrupt-field-input";
+      input.placeholder = "Your answer…";
+      const btn2 = document.createElement("button");
+      btn2.className = "interrupt-submit";
+      btn2.textContent = "Send";
+      const submit2 = () => {
+        const ans = input.value.trim();
+        if (!ans) return;
+        turn.remove();
+        resumeInterrupt({ answer: ans }, bubble);
+      };
+      btn2.addEventListener("click", submit2);
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit2(); });
+      row2.appendChild(input); row2.appendChild(btn2);
+      bubble.appendChild(row2);
+    }
+
+    turn.appendChild(bubble);
+    conv.appendChild(turn);
+    conv.scrollTop = conv.scrollHeight;
+  }
+
   // ── chat door ────────────────────────────────────────────────────────
 
   // Shared live-streaming turn driver — used by BOTH the chat door and the
@@ -966,14 +1148,22 @@
       }
       pending.remove();
       if (finalPayload) {
+        sessionId = finalPayload.session_id || sessionId;
+        saveSessionId(sessionId);
+        renderSession();
+        // ── Conversational Interrupt Protocol ──────────────────────────
+        // When the executor paused mid-turn (interrupt_resume handshake),
+        // render an interactive widget instead of a normal text bubble.
+        if (finalPayload.final_status === "interrupted" && finalPayload.interrupt) {
+          renderInterruptWidget({ door, payload: finalPayload });
+          setStatus("Waiting for your input…", "busy");
+          return finalPayload;
+        }
         addAssistantBubble({
           door,
           meta: metaForPayload(finalPayload),
           content: renderResponseContent(finalPayload),
         });
-        sessionId = finalPayload.session_id || sessionId;
-        saveSessionId(sessionId);
-        renderSession();
         tallyTurn(finalPayload);
         setStatus("Ready.");
         refreshThreadList();
