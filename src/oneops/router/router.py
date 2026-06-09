@@ -29,6 +29,8 @@ that did not route are reported in `RouteResult.unrouted`.
 """
 from __future__ import annotations
 
+import os
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -51,6 +53,18 @@ _log = get_logger("oneops.router")
 _tracer = get_tracer("oneops.router")
 
 DEFAULT_TOP_K = 10
+
+
+def parallel_embed_enabled() -> bool:
+    """Latency flag (default OFF). When ON, the router pre-warms the query
+    embedding CONCURRENTLY with the decompose/split LLM call — both read only
+    the raw message, so the embed round-trip overlaps the split instead of
+    running sequentially after it (Stage-2 retrieve then hits the warm
+    embedding cache). Structure- and quality-preserving: NO stage is removed,
+    NO prompt changes, NO routing decision changes — only the scheduling.
+    Set ONEOPS_ROUTER_PARALLEL_EMBED to 1/true/yes/on to enable."""
+    return os.getenv("ONEOPS_ROUTER_PARALLEL_EMBED", "0").strip().lower() in (
+        "1", "true", "yes", "on")
 
 
 @dataclass
@@ -136,6 +150,20 @@ class Router:
             if cached is not None:
                 return cached
 
+            # ── Speculative embed pre-warm (flag-gated) ──────────────────
+            # The Stage-2 retrieve embed and the decompose/split LLM call both
+            # read ONLY the raw message — independent work that runs
+            # sequentially today. Fire the embed NOW so it overlaps the split;
+            # retrieve() then hits the warm embedding cache. Pure scheduling
+            # change — same stages, same retrieval, same routing decisions.
+            import asyncio as _asyncio
+            prewarm_task = None
+            if (parallel_embed_enabled()
+                    and hasattr(self._retriever, "prewarm_embed")):
+                prewarm_task = _asyncio.create_task(
+                    self._retriever.prewarm_embed(
+                        query_text, tenant_id=principal.tenant_id))
+
             # ── Stage 0a + 0b — speculative parallel execution ───────────
             # Decompose and rewrite are both LLM calls (~1.2-1.5s each).
             # Single-sub-query messages (the overwhelming common case) get
@@ -146,7 +174,6 @@ class Router:
             # rewrite (saves ~1.3s). If it returns multi-sub-query or a
             # mutated single sub-query, we fall back to per-sub-query
             # rewrites and discard the speculative result.
-            import asyncio as _asyncio
             if self._unified_splitter is not None:
                 # ── Merged path (one LLM call) ───────────────────────────
                 # Reference-resolution + splitting in ONE round-trip. The
@@ -186,6 +213,17 @@ class Router:
                 )
                 await self._cancel_speculative(
                     spec_rewrite_task, spec_usable, span)
+
+            # Join the speculative embed pre-warm (ran concurrently with the
+            # split above). The embedding cache is now warm, so the per-
+            # sub-query Stage-2 retrieve embed is a cache hit instead of a
+            # fresh round-trip. Awaiting here costs ~max(split, embed) total
+            # instead of split+embed sequential — it never adds latency vs the
+            # flag-off path (the task started before the split). Best-effort.
+            if prewarm_task is not None:
+                with suppress(Exception):
+                    await prewarm_task
+                span.set_attribute("router.parallel_embed", True)
 
             routes: list[SubQueryRoute] = []
             unrouted: list[str] = []

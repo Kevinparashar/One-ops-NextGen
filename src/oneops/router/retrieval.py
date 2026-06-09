@@ -18,6 +18,7 @@ implementations:
 from __future__ import annotations
 
 import re
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -276,6 +277,23 @@ class PgVectorRetriever:
         # agents. Bigger = better recall of the true top-K agents, slightly
         # slower. ~200 covers ~15 agents at ~13 chunks each with headroom.
         self._candidate_chunks = candidate_chunks
+
+    async def prewarm_embed(self, query_text: str, *, tenant_id: str) -> None:
+        """Populate the query-embedding cache for `query_text` ahead of
+        `retrieve()`, so a later retrieve on the same (normalized) text is a
+        cache hit instead of a fresh gateway round-trip. The router fires this
+        CONCURRENTLY with the decompose/split LLM call (both read only the raw
+        message), overlapping the embed with the split. Best-effort: it embeds
+        through the same `GatewayEmbedder` (single egress + cache); any error is
+        swallowed — `retrieve()` will embed normally. No-op when the text is
+        empty or no embedding cache is configured (the embed would not be
+        reused, so warming it would be pure waste)."""
+        if not query_text.strip():
+            return
+        if getattr(self._embedder, "_cache", None) is None:
+            return
+        with suppress(Exception):
+            await self._embedder.embed(query_text, tenant_id=tenant_id)
 
     async def retrieve(
         self, query_text: str, *, tenant_id: str, top_k: int,
