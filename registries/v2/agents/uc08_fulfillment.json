@@ -118,46 +118,16 @@
       "status": "active",
       "tool_refs": [
         {
-          "tool_id": "load_catalog_template"
+          "tool_id": "get_service_request_list"
         },
         {
-          "tool_id": "decompose_fulfillment_request"
+          "tool_id": "get_service_request_fields"
         },
         {
-          "tool_id": "create_directory_account"
+          "tool_id": "create_service_request"
         },
         {
-          "tool_id": "provision_email_mailbox"
-        },
-        {
-          "tool_id": "grant_vpn_access"
-        },
-        {
-          "tool_id": "add_to_groups"
-        },
-        {
-          "tool_id": "assign_software_license"
-        },
-        {
-          "tool_id": "order_hardware_asset"
-        },
-        {
-          "tool_id": "request_human_approval"
-        },
-        {
-          "tool_id": "rollback_completed_steps"
-        },
-        {
-          "tool_id": "check_request_duplicate"
-        },
-        {
-          "tool_id": "get_fulfillment_status"
-        },
-        {
-          "tool_id": "notify_milestone"
-        },
-        {
-          "tool_id": "escalate_sla_breach"
+          "tool_id": "update_service_request"
         }
       ],
       "updated_at": "2026-05-31T08:30:00.000000+00:00",

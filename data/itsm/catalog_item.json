@@ -46,7 +46,8 @@
         ],
         "estimated_minutes": 480
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T001",
@@ -85,7 +86,8 @@
         ],
         "estimated_minutes": 5
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T001",
@@ -124,7 +126,8 @@
         ],
         "estimated_minutes": 1
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T001",
@@ -162,6 +165,26 @@
           "T2"
         ],
         "estimated_minutes": 1
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "system",
+        "label": "System / role",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
       }
     ]
   },
@@ -263,7 +286,8 @@
         ],
         "estimated_minutes": 5
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T002",
@@ -312,7 +336,8 @@
         ],
         "estimated_minutes": 480
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T002",
@@ -351,7 +376,8 @@
         ],
         "estimated_minutes": 1
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T003",
@@ -400,7 +426,8 @@
         ],
         "estimated_minutes": 5
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T002",
@@ -419,7 +446,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T002",
@@ -438,7 +466,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T001",
@@ -457,7 +486,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T003",
@@ -476,7 +506,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T002",
@@ -495,7 +526,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T002",
@@ -514,7 +546,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T002",
@@ -533,7 +566,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T001",
@@ -552,7 +586,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T002",
@@ -571,7 +606,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T002",
@@ -590,7 +626,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T002",
@@ -609,7 +646,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T003",
@@ -628,7 +666,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T002",
@@ -647,7 +686,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T001",
@@ -666,7 +706,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T003",
@@ -685,7 +726,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T001",
@@ -704,7 +746,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T001",
@@ -723,7 +766,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T001",
@@ -742,7 +786,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T002",
@@ -761,7 +806,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T001",
@@ -780,7 +826,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T001",
@@ -799,7 +846,8 @@
         "depends_on": [],
         "estimated_minutes": 60
       }
-    ]
+    ],
+    "request_fields": []
   },
   {
     "tenant_id": "T001",
@@ -817,6 +865,3154 @@
         "owner_group": "GRP-SERVICEDESK",
         "depends_on": [],
         "estimated_minutes": 60
+      }
+    ],
+    "request_fields": []
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HW_LAPTOP_DEV",
+    "name": "High-Performance Developer Laptop",
+    "description": "Request a high-spec laptop for software development, engineering, or data work \u2014 more RAM/CPU than the standard business laptop. For developers, engineers, designers needing a powerful machine.",
+    "category": "hardware",
+    "owner_group": "GRP-ASSET",
+    "estimated_total_minutes": 1440,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Procurement: order laptop",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Imaging: apply developer image",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Asset register: tag and assign",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "model",
+        "label": "Preferred model",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Dell XPS 15",
+          "MacBook Pro 16",
+          "ThinkPad P1"
+        ]
+      },
+      {
+        "field_name": "ram",
+        "label": "RAM",
+        "type": "select",
+        "required": true,
+        "options": [
+          "32 GB",
+          "64 GB"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HW_LAPTOP_STD",
+    "name": "Standard Business Laptop",
+    "description": "Request a standard business laptop for general office work, email, documents, and meetings. The default company laptop for most employees.",
+    "category": "hardware",
+    "owner_group": "GRP-ASSET",
+    "estimated_total_minutes": 1200,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Procurement: order laptop",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Imaging: apply standard image",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Asset register: tag and assign",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "model",
+        "label": "Preferred model",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Dell Latitude",
+          "MacBook Air",
+          "ThinkPad T14"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HW_DESKTOP",
+    "name": "Desktop Workstation",
+    "description": "Request a fixed desktop computer/workstation for an office desk. For roles that work primarily from a fixed location.",
+    "category": "hardware",
+    "owner_group": "GRP-ASSET",
+    "estimated_total_minutes": 1200,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Procurement: order desktop",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Setup: assemble and image",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Delivery: install at desk",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "location",
+        "label": "Desk / seat location",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HW_MONITOR",
+    "name": "External Monitor",
+    "description": "Request an external display/monitor/screen for a workstation. For dual-screen setups, larger displays, or replacing a faulty monitor.",
+    "category": "hardware",
+    "owner_group": "GRP-ASSET",
+    "estimated_total_minutes": 240,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Procurement: order monitor",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Delivery: ship to desk",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "size",
+        "label": "Monitor size",
+        "type": "select",
+        "required": true,
+        "options": [
+          "24-inch",
+          "27-inch",
+          "32-inch",
+          "Ultrawide"
+        ]
+      },
+      {
+        "field_name": "quantity",
+        "label": "Quantity",
+        "type": "number",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HW_RAM_UPGRADE",
+    "name": "Memory (RAM) Upgrade",
+    "description": "Request additional memory/RAM for an existing computer to improve performance and run heavier applications.",
+    "category": "hardware",
+    "owner_group": "GRP-ASSET",
+    "estimated_total_minutes": 180,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Approval: manager",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Schedule: hardware install",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "asset_tag",
+        "label": "Device asset tag",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "target_ram",
+        "label": "Upgrade to",
+        "type": "select",
+        "required": true,
+        "options": [
+          "16 GB",
+          "32 GB",
+          "64 GB"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HW_SSD_UPGRADE",
+    "name": "Storage (SSD) Upgrade",
+    "description": "Request additional or larger storage/SSD/disk for an existing computer that is running out of space.",
+    "category": "hardware",
+    "owner_group": "GRP-ASSET",
+    "estimated_total_minutes": 180,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Approval: manager",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Schedule: hardware install",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "asset_tag",
+        "label": "Device asset tag",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "target_size",
+        "label": "Upgrade to",
+        "type": "select",
+        "required": true,
+        "options": [
+          "512 GB",
+          "1 TB",
+          "2 TB"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HW_DOCK",
+    "name": "Docking Station",
+    "description": "Request a docking station to connect a laptop to monitors, keyboard, and wired network at a desk.",
+    "category": "hardware",
+    "owner_group": "GRP-ASSET",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Procurement: order dock",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Delivery: ship to desk",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "dock_type",
+        "label": "Dock type",
+        "type": "select",
+        "required": true,
+        "options": [
+          "USB-C",
+          "Thunderbolt"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HW_HEADSET",
+    "name": "Headset",
+    "description": "Request a headset for calls and meetings \u2014 wired or wireless, with microphone. For frequent calls, support roles, or remote meetings.",
+    "category": "hardware",
+    "owner_group": "GRP-ASSET",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Procurement: order headset",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Delivery: ship to desk",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "conn",
+        "label": "Connection",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Wired",
+          "Wireless / Bluetooth"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HW_WEBCAM",
+    "name": "Webcam",
+    "description": "Request an external webcam/camera for video meetings and conferencing.",
+    "category": "hardware",
+    "owner_group": "GRP-ASSET",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Procurement: order webcam",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Delivery: ship to desk",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HW_KEYBOARD_MOUSE",
+    "name": "Keyboard & Mouse Set",
+    "description": "Request a replacement or additional keyboard and mouse \u2014 wired or wireless, ergonomic options available.",
+    "category": "hardware",
+    "owner_group": "GRP-ASSET",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Procurement: order peripherals",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Delivery: ship to desk",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "ergonomic",
+        "label": "Ergonomic",
+        "type": "boolean",
+        "required": false
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_SW_MS_OFFICE",
+    "name": "Microsoft Office License",
+    "description": "Request a Microsoft Office / Microsoft 365 license \u2014 Word, Excel, PowerPoint, Outlook. For new users or upgrading from a free edition.",
+    "category": "software",
+    "owner_group": "GRP-APPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate license availability",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Assign license",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Notify user",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "edition",
+        "label": "Edition",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Microsoft 365 Business",
+          "Office Professional"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_SW_ADOBE_CC",
+    "name": "Adobe Creative Cloud License",
+    "description": "Request Adobe Creative Cloud \u2014 Photoshop, Illustrator, InDesign, Premiere. For designers, marketing, and content teams.",
+    "category": "software",
+    "owner_group": "GRP-APPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate license availability",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Assign license",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Notify user",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "apps",
+        "label": "Apps needed",
+        "type": "select",
+        "required": true,
+        "options": [
+          "All Apps",
+          "Photoshop only",
+          "Premiere only"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_SW_IDE",
+    "name": "Developer IDE License",
+    "description": "Request a developer IDE license \u2014 JetBrains (IntelliJ, PyCharm), Visual Studio. For engineers and developers.",
+    "category": "software",
+    "owner_group": "GRP-APPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate license availability",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Assign license",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Notify user",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "ide",
+        "label": "IDE",
+        "type": "select",
+        "required": true,
+        "options": [
+          "IntelliJ IDEA",
+          "PyCharm",
+          "WebStorm",
+          "Visual Studio"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_SW_PM_TOOL",
+    "name": "Project Management Tool Access",
+    "description": "Request access to the project management / issue tracking tool (Jira). For project members and teams managing work.",
+    "category": "software",
+    "owner_group": "GRP-APPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision account",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Assign to project",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Notify user",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "project",
+        "label": "Project / board",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_SW_DESIGN",
+    "name": "Design Tool License",
+    "description": "Request a design/prototyping tool license (Figma, Sketch). For designers and product teams.",
+    "category": "software",
+    "owner_group": "GRP-APPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate license availability",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Assign license",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Notify user",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "tool",
+        "label": "Tool",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Figma",
+          "Sketch"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_SW_ANTIVIRUS",
+    "name": "Endpoint Security / Antivirus",
+    "description": "Request endpoint security / antivirus software installation on a device for protection and compliance.",
+    "category": "security",
+    "owner_group": "GRP-SECOPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Push security agent",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Verify install",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "asset_tag",
+        "label": "Device asset tag",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_SW_DB_CLIENT",
+    "name": "Database Client License",
+    "description": "Request a database client tool license (DBeaver Pro, DataGrip, TablePlus) for working with databases.",
+    "category": "software",
+    "owner_group": "GRP-APPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate license availability",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Assign license",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "tool",
+        "label": "Tool",
+        "type": "select",
+        "required": true,
+        "options": [
+          "DataGrip",
+          "DBeaver Pro",
+          "TablePlus"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_SW_GENERIC",
+    "name": "General Software Installation",
+    "description": "Request installation of a specific software application not in the standard catalog. Provide the name and reason.",
+    "category": "software",
+    "owner_group": "GRP-APPS",
+    "estimated_total_minutes": 90,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Review request",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Approve / procure license",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Install",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "software_name",
+        "label": "Software name",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "version",
+        "label": "Version",
+        "type": "text",
+        "required": false
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_AC_NEW_USER",
+    "name": "New User Account Creation",
+    "description": "Request creation of a new user account / directory (Active Directory) account for a new joiner or contractor.",
+    "category": "access",
+    "owner_group": "GRP-SECOPS",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Create directory account",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Assign default groups",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Send credentials",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "full_name",
+        "label": "Full name",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "department",
+        "label": "Department",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "manager_email",
+        "label": "Manager email",
+        "type": "email",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_AC_VPN",
+    "name": "VPN / Remote Access",
+    "description": "Request secure remote network access (VPN) to connect to internal systems from outside the office. For remote work, work-from-home, or off-network access to internal applications.",
+    "category": "access",
+    "owner_group": "GRP-NETOPS",
+    "estimated_total_minutes": 90,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate authorization",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Provision VPN profile",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Send activation email",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "access_level",
+        "label": "Access level",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Standard",
+          "Privileged"
+        ]
+      },
+      {
+        "field_name": "duration",
+        "label": "Duration",
+        "type": "select",
+        "required": true,
+        "options": [
+          "30 days",
+          "90 days",
+          "Permanent"
+        ]
+      },
+      {
+        "field_name": "manager_email",
+        "label": "Manager email",
+        "type": "email",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_AC_DB",
+    "name": "Database Access",
+    "description": "Request access to a specific database \u2014 read-only or read-write. For analysts, developers, and reporting.",
+    "category": "access",
+    "owner_group": "GRP-SECOPS",
+    "estimated_total_minutes": 90,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate authorization",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Grant DB role",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Notify user",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "database",
+        "label": "Database name",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "level",
+        "label": "Access level",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Read-only",
+          "Read-write"
+        ]
+      },
+      {
+        "field_name": "manager_email",
+        "label": "Manager email",
+        "type": "email",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_AC_SHARED_DRIVE",
+    "name": "Shared Drive / Folder Access",
+    "description": "Request access to a shared network drive, folder, or SharePoint site.",
+    "category": "access",
+    "owner_group": "GRP-SECOPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate authorization",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Add to access group",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "path",
+        "label": "Drive / folder path",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "level",
+        "label": "Access level",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Read",
+          "Read-write"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_AC_APP",
+    "name": "Application Access",
+    "description": "Request access to a business application or system (CRM, ERP, internal tool). Name the application and role.",
+    "category": "access",
+    "owner_group": "GRP-APPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate authorization",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Provision app role",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "application",
+        "label": "Application name",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "role",
+        "label": "Role / permission",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "manager_email",
+        "label": "Manager email",
+        "type": "email",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_AC_ADMIN",
+    "name": "Privileged / Admin Access",
+    "description": "Request elevated/privileged/administrator access to a system. Requires strong justification and approval.",
+    "category": "security",
+    "owner_group": "GRP-SECOPS",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Security review",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Time-bound grant",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Audit log entry",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "system",
+        "label": "Target system",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "duration",
+        "label": "Duration",
+        "type": "select",
+        "required": true,
+        "options": [
+          "1 day",
+          "7 days",
+          "30 days"
+        ]
+      },
+      {
+        "field_name": "manager_email",
+        "label": "Approver email",
+        "type": "email",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_AC_REPO",
+    "name": "Source Code Repository Access",
+    "description": "Request access to a source code repository / GitHub organization or specific repo. For developers and engineers.",
+    "category": "access",
+    "owner_group": "GRP-APPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate authorization",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Add to org / team",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "repo",
+        "label": "Repository / org",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "level",
+        "label": "Access level",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Read",
+          "Write",
+          "Admin"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_AC_CLOUD_SANDBOX",
+    "name": "Cloud Sandbox Environment",
+    "description": "Request a temporary cloud sandbox / dev environment (AWS, GCP, Azure) for testing and experimentation.",
+    "category": "platform",
+    "owner_group": "GRP-PLATFORM",
+    "estimated_total_minutes": 180,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Provision sandbox account",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Apply budget guardrails",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Send access details",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "provider",
+        "label": "Cloud provider",
+        "type": "select",
+        "required": true,
+        "options": [
+          "AWS",
+          "GCP",
+          "Azure"
+        ]
+      },
+      {
+        "field_name": "duration",
+        "label": "Duration",
+        "type": "select",
+        "required": true,
+        "options": [
+          "7 days",
+          "30 days",
+          "90 days"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_EM_MAILBOX",
+    "name": "New Mailbox / Email Account",
+    "description": "Request creation of a new email mailbox / email ID for a user or a shared/functional mailbox.",
+    "category": "email",
+    "owner_group": "GRP-SERVICE-DESK",
+    "estimated_total_minutes": 90,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Create mailbox",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Apply policies",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Notify requester",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "mailbox_type",
+        "label": "Mailbox type",
+        "type": "select",
+        "required": true,
+        "options": [
+          "User",
+          "Shared / functional"
+        ]
+      },
+      {
+        "field_name": "desired_alias",
+        "label": "Desired email alias",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_EM_DISTRIBUTION",
+    "name": "Distribution List / Group Email",
+    "description": "Request a new distribution list or group email address, or changes to membership of an existing one.",
+    "category": "email",
+    "owner_group": "GRP-SERVICE-DESK",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Create / update list",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Add members",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "list_name",
+        "label": "List name / address",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "members",
+        "label": "Members (emails)",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_EM_QUOTA",
+    "name": "Mailbox Quota Increase",
+    "description": "Request an increase to mailbox storage quota for a user whose mailbox is full.",
+    "category": "email",
+    "owner_group": "GRP-SERVICE-DESK",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Manager approval",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Apply quota change",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Notify requester",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "requested_size_gb",
+        "label": "Requested size (GB)",
+        "type": "number",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_CO_MEETING_TOOL",
+    "name": "Video Conferencing License",
+    "description": "Request a video conferencing license (Zoom, Teams premium, Webex) for hosting larger or external meetings.",
+    "category": "software",
+    "owner_group": "GRP-APPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate license",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Assign license",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "tool",
+        "label": "Tool",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Zoom",
+          "Microsoft Teams",
+          "Webex"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_NW_WIFI",
+    "name": "Wi-Fi / Network Access",
+    "description": "Request Wi-Fi or wired network access for a device, guest, or new location.",
+    "category": "network",
+    "owner_group": "GRP-NETOPS",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Register device / MAC",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Grant network access",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "device_type",
+        "label": "Device type",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Corporate laptop",
+          "Personal device",
+          "Guest"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_NW_STATIC_IP",
+    "name": "Static IP / Firewall Rule",
+    "description": "Request a static IP address or a firewall rule change to allow specific connectivity.",
+    "category": "network",
+    "owner_group": "GRP-NETOPS",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Network review",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Apply rule / IP",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "purpose",
+        "label": "Purpose / system",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "source_dest",
+        "label": "Source \u2192 destination",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_TC_MOBILE",
+    "name": "Corporate Mobile Phone & Plan",
+    "description": "Request a company mobile phone with a corporate voice and data plan. For roles requiring mobility.",
+    "category": "telecom",
+    "owner_group": "GRP-TELECOM",
+    "estimated_total_minutes": 480,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Approval: manager",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Procure device + plan",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Activate and deliver",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "plan",
+        "label": "Plan",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Voice + Data",
+          "Data only"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_TC_SIM",
+    "name": "Mobile SIM / Data Plan",
+    "description": "Request a SIM card or mobile data plan for an existing device or hotspot.",
+    "category": "telecom",
+    "owner_group": "GRP-TELECOM",
+    "estimated_total_minutes": 240,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Approval: manager",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Procure SIM / plan",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "data_gb",
+        "label": "Monthly data (GB)",
+        "type": "select",
+        "required": true,
+        "options": [
+          "5 GB",
+          "20 GB",
+          "Unlimited"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_SE_MFA",
+    "name": "MFA Enrollment / Reset",
+    "description": "Request multi-factor authentication (MFA / 2FA) enrollment or reset \u2014 e.g. after a lost device or new phone.",
+    "category": "security",
+    "owner_group": "GRP-SECOPS",
+    "estimated_total_minutes": 30,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Verify identity",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Reset / re-enroll MFA",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "reason",
+        "label": "Reason",
+        "type": "select",
+        "required": true,
+        "options": [
+          "New device",
+          "Lost device",
+          "First-time enroll"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_SE_PASSWORD",
+    "name": "Password Reset",
+    "description": "Request a password reset for an account when locked out or forgotten. Self-service where available.",
+    "category": "security",
+    "owner_group": "GRP-SERVICE-DESK",
+    "estimated_total_minutes": 15,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Verify identity",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Reset password",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "account",
+        "label": "Account / system",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_SE_CERT",
+    "name": "Digital Certificate Request",
+    "description": "Request a digital/SSL certificate for a service, server, or signing.",
+    "category": "security",
+    "owner_group": "GRP-SECOPS",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Validate request",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Issue certificate",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "cert_type",
+        "label": "Certificate type",
+        "type": "select",
+        "required": true,
+        "options": [
+          "SSL/TLS",
+          "Code signing",
+          "Client auth"
+        ]
+      },
+      {
+        "field_name": "common_name",
+        "label": "Common name / domain",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_IT_INCIDENT",
+    "name": "Report an IT Incident",
+    "description": "Report something broken, failing, or not working \u2014 an IT incident. For outages, errors, and faults that need fixing.",
+    "category": "incident",
+    "owner_group": "GRP-SERVICE-DESK",
+    "estimated_total_minutes": 30,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Triage incident",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Assign to support",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "summary",
+        "label": "What is broken",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "urgency",
+        "label": "Urgency",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Low",
+          "Medium",
+          "High",
+          "Critical"
+        ]
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_IT_CHANGE",
+    "name": "IT Change Request",
+    "description": "Request a planned change to IT systems, infrastructure, or configuration \u2014 following change management.",
+    "category": "change",
+    "owner_group": "GRP-PLATFORM",
+    "estimated_total_minutes": 240,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Change review (CAB)",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Schedule and implement",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "change_summary",
+        "label": "Change summary",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "risk",
+        "label": "Risk level",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Low",
+          "Medium",
+          "High"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_IT_GENERAL",
+    "name": "General IT Service Request",
+    "description": "A general IT service request that doesn't fit another catalog item. Describe what you need.",
+    "category": "incident",
+    "owner_group": "GRP-SERVICE-DESK",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Review and route",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "request_summary",
+        "label": "What do you need",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HR_ONBOARD",
+    "name": "New Employee Onboarding",
+    "description": "Onboard a new employee \u2014 provision account, email, laptop, access, and badge. The full new-joiner setup.",
+    "category": "onboarding",
+    "owner_group": "GRP-HR",
+    "estimated_total_minutes": 2880,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Create accounts",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Provision equipment",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Schedule orientation",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "employee_name",
+        "label": "New employee name",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "start_date",
+        "label": "Start date",
+        "type": "date",
+        "required": true
+      },
+      {
+        "field_name": "department",
+        "label": "Department",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "manager_email",
+        "label": "Manager email",
+        "type": "email",
+        "required": true
+      },
+      {
+        "field_name": "role",
+        "label": "Job title / role",
+        "type": "text",
+        "required": true
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HR_OFFBOARD",
+    "name": "Employee Offboarding",
+    "description": "Offboard a departing employee \u2014 revoke access, recover assets, disable accounts. The full leaver process.",
+    "category": "onboarding",
+    "owner_group": "GRP-HR",
+    "estimated_total_minutes": 480,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Disable accounts",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Revoke access",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T3",
+        "name": "Recover assets",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T2"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "employee_name",
+        "label": "Departing employee",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "last_day",
+        "label": "Last working day",
+        "type": "date",
+        "required": true
+      },
+      {
+        "field_name": "manager_email",
+        "label": "Manager email",
+        "type": "email",
+        "required": true
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HR_MANPOWER",
+    "name": "Manpower / Hiring Requisition",
+    "description": "Raise a hiring requisition to open a new position \u2014 headcount approval and recruitment.",
+    "category": "hr",
+    "owner_group": "GRP-HR",
+    "estimated_total_minutes": 1440,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Budget approval",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Open requisition",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "position",
+        "label": "Position title",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "department",
+        "label": "Department",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "count",
+        "label": "Number of openings",
+        "type": "number",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Justification",
+        "type": "textarea",
+        "required": true
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HR_TRANSFER",
+    "name": "Internal Transfer Request",
+    "description": "Request an internal transfer of an employee to another team, department, or location.",
+    "category": "hr",
+    "owner_group": "GRP-HR",
+    "estimated_total_minutes": 720,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Approvals",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Update records and access",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "employee_name",
+        "label": "Employee name",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "to_department",
+        "label": "Transfer to department",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "effective_date",
+        "label": "Effective date",
+        "type": "date",
+        "required": true
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HR_LEAVE",
+    "name": "Leave / Time-Off Request",
+    "description": "Request leave or time off \u2014 vacation, sick leave, personal day. For planned or unplanned absences.",
+    "category": "hr",
+    "owner_group": "GRP-HR",
+    "estimated_total_minutes": 30,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Manager approval",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Update leave balance",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "leave_type",
+        "label": "Leave type",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Vacation",
+          "Sick",
+          "Personal",
+          "Unpaid"
+        ]
+      },
+      {
+        "field_name": "start_date",
+        "label": "Start date",
+        "type": "date",
+        "required": true
+      },
+      {
+        "field_name": "end_date",
+        "label": "End date",
+        "type": "date",
+        "required": true
+      },
+      {
+        "field_name": "reason",
+        "label": "Reason",
+        "type": "textarea",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HR_ID_CARD",
+    "name": "ID Card / Access Badge",
+    "description": "Request a new or replacement employee ID card / access badge for building entry.",
+    "category": "hr",
+    "owner_group": "GRP-HR",
+    "estimated_total_minutes": 240,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Capture photo",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Print and program badge",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "reason",
+        "label": "Reason",
+        "type": "select",
+        "required": true,
+        "options": [
+          "New employee",
+          "Lost",
+          "Damaged"
+        ]
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HR_VERIFY",
+    "name": "Employment Verification Letter",
+    "description": "Request an official employment verification / experience letter \u2014 e.g. for a visa, loan, or rental.",
+    "category": "hr",
+    "owner_group": "GRP-HR",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Generate letter",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Sign and issue",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "purpose",
+        "label": "Purpose",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Visa",
+          "Bank / loan",
+          "Rental",
+          "Other"
+        ]
+      },
+      {
+        "field_name": "addressed_to",
+        "label": "Addressed to",
+        "type": "text",
+        "required": false
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_HR_TRAINING",
+    "name": "Training Enrollment",
+    "description": "Request enrollment in a training course, certification, or learning program.",
+    "category": "hr",
+    "owner_group": "GRP-HR",
+    "estimated_total_minutes": 60,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Manager approval",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Enroll / book",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "course",
+        "label": "Course / certification",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "cost",
+        "label": "Estimated cost",
+        "type": "number",
+        "required": false
+      },
+      {
+        "field_name": "justification",
+        "label": "Justification",
+        "type": "textarea",
+        "required": true
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_FN_TRAVEL",
+    "name": "Travel Reimbursement",
+    "description": "Claim reimbursement for business travel expenses \u2014 flights, hotel, transport, meals. Attach receipts.",
+    "category": "finance",
+    "owner_group": "GRP-FINANCE",
+    "estimated_total_minutes": 240,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Manager approval",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Finance review and payout",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "trip_dates",
+        "label": "Trip dates",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "amount",
+        "label": "Total amount",
+        "type": "number",
+        "required": true
+      },
+      {
+        "field_name": "currency",
+        "label": "Currency",
+        "type": "select",
+        "required": true,
+        "options": [
+          "USD",
+          "EUR",
+          "INR"
+        ]
+      },
+      {
+        "field_name": "cost_center",
+        "label": "Cost center",
+        "type": "text",
+        "required": true
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_FN_EXPENSE",
+    "name": "Expense Claim",
+    "description": "Submit a general business expense claim for reimbursement \u2014 supplies, subscriptions, client costs.",
+    "category": "finance",
+    "owner_group": "GRP-FINANCE",
+    "estimated_total_minutes": 180,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Manager approval",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Finance review and payout",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "category",
+        "label": "Expense category",
+        "type": "select",
+        "required": true,
+        "options": [
+          "Supplies",
+          "Subscription",
+          "Client / entertainment",
+          "Other"
+        ]
+      },
+      {
+        "field_name": "amount",
+        "label": "Amount",
+        "type": "number",
+        "required": true
+      },
+      {
+        "field_name": "cost_center",
+        "label": "Cost center",
+        "type": "text",
+        "required": true
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_FN_PROCURE",
+    "name": "Procurement / Purchase Order",
+    "description": "Request a purchase order to procure goods or services from a vendor.",
+    "category": "finance",
+    "owner_group": "GRP-FINANCE",
+    "estimated_total_minutes": 720,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Budget approval",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Raise PO",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "item",
+        "label": "Item / service",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "vendor",
+        "label": "Preferred vendor",
+        "type": "text",
+        "required": false
+      },
+      {
+        "field_name": "amount",
+        "label": "Estimated amount",
+        "type": "number",
+        "required": true
+      },
+      {
+        "field_name": "cost_center",
+        "label": "Cost center",
+        "type": "text",
+        "required": true
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_FC_DESK",
+    "name": "Desk / Workspace Allocation",
+    "description": "Request a desk, seat, or workspace allocation \u2014 for a new joiner, move, or hot-desk.",
+    "category": "facilities",
+    "owner_group": "GRP-FACILITIES",
+    "estimated_total_minutes": 120,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Allocate space",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Notify requester",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "location",
+        "label": "Preferred location / floor",
+        "type": "text",
+        "required": false
+      },
+      {
+        "field_name": "start_date",
+        "label": "From date",
+        "type": "date",
+        "required": true
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_FC_ROOM",
+    "name": "Meeting Room / Facility Booking",
+    "description": "Book a meeting room or facility for an event or meeting.",
+    "category": "facilities",
+    "owner_group": "GRP-FACILITIES",
+    "estimated_total_minutes": 30,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Check availability",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Confirm booking",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "room",
+        "label": "Room / facility",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "date",
+        "label": "Date",
+        "type": "date",
+        "required": true
+      },
+      {
+        "field_name": "attendees",
+        "label": "Number of attendees",
+        "type": "number",
+        "required": true
+      }
+    ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_FC_PARKING",
+    "name": "Parking Permit",
+    "description": "Request a parking permit or assigned parking space at an office location.",
+    "category": "facilities",
+    "owner_group": "GRP-FACILITIES",
+    "estimated_total_minutes": 240,
+    "tasks": [
+      {
+        "task_id": "T1",
+        "name": "Verify eligibility",
+        "type": "manual",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [],
+        "estimated_minutes": 30
+      },
+      {
+        "task_id": "T2",
+        "name": "Assign / issue permit",
+        "type": "automated",
+        "owner_group": "GRP-SERVICE-DESK",
+        "depends_on": [
+          "T1"
+        ],
+        "estimated_minutes": 30
+      }
+    ],
+    "request_fields": [
+      {
+        "field_name": "location",
+        "label": "Office location",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "justification",
+        "label": "Business justification",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "field_name": "needed_by",
+        "label": "Needed by date",
+        "type": "date",
+        "required": false
       }
     ]
   }

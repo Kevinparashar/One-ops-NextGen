@@ -997,6 +997,7 @@ async def _lifespan(app: FastAPI):
         import asyncpg as _asyncpg
 
         from oneops.adapters.nats_client import get_nats_client
+        from oneops.use_cases.uc08_fulfillment import tools as _uc08_tools
         from oneops.use_cases.uc08_fulfillment.adapters.inprocess import (
             InProcessIntegrationAdapter,
         )
@@ -1021,7 +1022,13 @@ async def _lifespan(app: FastAPI):
         # The fulfilment engine worker (runs the task DAG). Its trigger is the
         # chat create_service_request tool (Step 2), not the removed REST route.
         app.state.uc08_nats = nats_client_uc08
-        _log.info("oneops.api.uc08_agent_started", dispatch="nats")
+        # Wire the 4 chat catalog tools: the embedding gateway powers
+        # get_service_request_list (single egress, §2.5); the NATS client lets
+        # create_service_request dispatch fulfilment to the worker above.
+        _uc08_tools.set_gateway(gateway)
+        _uc08_tools.set_nats_client(nats_client_uc08)
+        _log.info("oneops.api.uc08_agent_started", dispatch="nats",
+                  chat_tools="wired")
     except Exception as exc:                                      # noqa: BLE001
         _log.warning("oneops.api.uc08_wiring_failed",
                       error=str(exc)[:160])

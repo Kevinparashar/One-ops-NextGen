@@ -1,7 +1,7 @@
 -- catalog_fulfillment/01_schema.sql  (uc08)
 --
--- The catalog item + onboarding template tables + the catalog change-detection
--- doorbell. These must exist BEFORE the request slice (request FK ->
+-- The catalog item table + the catalog change-detection
+-- doorbell. This must exist BEFORE the request slice (request FK ->
 -- catalog_item). The fulfillment WORKFLOW tables (request_item/task/approval/
 -- fulfillment_run) live in 03_fulfillment.sql and run AFTER request (they FK ->
 -- itsm.request). See database/README.md for the global order.
@@ -17,22 +17,15 @@ CREATE TABLE IF NOT EXISTS itsm.catalog_item (
     owner_group             text,
     estimated_total_minutes integer,
     tasks                   jsonb   NOT NULL DEFAULT '[]'::jsonb,
+    -- request_fields: the per-item INTAKE FORM (what the agent asks the user).
+    -- [{field_name,label,type,required,options?}]. Empty [] = not intake-ready
+    -- (hidden from get_service_request_list). See uc08 intake tools.
+    request_fields          jsonb   NOT NULL DEFAULT '[]'::jsonb,
     PRIMARY KEY (tenant_id, catalog_item_id)
 );
-
-CREATE TABLE IF NOT EXISTS itsm.onboarding_template (
-    tenant_id               text    NOT NULL,
-    template_id             text    NOT NULL,
-    name                    text    NOT NULL,
-    description             text,
-    department              text,
-    default_catalog_item_id text,
-    required_inputs         text[]  NOT NULL DEFAULT '{}',
-    tasks                   jsonb   NOT NULL DEFAULT '[]'::jsonb,
-    PRIMARY KEY (tenant_id, template_id),
-    FOREIGN KEY (tenant_id, default_catalog_item_id)
-        REFERENCES itsm.catalog_item (tenant_id, catalog_item_id) ON DELETE SET NULL
-);
+-- Idempotent add for pre-existing tables (CREATE IF NOT EXISTS skips them).
+ALTER TABLE itsm.catalog_item
+    ADD COLUMN IF NOT EXISTS request_fields jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 -- Change-detection doorbell. Covers a SUPERSET of embeddable fields; the worker
 -- consults ai.embedding_field_map (02_embeddings.sql) for what to actually embed.

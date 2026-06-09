@@ -79,19 +79,32 @@ async def load_table(
     spec: list[tuple[str, str]],
     *,
     data_dir: Path = DATA_DIR,
+    conflict_cols: list[str] | None = None,
+    update_cols: list[str] | None = None,
 ) -> int:
     """Insert every row of data_dir/<table>.json into itsm.<table>.
 
-    Idempotent (`ON CONFLICT DO NOTHING`). The caller owns the transaction.
-    Returns the number of rows submitted. Raises if the JSON file is missing
-    (no silent skips — rule §2.7).
+    Default: idempotent insert (`ON CONFLICT DO NOTHING`) — existing rows are
+    left untouched. The caller owns the transaction. Returns the number of rows
+    submitted. Raises if the JSON file is missing (no silent skips — rule §2.7).
+
+    Upsert mode (opt-in): pass `conflict_cols` (the conflict target, usually the
+    PK) AND `update_cols` (the non-key columns to refresh) to switch to
+    `ON CONFLICT (conflict_cols) DO UPDATE SET col = EXCLUDED.col ...`. This keeps
+    existing rows' identity (FK-safe — no delete) while refreshing their data.
     """
     rows = json.loads((data_dir / f"{table}.json").read_text())
     cols = [c for c, _ in spec]
     placeholders = ", ".join(f"${i + 1}" for i in range(len(cols)))
+    if conflict_cols and update_cols:
+        set_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+        conflict = ", ".join(conflict_cols)
+        on_conflict = f"ON CONFLICT ({conflict}) DO UPDATE SET {set_clause}"
+    else:
+        on_conflict = "ON CONFLICT DO NOTHING"
     sql = (
         f"INSERT INTO itsm.{table} ({', '.join(cols)}) "
-        f"VALUES ({placeholders}) ON CONFLICT DO NOTHING"
+        f"VALUES ({placeholders}) {on_conflict}"
     )
     values = [tuple(convert(r.get(c), k) for c, k in spec) for r in rows]
     await conn.executemany(sql, values)

@@ -124,13 +124,56 @@ async def load_catalog_template(
         )
 
 
-# ── SR existence check ──────────────────────────────────────────────────────
+# ── Catalog request-form read (chat get_catalog_fields tool) ────────────────
+
+
+async def load_request_fields(
+    *, tenant_id: str, catalog_item_id: str, conn: asyncpg.Connection,
+) -> list[dict[str, Any]]:
+    """Return the request-form schema for a catalog item.
+
+    `itsm.catalog_item.request_fields` is a JSONB array of field specs
+    ({field_name, label, type, required, options?}). A "requestable"
+    catalog item carries a non-empty form (decided 2026-06-09); this read
+    is the source for the chat `get_catalog_fields` tool.
+
+    Raises:
+        CatalogItemNotFoundError — no such row for this tenant.
+    Returns [] when the row exists but has no form (caller skips the
+    field-collection step).
+    """
+    with _tracer.start_as_current_span(
+        "uc08.db.load_request_fields",
+        attributes={
+            _ONEOPS_TENANT_ID: tenant_id,
+            "uc08.catalog_item_id": catalog_item_id,
+        },
+    ):
+        row = await conn.fetchrow(
+            """
+            SELECT name, request_fields FROM itsm.catalog_item
+             WHERE tenant_id = $1 AND catalog_item_id = $2
+            """,
+            tenant_id, catalog_item_id,
+        )
+        if row is None:
+            raise CatalogItemNotFoundError(
+                f"catalog item {catalog_item_id!r} not found for tenant "
+                f"{tenant_id!r}",
+            )
+        raw = row["request_fields"]
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+        return list(raw or [])
+
+
+# ── SR existence + creation ─────────────────────────────────────────────────
 
 
 async def assert_request_exists(
     *, tenant_id: str, request_id: str, conn: asyncpg.Connection,
 ) -> None:
-    """Confirm the parent SR exists (it must; UC-8 doesn't create SRs)."""
+    """Confirm the parent SR exists."""
     n = await conn.fetchval(
         "SELECT 1 FROM itsm.request WHERE tenant_id = $1 AND request_id = $2",
         tenant_id, request_id,
@@ -139,6 +182,96 @@ async def assert_request_exists(
         raise RequestNotFoundError(
             f"request {request_id!r} not found for tenant {tenant_id!r}",
         )
+
+
+async def insert_request(
+    *, tenant_id: str, title: str, catalog_item_id: str,
+    requested_for: str, requested_by: str,
+    description: str | None = None, category: str | None = None,
+    fields: dict[str, Any] | None = None,
+    conn: asyncpg.Connection,
+) -> str:
+    """Create the parent Service Request (itsm.request) and return its id.
+
+    The chat catalog flow starts with no pre-existing SR — `create_service_
+    request` opens one here, then UC-8 fulfils it (SR → RITM → tasks). The
+    portal path supplies its own SR id; this is the chat equivalent.
+    """
+    with _tracer.start_as_current_span(
+        "uc08.db.insert_request",
+        attributes={
+            _ONEOPS_TENANT_ID: tenant_id,
+            "uc08.catalog_item_id": catalog_item_id,
+        },
+    ):
+        request_id = f"REQ{uuid.uuid4().hex[:10].upper()}"
+        try:
+            await conn.execute(
+                """
+                INSERT INTO itsm.request (
+                    tenant_id, request_id, title, description,
+                    status, stage, category, catalog_item_id,
+                    requested_for, requested_by, fields,
+                    created_at, updated_at
+                ) VALUES (
+                    $1,$2,$3,$4,'requested','request',$5,$6,$7,$8,$9::jsonb,
+                    now(), now()
+                )
+                """,
+                tenant_id, request_id, title, description,
+                category, catalog_item_id, requested_for, requested_by,
+                json.dumps(fields or {}),
+            )
+        except asyncpg.UniqueViolationError as exc:  # pragma: no cover — uuid
+            raise FulfillmentPersistenceError(
+                f"failed to insert SR (uniqueness violation): {exc}",
+                cause=exc,
+            ) from exc
+        return request_id
+
+
+# ── SR field update (chat update_service_request tool) ──────────────────────
+
+
+async def update_request_fields(
+    *, tenant_id: str, request_id: str,
+    field_changes: dict[str, Any], conn: asyncpg.Connection,
+) -> dict[str, Any]:
+    """Merge `field_changes` into itsm.request.fields for one SR.
+
+    Returns the updated {request_id, catalog_item_id, fields, status}. The
+    JSONB `||` merge is shallow: each key in `field_changes` overwrites the
+    same key in the stored form, leaving untouched keys intact.
+
+    Raises:
+        RequestNotFoundError — no such SR for this tenant.
+    """
+    with _tracer.start_as_current_span(
+        "uc08.db.update_request_fields",
+        attributes={
+            _ONEOPS_TENANT_ID: tenant_id,
+            "oneops.request_id": request_id,
+        },
+    ):
+        row = await conn.fetchrow(
+            """
+            UPDATE itsm.request
+               SET fields     = coalesce(fields, '{}'::jsonb) || $3::jsonb,
+                   updated_at = now()
+             WHERE tenant_id = $1 AND request_id = $2
+            RETURNING request_id, catalog_item_id, status, fields
+            """,
+            tenant_id, request_id, json.dumps(field_changes),
+        )
+        if row is None:
+            raise RequestNotFoundError(
+                f"request {request_id!r} not found for tenant {tenant_id!r}",
+            )
+        d = dict(row)
+        f = d.get("fields")
+        if isinstance(f, str):
+            d["fields"] = json.loads(f)
+        return d
 
 
 # ── Duplicate check (DOC-09 §UC-8 8.7) ─────────────────────────────────────
@@ -568,7 +701,10 @@ __all__ = [
     "ConnectionProvider",
     "default_connection_provider",
     "load_catalog_template",
+    "load_request_fields",
     "assert_request_exists",
+    "insert_request",
+    "update_request_fields",
     "find_open_duplicate",
     "insert_request_item",
     "insert_tasks",

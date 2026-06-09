@@ -1,0 +1,43 @@
+{
+  "active_version": 1,
+  "id": "get_service_request_list",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "fulfillment_read",
+          "fulfillment_orchestrate",
+          "action"
+        ]
+      },
+      "created_at": "2026-06-09T00:00:00.000000+00:00",
+      "description": "Search the service catalog for requestable items. Takes 2-4 keyword variations of the user's ask (service_catalogs) and returns matching catalog items (id, name, description, category) ranked by semantic relevance. Only items that carry an intake form are returned. Read-only — this is step 1 of a new service request; present the matches and let the user pick before fetching its fields.",
+      "execution_type": "read",
+      "handler_ref": "oneops.use_cases.uc08_fulfillment.tools:get_service_request_list",
+      "id": "get_service_request_list",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "name": "service_catalogs",
+          "type": "list",
+          "required": true,
+          "description": "2-4 keyword variations of the ask, e.g. [\"VPN\",\"remote access\",\"VPN setup\"].",
+          "data_classification": "internal"
+        }
+      ],
+      "policy_refs": [],
+      "requires_scopes": [
+        "read:catalog"
+      ],
+      "status": "active",
+      "timeout_ms": 60000,
+      "updated_at": "2026-06-09T00:00:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

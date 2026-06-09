@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS itsm.request (
     sla_due           timestamptz,
     sla_breached      boolean     NOT NULL DEFAULT false,
     comments          jsonb       NOT NULL DEFAULT '[]'::jsonb,
+    -- fields: the submitted catalog INTAKE FORM answers, keyed by the catalog
+    -- item's request_fields[].field_name. Written by create_service_request.
+    fields            jsonb       NOT NULL DEFAULT '{}'::jsonb,
     created_at        timestamptz,
     updated_at        timestamptz,
     fulfilled_at      timestamptz,
@@ -39,6 +42,10 @@ CREATE TABLE IF NOT EXISTS itsm.request (
     FOREIGN KEY (tenant_id, ci_id)
         REFERENCES itsm.cmdb_ci (tenant_id, ci_id) ON DELETE SET NULL
 );
+
+-- Idempotent add for pre-existing tables (CREATE IF NOT EXISTS skips them).
+ALTER TABLE itsm.request
+    ADD COLUMN IF NOT EXISTS fields jsonb NOT NULL DEFAULT '{}'::jsonb;
 
 ALTER TABLE itsm.request
     ADD COLUMN IF NOT EXISTS search_tsv tsvector

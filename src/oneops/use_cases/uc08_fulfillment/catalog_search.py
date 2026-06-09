@@ -180,12 +180,20 @@ async def find_closest_catalog_items(
     top_k: int = TOP_K,
     cosine_floor: float = COSINE_FLOOR,
     auto_pick_threshold: float = AUTO_PICK_THRESHOLD,
+    require_form: bool = True,
 ) -> CatalogSearchResult:
     """Semantic search over `ai.embeddings_catalog_item`.
 
     Returns a CatalogSearchResult with up to `top_k` matches. Filters
     applied at SQL layer:
       • tenant_id (mandatory, first predicate)
+      • request_fields non-empty when `require_form=True` (default) — a
+        catalog item is "requestable" only if it carries a form
+        (`itsm.catalog_item.request_fields`). Unformed rows are hidden
+        legacy/duplicate IDs (decided 2026-06-09): never surface them to a
+        chat user who must then fill a form. Set `require_form=False` only
+        for the historical 8.8 SR-classification path that matches against
+        the full catalog (it doesn't collect a form).
 
     RBAC discipline: catalog visibility is enforced at the **tool-call
     boundary** (the find_closest_catalog_template tool's `abac_tags`
@@ -238,11 +246,20 @@ async def find_closest_catalog_items(
         )
         vec_literal = "[" + ",".join(repr(float(x)) for x in embedding) + "]"
 
+        # "Requestable iff has-form" filter. The predicate carries no user
+        # input (constant SQL) so string-composing it is injection-safe; it
+        # is omitted entirely for the require_form=False classification path.
+        form_filter = (
+            "\n               AND  c.request_fields IS NOT NULL"
+            "\n               AND  jsonb_array_length(c.request_fields) > 0"
+            if require_form else ""
+        )
+
         # Production-grade tenant isolation: WHERE binds caller's tenant
         # (defence-in-depth) PLUS JOIN binds vector-to-source consistency
         # (catches schema-drift bugs).
         rows = await conn.fetch(
-            """
+            f"""
             SELECT  c.catalog_item_id,
                     c.name,
                     coalesce(c.description, '') AS description,
@@ -254,7 +271,7 @@ async def find_closest_catalog_items(
                 ON  c.catalog_item_id = e.entity_id
                AND  c.tenant_id       = e.tenant_id
              WHERE  e.tenant_id     = $2
-               AND  e.chunk_type    = 'catalog_anchor'
+               AND  e.chunk_type    = 'catalog_anchor'{form_filter}
              -- Deterministic ordering for tied scores (edge case 4):
              -- HNSW's secondary sort isn't guaranteed across runs, so we
              -- add catalog_item_id as the tie-breaker. Same input always

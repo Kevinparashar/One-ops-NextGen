@@ -32,12 +32,12 @@ DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "itsm"   # database/se
 SEED = 20260521
 random.seed(SEED)
 
-# Per-table target totals (existing handcrafted + generated). Catalog and
-# onboarding are reference tables — kept realistic, not padded to 100.
+# Per-table target totals (existing handcrafted + generated). Catalog is a
+# reference table — kept realistic, not padded to 100.
 TARGETS = {
     "sys_user": 120, "cmdb_ci": 120, "asset": 120, "incident": 160,
     "problem": 100, "change": 110, "request": 130, "kb_knowledge": 110,
-    "catalog_item": 30, "onboarding_template": 12,
+    "catalog_item": 30,
 }
 
 TENANTS = ["T001", "T002", "T003"]
@@ -467,27 +467,6 @@ def gen_catalog(rows: list[dict]) -> list[dict]:
     return rows
 
 
-def gen_onboarding(rows: list[dict], catalog: list[dict]) -> list[dict]:
-    n = max(1, len(rows))
-    need = TARGETS["onboarding_template"] - len(rows)
-    for i in range(need):
-        t = pick_tenant()
-        dept = random.choice(["Engineering", "Sales", "Finance", "Support"])
-        cat_t = by_tenant(catalog, t, "catalog_item_id")
-        rows.append({
-            "tenant_id": t, "template_id": f"ONB_{t}_{dept.upper()}_{n + i}",
-            "name": f"{dept} onboarding ({t})",
-            "description": f"Standard onboarding workflow for {dept} hires.",
-            "department": dept,
-            "default_catalog_item_id": random.choice(cat_t) if cat_t else None,
-            "required_inputs": ["employee_name", "start_date", "manager_user_id", "location"],
-            "tasks": [{"task_id": "T1", "name": "Create accounts", "type": "automated",
-                       "owner_group": random.choice(TENANT_META[t]["groups"]),
-                       "depends_on": [], "estimated_minutes": 10}],
-        })
-    return rows
-
-
 # ── referential back-fill + validation ───────────────────────────────────
 
 
@@ -592,7 +571,6 @@ def main() -> None:
     t["cmdb_ci"] = gen_cis(t["cmdb_ci"], t["sys_user"])
     t["asset"] = gen_assets(t["asset"], t["sys_user"], t["cmdb_ci"])
     t["catalog_item"] = gen_catalog(t["catalog_item"])
-    t["onboarding_template"] = gen_onboarding(t["onboarding_template"], t["catalog_item"])
     t["problem"] = gen_problems(t["problem"], t["sys_user"])
     t["change"] = gen_changes(t["change"], t["sys_user"], t["cmdb_ci"], t["problem"])
     t["incident"] = gen_incidents(t["incident"], t["sys_user"], t["cmdb_ci"],
