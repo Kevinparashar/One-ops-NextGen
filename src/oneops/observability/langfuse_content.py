@@ -133,10 +133,20 @@ def set_langfuse_generation(
     _set(span, "gen_ai.usage.output_tokens", output_tokens)
     _set(span, "gen_ai.usage.cost", cost_usd)
     if langfuse_capture_content_enabled():
+        # Emit BOTH the GenAI convention key (`gen_ai.*`, for generic OTel
+        # consumers) AND Langfuse's native observation key. Langfuse reliably
+        # maps `langfuse.observation.input/output` to a generation's I/O; the
+        # non-indexed `gen_ai.prompt` JSON string is NOT consistently mapped by
+        # its OTel ingestion (would render input/output as null). Redact once
+        # per field, reuse for both keys.
         if prompt is not None:
-            _set(span, "gen_ai.prompt", redact_for_span(prompt))
+            red_prompt = redact_for_span(prompt)
+            _set(span, "gen_ai.prompt", red_prompt)
+            _set(span, "langfuse.observation.input", red_prompt)
         if completion is not None:
-            _set(span, "gen_ai.completion", redact_for_span(completion))
+            red_completion = redact_for_span(completion)
+            _set(span, "gen_ai.completion", red_completion)
+            _set(span, "langfuse.observation.output", red_completion)
 
 
 def set_langfuse_io(
