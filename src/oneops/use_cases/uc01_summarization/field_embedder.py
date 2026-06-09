@@ -220,48 +220,57 @@ async def _ensure_field_vectors(
         return _field_vectors
 
 
-async def _embed_message(
-    gateway: Any, model: str, dimensions: int | None,
-    text: str, tenant_id: str, user_id: str,
-) -> list[float] | None:
-    """Embed one message view, with a process-lifetime hash cache."""
-    if not text:
-        return None
-    h = hashlib.sha256(text.strip().lower().encode("utf-8")).hexdigest()[:24]
-    cached = _msg_cache.get(h)
-    if cached is not None:
-        return cached
-    try:
-        vectors = await gateway.embed(
-            [text], model=model,
-            tenant_id=tenant_id or "_unknown",
-            user_id=user_id or "",
-            dimensions=dimensions,
-        )
-    except Exception as exc:                        # noqa: BLE001
-        _log.warning("field_embedder.message_embed_failed",
-                     error=str(exc)[:200])
-        return None
-    if not vectors:
-        return None
-    vec = [float(x) for x in vectors[0]]
+def _view_hash(text: str) -> str:
+    return hashlib.sha256(text.strip().lower().encode("utf-8")).hexdigest()[:24]
+
+
+def _cache_put(h: str, vec: list[float]) -> None:
     if len(_msg_cache) > 2000:
         _msg_cache.clear()
     _msg_cache[h] = vec
-    return vec
 
 
 async def _embed_views(
     gateway: Any, model: str, dimensions: int | None,
     views: list[str], tenant_id: str, user_id: str,
 ) -> list[list[float]]:
-    """Embed every message view, dropping the ones that fail to embed."""
-    out: list[list[float]] = []
-    for v in views:
-        mv = await _embed_message(gateway, model, dimensions, v, tenant_id, user_id)
-        if mv is not None:
-            out.append(mv)
-    return out
+    """Embed every message view in ONE batched gateway call.
+
+    Was N sequential round-trips (RCA 2026-06-09 field-read anomaly: 3 views =
+    3 round-trips ≈ 1.9s). The per-view hash cache is preserved — already-seen
+    views skip the call; only the uncached views are batched into a single
+    `gateway.embed([...])`. Output vectors are IDENTICAL to per-view embedding
+    (embedding is per-text deterministic; batching only changes the number of
+    round-trips). Fail-open: a batch error yields the cached-only subset (or
+    empty → the caller falls through to the keyword path), never raises.
+    Returns the surviving view vectors in input order."""
+    results: dict[int, list[float]] = {}
+    pending: list[tuple[int, str]] = []        # (view index, view hash)
+    texts: list[str] = []
+    for i, v in enumerate(views):
+        if not v:
+            continue
+        h = _view_hash(v)
+        cached = _msg_cache.get(h)
+        if cached is not None:
+            results[i] = cached
+        else:
+            pending.append((i, h))
+            texts.append(v)
+    if texts:
+        try:
+            vectors = await gateway.embed(
+                texts, model=model, tenant_id=tenant_id or "_unknown",
+                user_id=user_id or "", dimensions=dimensions)
+        except Exception as exc:                    # noqa: BLE001 — fail-open
+            _log.warning("field_embedder.batch_embed_failed",
+                         error=str(exc)[:200])
+            vectors = []
+        for (idx, h), vec in zip(pending, vectors or [], strict=False):
+            fvec = [float(x) for x in vec]
+            _cache_put(h, fvec)
+            results[idx] = fvec
+    return [results[i] for i in range(len(views)) if i in results]
 
 
 def _select_matches(scored: list[tuple[str, float]]) -> list[str] | None:
