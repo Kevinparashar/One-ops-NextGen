@@ -692,16 +692,21 @@
   // outcome deliberately HIDES the raw list (the compact grounded summary
   // already weaves in the fields); otherwise prefer the LLM's labelled
   // key_details, falling back to a humanised projection of the raw record.
+  // A record field is shown in Key Details unless it's internal (_-prefixed),
+  // null, or an empty array / empty object.
+  function isDisplayableField(k, v) {
+    if (k.startsWith("_") || v == null) return false;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === "object") return Object.keys(v).length > 0;
+    return true;
+  }
   function computeKeyDetails(record, keyDetails, handlerOutcome) {
-    let kv = (handlerOutcome === "summarized") ? null : keyDetails;
-    if (!kv && record && handlerOutcome !== "summarized") {
-      kv = {};
-      for (const [k, v] of Object.entries(record)) {
-        if (k.startsWith("_") || v == null) continue;
-        if (Array.isArray(v) && v.length === 0) continue;
-        if (typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0) continue;
-        kv[humanise(k)] = v;
-      }
+    if (handlerOutcome === "summarized") return null;
+    if (keyDetails) return keyDetails;
+    if (!record) return null;
+    const kv = {};
+    for (const [k, v] of Object.entries(record)) {
+      if (isDisplayableField(k, v)) kv[humanise(k)] = v;
     }
     return kv;
   }
@@ -842,6 +847,22 @@
   }
   // Read an NDJSON stream line-by-line; dispatch each non-final event to
   // onEvent; return the `final` payload (or null).
+  // Drain every complete (newline-terminated) line from `buf`, dispatching each
+  // parsed event to onEvent. Returns [remainingBuf, finalPayload] — finalPayload
+  // is the `final` event's payload if seen this drain, else the passed-in value.
+  function drainNdjsonLines(buf, onEvent, finalPayload) {
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      let ev;
+      try { ev = JSON.parse(line); } catch { continue; }
+      if (ev.type === "final") finalPayload = ev.payload;
+      else onEvent(ev);
+    }
+    return [buf, finalPayload];
+  }
   async function readNdjsonStream(res, onEvent) {
     const reader = res.body.getReader();
     const dec = new TextDecoder();
@@ -851,17 +872,7 @@
       const { value, done } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
-      let nl;
-      while ((nl = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, nl).trim();
-        buf = buf.slice(nl + 1);
-        if (line) {
-          let ev;
-          try { ev = JSON.parse(line); } catch { continue; }
-          if (ev.type === "final") finalPayload = ev.payload;
-          else onEvent(ev);
-        }
-      }
+      [buf, finalPayload] = drainNdjsonLines(buf, onEvent, finalPayload);
     }
     return finalPayload;
   }

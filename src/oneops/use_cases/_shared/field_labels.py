@@ -213,11 +213,19 @@ _GENERIC_SLOTS: dict[str, str] = {
 # ── value formatting ────────────────────────────────────────────────────
 
 
-# Groups are non-capturing — `.match()` is used only as a bool (the captures
-# were never read), which also keeps the regex complexity down (sonar S5843).
-_ISO_DATE_PATTERN = re.compile(
-    r"^\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:[Zz]|[+-]\d{2}:?\d{2})?)?$"
+# Split date-only vs datetime so each pattern stays simple (sonar S5843). Their
+# union matches EXACTLY what the single combined ISO pattern did (the time part
+# was just optional). Non-capturing groups — `.match()` is used only as a bool
+# gate before datetime.fromisoformat (the authoritative parser).
+_ISO_DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_ISO_DATETIME_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:[Zz]|[+-]\d{2}:?\d{2})?$"
 )
+
+
+def _is_iso_dateish(value: str) -> bool:
+    """True when `value` is an ISO date (YYYY-MM-DD) or datetime string."""
+    return bool(_ISO_DATE_ONLY_RE.match(value) or _ISO_DATETIME_RE.match(value))
 
 
 def _format_datetime(value: Any) -> str:
@@ -227,7 +235,7 @@ def _format_datetime(value: Any) -> str:
         dt = value
     elif isinstance(value, date):
         return value.strftime("%B %-d, %Y")
-    elif isinstance(value, str) and _ISO_DATE_PATTERN.match(value):
+    elif isinstance(value, str) and _is_iso_dateish(value):
         try:
             normalised = value.replace("Z", "+00:00").replace("z", "+00:00")
             dt = datetime.fromisoformat(normalised)
