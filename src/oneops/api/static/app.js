@@ -907,6 +907,12 @@
     const MIN_PANEL_MS = 1100;
 
     const rows = {};
+    // Live-stream answer preview: token events accumulate here as the handler
+    // generates the answer. This is a PREVIEW — the authoritative answer
+    // arrives on the `final` event and replaces this whole panel (so a
+    // server-side validation fallback never leaves stale text on screen).
+    let streamEl = null;
+    let streamText = "";
     const onEvent = (ev) => {
       if (ev.type === "tool_start") {
         if (!routingCleared) { routingRow.remove(); routingCleared = true; }
@@ -922,6 +928,19 @@
           li.className = "live-row " + (ev.status === "success" ? "done" : "failed");
           li.innerHTML = toolDoneHtml(ev);
         }
+      } else if (ev.type === "token") {
+        if (!routingCleared) { routingRow.remove(); routingCleared = true; }
+        if (!streamEl) {
+          streamEl = document.createElement("div");
+          streamEl.className = "live-stream-answer md";
+          bubble.appendChild(streamEl);
+        }
+        streamText += ev.text || "";
+        streamEl.innerHTML = (typeof marked !== "undefined")
+          ? renderMarkdown(streamText)
+          : streamText.replace(/[&<>]/g, (c) =>
+              ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+        conv.scrollTop = conv.scrollHeight;
       }
     };
 

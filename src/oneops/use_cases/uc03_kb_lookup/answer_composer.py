@@ -32,10 +32,24 @@ Never a fabricated paragraph.
 """
 from __future__ import annotations
 
+import os
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 from oneops.observability import get_logger, get_tracer
+from oneops.observability.event_sink import publish as _publish_event
+
+
+def _stream_answers_enabled() -> bool:
+    """Latency flag (default OFF). When ON, the composer streams the answer
+    token-by-token to the turn's event sink (live preview in the UI) instead
+    of waiting for the whole completion. The validated text remains
+    authoritative — streaming is a preview, never the source of truth, so the
+    citation-hallucination guard still runs on the full text and a fallback
+    still replaces the answer. Off = byte-identical to the blocking path.
+    Set ONEOPS_STREAM_ANSWERS to 1/true/yes/on to enable."""
+    return os.getenv("ONEOPS_STREAM_ANSWERS", "0").strip().lower() in (
+        "1", "true", "yes", "on")
 
 _log = get_logger("oneops.use_cases.uc03.answer_composer")
 _tracer = get_tracer("oneops.use_cases.uc03.answer_composer")
@@ -349,6 +363,29 @@ class LlmAnswerComposer:
         self._model = model
         self._fallback = DeterministicComposer()
 
+    async def _compose_streaming(
+        self, llm_request: Any, request_id: str, span: Any,
+    ) -> str:
+        """Stream the answer via `gateway.call_stream`, publishing each token
+        delta to the turn's event sink as a live preview (`publish` is a no-op
+        when no sink is open, so non-streaming callers are unaffected). Returns
+        the accumulated text; the caller still validates it (citation guard)
+        before it becomes authoritative — the stream is a preview only."""
+        pieces: list[str] = []
+        async for chunk in self._gateway.call_stream(llm_request):
+            if chunk.done:
+                if chunk.response is not None and chunk.response.content:
+                    # Trust the finalized content (exact, post-accumulation).
+                    return chunk.response.content.strip()
+                break
+            if chunk.delta:
+                pieces.append(chunk.delta)
+                if request_id:
+                    _publish_event(
+                        request_id, {"type": "token", "text": chunk.delta})
+        span.set_attribute("oneops.kb.streamed", True)
+        return "".join(pieces).strip()
+
     async def compose(
         self, *, query: str, articles: list[dict[str, Any]],
         tenant_id: str, user_id: str = "", request_id: str = "",
@@ -381,24 +418,29 @@ class LlmAnswerComposer:
                 "oneops.kb.case": "B" if not articles else "A",
             },
         ) as span:
+            llm_request = LlmRequest(
+                messages=(
+                    LlmMessage("system", system_prompt, cache_control=True),
+                    LlmMessage("user", user_block),
+                ),
+                model=self._model,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                request_id=request_id,
+                # temperature=0 for deterministic, consistent output
+                # across repeats of the same query (cache-friendly +
+                # demo-friendly). max_tokens raised so a 5-article
+                # response with per-block detail never truncates.
+                temperature=0.0,
+                max_tokens=1200,
+            )
             try:
-                resp = await self._gateway.call(LlmRequest(
-                    messages=(
-                        LlmMessage("system", system_prompt, cache_control=True),
-                        LlmMessage("user", user_block),
-                    ),
-                    model=self._model,
-                    tenant_id=tenant_id,
-                    user_id=user_id,
-                    request_id=request_id,
-                    # temperature=0 for deterministic, consistent output
-                    # across repeats of the same query (cache-friendly +
-                    # demo-friendly). max_tokens raised so a 5-article
-                    # response with per-block detail never truncates.
-                    temperature=0.0,
-                    max_tokens=1200,
-                ))
-                text = (resp.content or "").strip()
+                if _stream_answers_enabled():
+                    text = await self._compose_streaming(
+                        llm_request, request_id, span)
+                else:
+                    resp = await self._gateway.call(llm_request)
+                    text = (resp.content or "").strip()
                 if not text:
                     raise LLMGatewayError(
                         "answer_composer: empty content from gateway")

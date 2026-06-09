@@ -1359,3 +1359,20 @@ details.uc08-alts[open] summary::before { transform: rotate(90deg); }
     padding: 0 5px;
 }
 .live-row .live-action { margin-left: 20px; display: block; }
+
+/* ── Streaming answer preview (token-by-token, replaced by final) ───── */
+.live-stream-answer {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #2a3142;
+    color: var(--fg, #e6e9ef);
+    font-size: 14px;
+    line-height: 1.5;
+    animation: live-stream-fadein 0.2s ease-in;
+}
+.live-stream-answer::after {
+    content: "▍";
+    color: #6ea8fe;
+    animation: live-pulse 1s ease-in-out infinite;
+}
+@keyframes live-stream-fadein { from { opacity: 0.4; } to { opacity: 1; } }
