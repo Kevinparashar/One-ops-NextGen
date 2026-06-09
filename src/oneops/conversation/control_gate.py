@@ -210,32 +210,59 @@ Off-topic chat:
                          pure greeting/thanks/farewell. e.g. "what did
                          you do today", "tell me something fun". Keep the
                          response polite but redirect to ITSM.
-- out_of_scope         : a SUBSTANTIVE question that is genuinely outside
-                         the IT/ITSM/ITOM domain. STRICTLY limited to
-                         these categories:
-                           * weather, sports, news, politics
-                           * recipes, food, restaurants, travel
-                           * jokes, entertainment, music, movies
-                           * personal advice unrelated to work
-                           * creative tasks ("write me a poem",
-                             "translate this")
-                           * general-knowledge trivia ("who won the
-                             World Cup", "capital of France")
+- out_of_scope         : use this label ONLY when the message is substantive
+                         and its PRIMARY subject is clearly outside IT / ITSM /
+                         ITOM / service-desk ownership. Classify by OWNERSHIP,
+                         not by surface keywords.
 
-                         CRITICAL — IT how-to questions are ALWAYS
-                         IN-DOMAIN, return `none`. Even when OneOps
-                         itself may not have the article. Examples that
-                         MUST be `none` (NOT out_of_scope):
-                           * "how do I reset my LDAP password"
-                           * "how do I configure kubernetes pod
-                             autoscaling"
-                           * "why is my outlook so slow"
-                           * "vpn keeps dropping"
-                           * "how do I install python on the build
-                             server"
-                           * "what is SSO" / "what is MFA"
-                           * "active directory not syncing"
-                           * "exchange queue depth high"
+                         Ask: would an IT team, service desk, or IT-operations
+                         team reasonably handle this request, incident, access
+                         need, how-to question, or status check for an employee?
+                         If yes → `none`, NOT out_of_scope.
+
+                         In scope → `none` when the message is about:
+                           - reporting an IT issue, failure, error, outage,
+                             degraded service, or technical problem;
+                           - requesting something IT provides or manages —
+                             hardware, software, accounts, access, permissions,
+                             credentials, VPN, email, devices, environments,
+                             applications, infrastructure, or connectivity;
+                           - IT knowledge, troubleshooting, configuration,
+                             setup, or how-to support, even if no KB article
+                             exists;
+                           - checking, following up, escalating, updating,
+                             reopening, or referencing an existing IT ticket,
+                             request, incident, problem, change, or service
+                             request;
+                           - any subject that could exist in BOTH personal life
+                             and workplace IT, when the workplace/IT reading is
+                             plausible.
+
+                         Out of scope → `out_of_scope` only when the message is
+                         primarily owned by another business function or by
+                         personal/general life, such as:
+                           - HR, payroll, compensation, benefits, attendance,
+                             leave, hiring, performance, or employee relations;
+                           - finance, billing, reimbursement, procurement
+                             approval, invoices, expenses, or budgets — unless
+                             specifically about the IT systems/access used for
+                             them;
+                           - facilities, seating, cafeteria, parking, building
+                             maintenance, facilities-issued badges, travel,
+                             legal, compliance-policy advice, or contracts;
+                           - personal/general topics — weather, sport, food,
+                             entertainment, trivia, creative writing, personal
+                             errands, shopping, relationships, health, or
+                             non-work planning.
+
+                         Tie-breaker:
+                           - if IT / the service desk could reasonably handle
+                             it, default to `none`;
+                           - use `out_of_scope` only when non-IT ownership is
+                             clear and dominant;
+                           - never mark out_of_scope merely because this
+                             assistant lacks an article, integration, or
+                             workflow for it.
 
                          CRITICAL — HOMONYM RESOLUTION. Many ordinary
                          English words have a separate IT meaning. When

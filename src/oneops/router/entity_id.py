@@ -371,9 +371,14 @@ class EntityIdNormalizer:
             blocks every natural KB-search query — 2026-05-27 incident. A
             two-letter id is still reachable through pass-1 once the user
             types the number ("KB0005001").
-          * ALL-CAPS token led by a prefix and longer than the prefix
-            ("INCABC", "KBXYZ") — the trailing garble is the deliberate
-            ID-style signal that tells these apart from plain words.
+          * ALL-CAPS token led by a 3+-letter prefix and longer than it
+            ("INCABC", "REQXYZ") — the trailing garble is the deliberate
+            ID-style signal that tells these apart from plain words. 2-letter
+            prefixes (SR, KB, CI) are EXCLUDED here too: an all-caps word that
+            merely STARTS with one ("SRE" = Site Reliability Engineer, "CIO",
+            "KBASE") is an ordinary acronym, not a botched id — flagging it
+            hijacks the turn (2026-06-09 incident). The real id is still
+            reachable once the user types the number.
 
         Lower-case / title-case prefixes never qualify ("Incident", "inc",
         "request") — those are English usage."""
@@ -383,7 +388,7 @@ class EntityIdNormalizer:
             return True
         if word.isupper():
             return any(upper.startswith(p) and len(upper) > len(p)
-                       for p in self._prefixes)
+                       for p in self._prefixes if len(p) >= 3)
         return False
 
     # ── user-facing clarification ────────────────────────────────────────
