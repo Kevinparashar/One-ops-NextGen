@@ -31,7 +31,8 @@ from oneops.session import InMemoryEventLog, InMemoryHotWindow, SessionEventStor
 # ── builders ─────────────────────────────────────────────────────────────
 
 
-def _agent(agent_id, *, tier=ExecutionTier.READ, before_hooks=()):
+def _agent(agent_id, *, tier=ExecutionTier.READ, before_hooks=(),
+           manages_own_approval=False):
     return AgentRecord(
         id=agent_id, version=1, owner="team-test",
         description="A test agent that does work.", intent_family="testing",
@@ -40,6 +41,7 @@ def _agent(agent_id, *, tier=ExecutionTier.READ, before_hooks=()):
             operator=ConditionOperator.LEAF, signal=ConditionSignal.INTENT_IN,
             values=("summary",)),
         abac_tags=AbacTags(tier=tier), determinism_level=DeterminismLevel.LOW,
+        manages_own_approval=manages_own_approval,
         hooks=Hooks(before_invocation=before_hooks))
 
 
@@ -447,6 +449,27 @@ async def test_action_step_interrupts_then_resumes_approved(tmp_path):
     done = await graph.ainvoke(Command(resume={"approved": True}), config=config)
     assert done["final_status"] == "executed"
     assert done["step_results"][0]["status"] == "success"
+
+
+async def test_manages_own_approval_skips_the_upfront_gate(tmp_path):
+    # An action agent that manages approval itself (UC-8 catalog conductor
+    # confirms in-flow before create) must NOT trigger the generic upfront
+    # approval interrupt — the turn proceeds straight to the handler.
+    reg = _registry(tmp_path, [
+        _agent("uc_selfapprove", tier=ExecutionTier.ACTION,
+               before_hooks=("hook_state_validate",),
+               manages_own_approval=True)])
+    router = _StubRouter(
+        RouteResult.routed(_plan(("step_1", "uc_selfapprove", ())), ["d"]))
+    graph = build_executor_graph(router, reg)
+    config = {"configurable": {"thread_id": "s-sa-1"}, "recursion_limit": 60}
+
+    out = await run_turn(graph, _envelope(session_id="s-sa-1"), config=config)
+    assert "__interrupt__" not in out                  # did NOT pause for approval
+    assert out.get("final_status") != "interrupted"
+    # The step still ran (it fails tool-selection here since the test agent has
+    # no tool — the point is the approval gate was skipped, not denied).
+    assert out["step_results"][0]["status"] != "denied"
 
 
 async def test_action_step_resume_denied_is_not_executed(tmp_path):

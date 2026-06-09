@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 
+from oneops.executor import nodes as _executor_nodes
 from oneops.use_cases.uc08_fulfillment import tools
 
 pytestmark = pytest.mark.asyncio
@@ -292,3 +293,125 @@ async def test_tenant_bound_from_context_not_arguments():
     await tools.get_service_request_fields(
         {"catalog_id": "CAT_X", "tenant_id": "T999_EVIL"}, _CTX)
     assert captured["tenant_id"] == "T001"   # from _CTX, not arguments
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  request_catalog_item — the conductor (runbook Playbook 3 sequence).
+#  The 4 tool handlers + the 3 interrupt helpers are monkeypatched so the
+#  conductor's SEQUENCING + fallback + cancel paths are tested deterministically.
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _stub_flow(monkeypatch, *, matches, fields, selection, inputs, confirmed):
+    """Wire the conductor's collaborators. Returns a dict capturing calls."""
+    calls: dict[str, Any] = {"created": None, "interrupts": []}
+
+    async def _list(args, ctx):
+        return {"ok": True, "matches": matches, "count": len(matches)}
+
+    async def _fields(args, ctx):
+        return {"ok": True, "catalog_id": args["catalog_id"], "fields": fields,
+                "required": [f["field_name"] for f in fields
+                             if f.get("required")]}
+
+    async def _create(args, ctx):
+        calls["created"] = args
+        return {"ok": True, "request_id": "REQ0000000001",
+                "ritm_id": "RITM1", "dispatched": True,
+                "display_text": "Done — service request REQ0000000001 submitted."}
+
+    monkeypatch.setattr(tools, "get_service_request_list", _list)
+    monkeypatch.setattr(tools, "get_service_request_fields", _fields)
+    monkeypatch.setattr(tools, "create_service_request", _create)
+
+    def _sel(prompt, options, **kw):
+        calls["interrupts"].append(("selection", options))
+        return selection
+
+    def _inp(prompt, flds):
+        calls["interrupts"].append(("input", flds))
+        return inputs
+
+    def _conf(summary, action):
+        calls["interrupts"].append(("confirmation", summary))
+        return confirmed
+
+    monkeypatch.setattr(_executor_nodes, "interrupt_for_selection", _sel)
+    monkeypatch.setattr(_executor_nodes, "interrupt_for_input", _inp)
+    monkeypatch.setattr(_executor_nodes, "interrupt_for_confirmation", _conf)
+    return calls
+
+
+_MATCHES = [
+    {"catalog_id": "CAT_HW_LAPTOP_STD", "name": "Standard Business Laptop",
+     "description": "A standard laptop", "category": "hardware"},
+    {"catalog_id": "CAT_HW_LAPTOP_DEV", "name": "Dev Laptop",
+     "description": "High-perf laptop", "category": "hardware"},
+]
+_FIELDS2 = [
+    {"field_name": "model", "label": "Model", "type": "text", "required": True},
+]
+
+
+async def test_conductor_happy_path_runs_full_sequence(monkeypatch):
+    calls = _stub_flow(
+        monkeypatch, matches=_MATCHES, fields=_FIELDS2,
+        selection={"selected": {"id": "CAT_HW_LAPTOP_DEV", "label": "Dev Laptop"}},
+        inputs={"fields": {"model": "XPS 15"}},
+        confirmed={"confirmed": True})
+    out = await tools.request_catalog_item({"query": "I need a laptop"}, _CTX)
+    # full runbook order: selection → input → confirmation → create
+    kinds = [k for k, _ in calls["interrupts"]]
+    assert kinds == ["selection", "input", "confirmation"]
+    assert calls["created"] == {"catalog_id": "CAT_HW_LAPTOP_DEV",
+                                "fields": {"model": "XPS 15"}}
+    assert out["ok"] is True and out["request_id"] == "REQ0000000001"
+
+
+async def test_conductor_no_match_declines_without_interrupting(monkeypatch):
+    calls = _stub_flow(
+        monkeypatch, matches=[], fields=[], selection=None, inputs=None,
+        confirmed=None)
+    out = await tools.request_catalog_item({"query": "pizza party"}, _CTX)
+    assert out["outcome"] == "no_match"
+    assert calls["interrupts"] == []          # never paused
+    assert calls["created"] is None           # never created
+    assert "incident isn't available" in out["display_text"].lower() or \
+           "follow up" in out["display_text"].lower()
+
+
+async def test_conductor_user_declines_selection(monkeypatch):
+    calls = _stub_flow(
+        monkeypatch, matches=_MATCHES, fields=_FIELDS2,
+        selection={"selected": None},          # allow_none → declined
+        inputs=None, confirmed=None)
+    out = await tools.request_catalog_item({"query": "laptop"}, _CTX)
+    assert out["outcome"] == "cancelled"
+    assert calls["created"] is None
+    # only the selection interrupt fired
+    assert [k for k, _ in calls["interrupts"]] == ["selection"]
+
+
+async def test_conductor_user_declines_confirmation_does_not_create(monkeypatch):
+    calls = _stub_flow(
+        monkeypatch, matches=_MATCHES, fields=_FIELDS2,
+        selection={"selected": {"id": "CAT_HW_LAPTOP_STD", "label": "Std Laptop"}},
+        inputs={"fields": {"model": "T14"}},
+        confirmed={"confirmed": False})        # user cancels at review
+    out = await tools.request_catalog_item({"query": "laptop"}, _CTX)
+    assert out["outcome"] == "cancelled"
+    assert calls["created"] is None            # confirmation gate held
+    assert [k for k, _ in calls["interrupts"]] == \
+           ["selection", "input", "confirmation"]
+
+
+async def test_conductor_skips_input_when_item_has_no_form(monkeypatch):
+    calls = _stub_flow(
+        monkeypatch, matches=_MATCHES, fields=[],   # no form fields
+        selection={"selected": {"id": "CAT_HW_LAPTOP_STD", "label": "Std Laptop"}},
+        inputs=None, confirmed={"confirmed": True})
+    out = await tools.request_catalog_item({"query": "laptop"}, _CTX)
+    # input step skipped; selection → confirmation → create
+    assert [k for k, _ in calls["interrupts"]] == ["selection", "confirmation"]
+    assert calls["created"] == {"catalog_id": "CAT_HW_LAPTOP_STD", "fields": {}}
+    assert out["ok"] is True

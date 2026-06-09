@@ -952,7 +952,10 @@ class ExecutorNodes:
         if hook_fail is not None:
             return hook_fail
 
-        if is_action:
+        # The generic upfront approval gate fires for action steps UNLESS the
+        # agent manages its own approval conversationally (UC-8 catalog
+        # confirms right before create_service_request, per runbook Playbook 3).
+        if is_action and not getattr(agent, "manages_own_approval", False):
             denied = self._action_approval_gate(agent_id, step)
             if denied is not None:
                 return denied

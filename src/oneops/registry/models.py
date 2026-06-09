@@ -368,6 +368,14 @@ class AgentRecord(_VersionedRecord):
     # cost for UCs that don't consume time scopes (UC-1 ID lookup, etc.).
     # Spec: docs/issues/.../TimeFilter-design.md (or §UC-2.6 spec).
     consumes_time_filter: bool = False
+    # Opt-in flag: when true, the executor does NOT fire its generic upfront
+    # action-approval interrupt for this agent's steps — the agent's handler
+    # manages approval itself, conversationally, at the right point (e.g. UC-8
+    # catalog: search → pick → fields → CONFIRM → create). Default False ⇒
+    # every existing action agent keeps the generic upfront gate (golden tests
+    # unchanged). Only a handler that calls interrupt_for_confirmation itself
+    # before its mutation may set this — never a shortcut to skip approval.
+    manages_own_approval: bool = False
     # Optional fast-path entry — UCs that opt in are served through the
     # generalised `/fast/{uc_id}` dispatcher (Moveworks deep-link). Absent
     # ⇒ the UC is chat-only.

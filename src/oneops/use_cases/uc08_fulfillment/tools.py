@@ -404,6 +404,148 @@ async def update_service_request(
         return updated
 
 
+# ════════════════════════════════════════════════════════════════════════════
+#  CONDUCTOR — request_catalog_item (runbook Playbook 3, chat entry).
+#
+#  This system runs one tool per turn deterministically (no LLM tool-loop), so
+#  the multi-step catalog flow is a single conductor that SEQUENCES the 4 tools
+#  with the Conversational Interrupt Protocol for the user pauses:
+#
+#    search (get_service_request_list)            ── runbook step 1
+#      → interrupt_for_selection  (pick an item)  ── runbook step 2
+#    fields (get_service_request_fields)          ── runbook step 3
+#      → interrupt_for_input      (collect form)  ── runbook step 4  (only schema fields)
+#      → interrupt_for_confirmation (review)      ── runbook step 5  (the SOLE approval gate)
+#    create (create_service_request)              ── runbook step 6
+#      → return the SR id                         ── runbook step 7
+#
+#  Fallback (no catalog match): graceful decline — offer to flag IT / rephrase,
+#  NEVER fabricate an incident (incident-creation is a separate, unbuilt
+#  capability). The agent carries `manages_own_approval: true` so the executor
+#  skips its generic upfront approval — the step-5 confirmation here is the one
+#  and only gate (runbook has exactly one confirmation).
+#
+#  Replay note: LangGraph re-executes this handler from the top on each resume,
+#  replaying resolved interrupts from cache — so search()/get_fields() re-run
+#  per resume (a bounded, idempotent cost). Optimisation (session memoisation)
+#  is deferred; correctness + runbook fidelity first.
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _unwrap(answer: Any, key: str) -> Any:
+    """Interrupt resume answers arrive as {key: value} from the frontend
+    (e.g. {"selected": {...}}, {"fields": {...}}, {"confirmed": true}). Be
+    lenient: accept the wrapped or the already-unwrapped shape."""
+    if isinstance(answer, dict) and key in answer:
+        return answer[key]
+    return answer
+
+
+def _query_from(arguments: dict[str, Any], context: dict[str, Any]) -> str:
+    """The catalog query: the router threads the user text as query/
+    user_message; fall back to the latest user turn in history."""
+    q = str(arguments.get("query") or arguments.get("user_message") or "").strip()
+    if q:
+        return q
+    for turn in reversed(context.get("conversation_history") or []):
+        if (turn or {}).get("role") == "user" and turn.get("content"):
+            return str(turn["content"]).strip()
+    return ""
+
+
+async def request_catalog_item(
+    arguments: dict[str, Any], context: dict[str, Any],
+) -> dict[str, Any]:
+    """Guided new-service-request flow (runbook Playbook 3). One conductor that
+    drives search → pick → fields → confirm → create across turns via the
+    interrupt protocol. The LLM does not pick tools here — this is deterministic
+    sequencing; the user makes the choices through the interrupt widgets."""
+    # Lazy import — avoid an import cycle with the executor package at load.
+    from oneops.executor.nodes import (
+        interrupt_for_confirmation,
+        interrupt_for_input,
+        interrupt_for_selection,
+    )
+
+    tenant_id, _, _ = _principal_from_context(context)
+    with _tracer.start_as_current_span(
+        "uc08.tool.request_catalog_item",
+        attributes={_ONEOPS_TENANT_ID: tenant_id},
+    ):
+        # ── Step 1: search the catalog (has-form items only) ──────────────
+        query = _query_from(arguments, context)
+        if not query:
+            return {"ok": True, "display_text":
+                    "What would you like to request from IT?"}
+        listing = await get_service_request_list(
+            {"service_catalogs": [query]}, context)
+        matches = listing.get("matches") or []
+
+        # ── Fallback: no catalog match → graceful decline (no incident) ───
+        if not listing.get("ok") or not matches:
+            return {"ok": True, "outcome": "no_match",
+                    "display_text": (
+                        f"I couldn't find a catalog item matching “{query}”. "
+                        "You could try different wording, or I can flag this to "
+                        "the IT team to follow up. (Raising a formal incident "
+                        "isn't available from here yet.)")}
+
+        # ── Step 2: user picks an item ────────────────────────────────────
+        selection = interrupt_for_selection(
+            "Which of these would you like to request?",
+            [{"id": m["catalog_id"], "label": m["name"],
+              "description": (m.get("description") or "")[:120]}
+             for m in matches],
+            allow_none=True,
+        )
+        chosen = _unwrap(selection, "selected")
+        if not chosen or not (isinstance(chosen, dict) and chosen.get("id")):
+            return {"ok": True, "outcome": "cancelled", "display_text":
+                    "No problem — let me know if you'd like to request "
+                    "something else."}
+        catalog_id = str(chosen["id"])
+        catalog_label = str(chosen.get("label") or catalog_id)
+
+        # ── Step 3: fetch the intake form for the chosen item ─────────────
+        fields_resp = await get_service_request_fields(
+            {"catalog_id": catalog_id}, context)
+        if not fields_resp.get("ok"):
+            return {"ok": False,
+                    "error_code": fields_resp.get("error_code", "UC08_ERROR"),
+                    "display_text": fields_resp.get(
+                        "display_text",
+                        "I couldn't load that item's request form.")}
+        schema = fields_resp.get("fields") or []
+
+        # ── Step 4: collect values for EXACTLY the schema fields ──────────
+        values: dict[str, Any] = {}
+        if schema:
+            collected = interrupt_for_input(
+                f"Please provide a few details for “{catalog_label}”:",
+                [{"name": f["field_name"], "label": f.get("label") or f["field_name"],
+                  "type": f.get("type") or "text",
+                  "required": bool(f.get("required")),
+                  **({"options": f["options"]} if f.get("options") else {})}
+                 for f in schema if f.get("field_name")],
+            )
+            values = dict(_unwrap(collected, "fields") or {})
+
+        # ── Step 5: review + confirm (the SOLE approval gate) ─────────────
+        confirmation = interrupt_for_confirmation(
+            {"Item": catalog_label,
+             **{k: v for k, v in values.items() if str(v).strip()}},
+            "create_service_request",
+        )
+        confirmed = _unwrap(confirmation, "confirmed")
+        if not (confirmed is True or confirmed == "true"):
+            return {"ok": True, "outcome": "cancelled", "display_text":
+                    f"Okay, I won't submit the request for “{catalog_label}”."}
+
+        # ── Step 6 + 7: create and confirm with the SR id ─────────────────
+        return await create_service_request(
+            {"catalog_id": catalog_id, "fields": values}, context)
+
+
 # ── Entry point — fulfill_request ──────────────────────────────────────────
 
 
@@ -642,7 +784,8 @@ __all__ = [
     "set_connection_provider",
     "set_gateway",
     "set_nats_client",
-    # the 4 runbook chat tools (Playbook 3)
+    # the chat conductor (runbook Playbook 3 entry) + the 4 runbook tools
+    "request_catalog_item",
     "get_service_request_list",
     "get_service_request_fields",
     "create_service_request",

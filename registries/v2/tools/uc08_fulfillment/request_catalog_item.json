@@ -1,0 +1,47 @@
+{
+  "active_version": 1,
+  "id": "request_catalog_item",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "fulfillment_orchestrate",
+          "fulfillment_execute",
+          "fulfillment_read",
+          "action"
+        ]
+      },
+      "created_at": "2026-06-09T00:00:00.000000+00:00",
+      "description": "Chat conductor for a new service request (runbook Playbook 3). Drives the whole guided flow end to end: searches the catalog, lets the user pick an item, fetches and collects its intake form, confirms, then submits and starts fulfilment. This is the UC-8 chat entry point; it sequences the catalog operations and handles its own confirmation before any create. Action-tier but self-approving (confirmation happens in-flow before submit).",
+      "execution_type": "action",
+      "handler_ref": "oneops.use_cases.uc08_fulfillment.tools:request_catalog_item",
+      "id": "request_catalog_item",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "name": "query",
+          "type": "str",
+          "required": false,
+          "description": "What the user wants to request (free text); defaults to the latest user message.",
+          "data_classification": "internal"
+        }
+      ],
+      "policy_refs": [
+        "policy_pii_redact",
+        "policy_tenant_scope"
+      ],
+      "requires_scopes": [
+        "create:request"
+      ],
+      "status": "active",
+      "timeout_ms": 60000,
+      "updated_at": "2026-06-09T00:00:00.000000+00:00",
+      "version": 1
+    }
+  }
+}
