@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from oneops.observability import get_logger, get_tracer, set_langfuse_io
 
@@ -37,6 +37,17 @@ def planner_emit_bindings_enabled() -> bool:
     When disabled, the decomposer prompt + parsing are byte-identical to before —
     bindings are pure enrichment, so off is a safe, zero-impact rollback."""
     return os.getenv("ONEOPS_PLANNER_EMIT_BINDINGS", "1").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def merge_decompose_rewrite_enabled() -> bool:
+    """Latency flag (default OFF). When ON, the router uses `LlmUnifiedSplitter`
+    — ONE gateway call that does reference-resolution (the rewrite job) AND
+    splitting (the decompose job) in a single pass — instead of two separate
+    LLM round-trips. Eliminates the wasted speculative-rewrite (~1.3-2s/turn,
+    RCA 2026-06-09). Off = byte-identical to the two-call path (safe rollback).
+    Set ONEOPS_ROUTER_MERGE_DECOMPOSE_REWRITE to 1/true/yes/on to enable."""
+    return os.getenv("ONEOPS_ROUTER_MERGE_DECOMPOSE_REWRITE", "0").strip().lower() in (
         "1", "true", "yes", "on")
 
 
@@ -375,6 +386,123 @@ class LlmDecomposer:
         return [SubQuery(id="sq1", text=message)]
 
 
+# Bridge note appended to the two reused prompts so the model does both jobs in
+# ONE pass. We reuse `_DECOMPOSE_PROMPT` (splitting) and `_REWRITE_PROMPT`
+# (reference resolution) VERBATIM — no tuned nuance is lost; they are merely
+# sequenced into a single round-trip. Output schema is decompose's.
+_UNIFIED_BRIDGE = """## How to combine the two jobs above (single pass)
+
+You perform BOTH jobs above in ONE response, in this order:
+
+1. **Resolve references first.** Apply the *Implicit-Reference Resolution*
+   rules to the user's message using the conversation context provided —
+   replace pronouns / bare attributes / linked-record phrases / bare digit
+   ids with the canonical entity id ONLY when the rules permit. If nothing
+   needs resolving, keep the wording exactly. Never change the user's
+   verb/noun. Never inject focus into a message that already states its own
+   subject.
+
+2. **Then split** the reference-RESOLVED message into atomic sub-queries per
+   the splitting rules. Each sub-query's `text` MUST be the self-contained,
+   reference-resolved form (so the rest of the router never needs a second
+   rewrite pass).
+
+Output the SAME strict JSON shape the splitting section specifies:
+{"reasoning":"...","subqueries":[{"id":"sq1","text":"<resolved, self-contained>","depends_on":[]}]}"""
+
+
+class LlmUnifiedSplitter:
+    """Merged decompose + rewrite — ONE gateway call that resolves references
+    AND splits into atomic sub-queries (latency: replaces two sequential LLM
+    round-trips + the wasted speculative rewrite — RCA 2026-06-09).
+
+    Reuses `_DECOMPOSE_PROMPT` and `rewrite._REWRITE_PROMPT` verbatim plus a
+    bridge note, so neither tuned prompt's behaviour drifts. Returns sub-queries
+    whose `text` is already reference-resolved — the router then uses a
+    passthrough rewrite. A call/parse failure falls back to a single passthrough
+    sub-query (the raw message), exactly like `LlmDecomposer` — a fault never
+    drops the user's message.
+    """
+
+    def __init__(self, gateway, *, model: str = "gpt-4o-mini") -> None:
+        self._gateway = gateway
+        self._model = model
+
+    async def split(
+        self, message: str, *, history: Any = None, request_ctx: dict,
+    ) -> list[SubQuery]:
+        from oneops.errors import LLMGatewayError
+        from oneops.llm import LlmMessage, LlmRequest, ResponseFormat
+        from oneops.policy import Profile, compose
+        from oneops.router.rewrite import _REWRITE_PROMPT
+
+        with _tracer.start_as_current_span(
+            "router.stage0.unified_split",
+            attributes={"oneops.router.stage": "0",
+                        "oneops.router.model": self._model,
+                        "oneops.message.char_len": len(message or "")},
+        ) as span:
+            emit_bindings = planner_emit_bindings_enabled()
+            extra = [_DECOMPOSE_PROMPT, _REWRITE_PROMPT, _UNIFIED_BRIDGE]
+            if emit_bindings:
+                extra.insert(1, _BINDINGS_PROMPT)
+            system_prompt = compose(Profile.INTERNAL_AGENT, extra_sections=extra)
+            user_block = self._build_user_block(message, history, request_ctx)
+            try:
+                response = await self._gateway.call(LlmRequest(
+                    messages=(LlmMessage("system", system_prompt,
+                                         cache_control=True),
+                              LlmMessage("user", user_block)),
+                    model=self._model,
+                    tenant_id=request_ctx.get("tenant_id") or "_unknown",
+                    user_id=request_ctx.get("user_id", "") or "",
+                    response_format=ResponseFormat.JSON,
+                    request_id=request_ctx.get("request_id", "")))
+                doc = json.loads(response.content)
+                subs = [
+                    SubQuery(id=str(s["id"]), text=str(s["text"]),
+                             depends_on=tuple(s.get("depends_on") or ()),
+                             bindings=_parse_bindings(s) if emit_bindings else ())
+                    for s in doc.get("subqueries", []) if s.get("text")
+                ]
+                subs = _sanitize_subqueries(subs)
+                if subs:
+                    span.set_attribute("oneops.router.subquery_count", len(subs))
+                    set_langfuse_io(span, input=message,
+                                    output=[s.text for s in subs])
+                    return subs
+                span.set_attribute("oneops.router.fallback", "no_subs")
+            except (LLMGatewayError, ValueError, KeyError, TypeError) as exc:
+                span.set_attribute("oneops.router.fallback", "llm_failed")
+                _log.warning("unified_splitter.llm_failed_falling_back",
+                             error=str(exc))
+        return [SubQuery(id="sq1", text=message)]
+
+    @staticmethod
+    def _build_user_block(message: str, history: Any, request_ctx: dict) -> str:
+        """Compose the user block the same way the rewriter does — conversation
+        context + authoritative focus block + the message — so reference
+        resolution has identical inputs to the standalone rewrite stage."""
+        turns = history or []
+        convo = "\n".join(
+            f"{getattr(t, 'role', '')}: {getattr(t, 'content', '')}"
+            for t in turns) or "(no prior turns)"
+        focus_id = (request_ctx.get("focus_entity_id") or "").strip()
+        focus_service = (request_ctx.get("focus_service_id") or "").strip()
+        focus_block = ""
+        if focus_id:
+            focus_block = (
+                f"\n\nCURRENT FOCUS (authoritative — computed deterministically):\n"
+                f"  entity_id: {focus_id}\n"
+                f"  service:   {focus_service or 'unknown'}\n"
+                f"When the message uses a pronoun ('it', 'this', 'that'), a "
+                f"bare attribute name ('priority'), or a linked-record phrase "
+                f"('the linked X', 'the related X', 'the affected X'), attach "
+                f"the CURRENT FOCUS id above — never any other id from history.")
+        return (f"Conversation so far:\n{convo}{focus_block}\n\n"
+                f"Message to resolve and split:\n{message}")
+
+
 def _parse_bindings(s: dict) -> tuple[tuple[str, str, str], ...]:
     """Pull a sub-query's optional `bindings` array into normalised triples,
     dropping any malformed or self-referential entry (defensive — the LLM
@@ -447,4 +575,5 @@ def _sanitize_subqueries(subs: list[SubQuery]) -> list[SubQuery]:
     ]
 
 
-__all__ = ["SubQuery", "Decomposer", "PassthroughDecomposer", "LlmDecomposer"]
+__all__ = ["SubQuery", "Decomposer", "PassthroughDecomposer", "LlmDecomposer",
+           "LlmUnifiedSplitter", "merge_decompose_rewrite_enabled"]

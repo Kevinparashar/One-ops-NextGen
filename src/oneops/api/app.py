@@ -538,21 +538,35 @@ async def _lifespan(app: FastAPI):
         # sub-query and only the first entity gets served.
         from oneops.router.decompose import LlmDecomposer
         decomposer = LlmDecomposer(gateway, model=chosen_model)
+        # Latency (RCA 2026-06-09): when ONEOPS_ROUTER_MERGE_DECOMPOSE_REWRITE
+        # is on, inject an LlmUnifiedSplitter — ONE LLM call that does
+        # reference-resolution + splitting, replacing the decompose call + the
+        # speculative rewrite. Default off ⇒ unchanged two-call path.
+        from oneops.router.decompose import (
+            LlmUnifiedSplitter,
+            merge_decompose_rewrite_enabled,
+        )
+        unified_splitter = (
+            LlmUnifiedSplitter(gateway, model=chosen_model)
+            if merge_decompose_rewrite_enabled() else None)
     else:
         from oneops.router.decompose import PassthroughDecomposer
         from oneops.router.rewrite import PassthroughRewriter
         disambiguator = ThresholdDisambiguator()
         rewriter = PassthroughRewriter()
         decomposer = PassthroughDecomposer()
+        unified_splitter = None
     from oneops.router.route_cache import build_route_decision_cache
     _route_cache = build_route_decision_cache()
     router = Router(
         registry=registry, glossary=glossary, retriever=retriever,
         disambiguator=disambiguator, authz=authz,
         rewriter=rewriter, decomposer=decomposer,
+        unified_splitter=unified_splitter,
         route_cache=_route_cache)
     _log.info("oneops.api.route_cache_wired",
-              backend=(type(_route_cache).__name__ if _route_cache else "off"))
+              backend=(type(_route_cache).__name__ if _route_cache else "off"),
+              unified_split=(unified_splitter is not None))
     dispatcher = FastPathDispatcher(registry)
 
     # ── HandlerResolver — registry of tool handlers ────────────────────

@@ -77,6 +77,7 @@ class Router:
         *,
         decomposer: Decomposer | None = None,
         rewriter: Rewriter | None = None,
+        unified_splitter: Any | None = None,
         top_k: int = DEFAULT_TOP_K,
         route_cache: Any | None = None,
     ) -> None:
@@ -89,6 +90,10 @@ class Router:
         # single self-contained sub-query, the common case, needing no LLM.
         self._decomposer = decomposer or PassthroughDecomposer()
         self._rewriter = rewriter or PassthroughRewriter()
+        # Latency: when an LlmUnifiedSplitter is injected (flag on), ONE call
+        # does reference-resolution + splitting, replacing decompose + the
+        # speculative rewrite. None ⇒ the two-call path (default, unchanged).
+        self._unified_splitter = unified_splitter
         self._top_k = top_k
         # Route-decision cache (router/route_cache.py). None ⇒ disabled (no
         # behaviour change). When set, a hit returns the funnel verdict without
@@ -142,19 +147,45 @@ class Router:
             # mutated single sub-query, we fall back to per-sub-query
             # rewrites and discard the speculative result.
             import asyncio as _asyncio
-            decompose_task = _asyncio.create_task(
-                self._decomposer.decompose(query_text, request_ctx=request_ctx))
-            spec_rewrite_task = _asyncio.create_task(
-                self._rewriter.rewrite(
-                    query_text, history=history, request_ctx=request_ctx))
-            subqueries = await decompose_task
-            span.set_attribute("router.subquery_count", len(subqueries))
-            diag.append(f"stage0a: decomposed into {len(subqueries)} sub-query(ies)")
-            spec_usable = (
-                len(subqueries) == 1
-                and subqueries[0].text.strip() == (query_text or "").strip()
-            )
-            await self._cancel_speculative(spec_rewrite_task, spec_usable, span)
+            if self._unified_splitter is not None:
+                # ── Merged path (one LLM call) ───────────────────────────
+                # Reference-resolution + splitting in ONE round-trip. The
+                # returned sub-queries are already self-contained, so the
+                # per-sub-query rewrite below becomes a passthrough (no second
+                # LLM call, no wasted speculative rewrite). RCA 2026-06-09.
+                subqueries = await self._unified_splitter.split(
+                    query_text, history=history, request_ctx=request_ctx)
+                span.set_attribute("router.subquery_count", len(subqueries))
+                span.set_attribute("router.unified_split", True)
+                diag.append(
+                    f"stage0: unified-split into {len(subqueries)} "
+                    f"sub-query(ies) (refs resolved in one call)")
+                spec_rewrite_task = None
+                spec_usable = False
+            else:
+                # ── Two-call path (default) — speculative parallel ───────
+                # Decompose and rewrite are both LLM calls (~1.2-1.5s each).
+                # Single-sub-query messages (the common case) get rewriter
+                # input identical to decompose's only output — so we
+                # speculatively kick off rewrite on the WHOLE message in
+                # parallel with decompose, using it when decompose returns 1
+                # unmutated sub-query, else discarding it for per-sub rewrites.
+                decompose_task = _asyncio.create_task(
+                    self._decomposer.decompose(
+                        query_text, request_ctx=request_ctx))
+                spec_rewrite_task = _asyncio.create_task(
+                    self._rewriter.rewrite(
+                        query_text, history=history, request_ctx=request_ctx))
+                subqueries = await decompose_task
+                span.set_attribute("router.subquery_count", len(subqueries))
+                diag.append(
+                    f"stage0a: decomposed into {len(subqueries)} sub-query(ies)")
+                spec_usable = (
+                    len(subqueries) == 1
+                    and subqueries[0].text.strip() == (query_text or "").strip()
+                )
+                await self._cancel_speculative(
+                    spec_rewrite_task, spec_usable, span)
 
             routes: list[SubQueryRoute] = []
             unrouted: list[str] = []
@@ -256,7 +287,13 @@ class Router:
         """Process one sub-query: rewrite (speculative whole-message result when
         usable, else per-sub-query), scope signals to the sub-query's own
         entities/focus, then run the funnel. Returns the funnel outcome."""
-        if spec_usable:
+        if self._unified_splitter is not None:
+            # Merged path — the splitter already resolved references into
+            # sq.text; a second rewrite call would be redundant (and an extra
+            # LLM round-trip). Pass the text through unchanged.
+            from oneops.router.rewrite import RewriteResult
+            rewrite = RewriteResult.unchanged(sq.text)
+        elif spec_usable:
             rewrite = await spec_rewrite_task
         else:
             rewrite = await self._rewriter.rewrite(
