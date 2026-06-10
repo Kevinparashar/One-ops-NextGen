@@ -195,28 +195,7 @@ def build_summarize_fn(gateway: LlmGateway, *, model: str = "gpt-4o-mini"):
                          tenant_id=tenant_id, error=str(exc)[:200])
             raise
 
-        # ── Parse the model's STRUCTURED output ──────────────────────────
-        # The layout is then assembled deterministically by `_assemble_
-        # summary` — the model never controls markdown / section presence,
-        # so empty sections and absence-filler are impossible by construction.
-        # Back-compat: a model that ignores the structured schema and emits
-        # the legacy {"summary": "..."} or plain text still renders.
-        summary_text: str
-        try:
-            parsed = json.loads(response.content)
-        except json.JSONDecodeError:
-            parsed = None
-
-        if isinstance(parsed, dict) and any(
-                k in parsed for k in ("status_line", "narrative", "key_updates")):
-            summary_text = _assemble_summary(parsed, _detect_service(record))
-        elif isinstance(parsed, dict) and "summary" in parsed:
-            summary_text = str(parsed.get("summary") or "").strip()
-        elif parsed is None:
-            # Provider ignored response_format and returned plain text.
-            summary_text = (response.content or "").strip()
-        else:
-            summary_text = ""
+        summary_text = _parse_summary_text(response.content, record)
 
         # ── Robustness guard — the format MUST NOT break ─────────────────
         # If nothing usable came back (empty structure / blank text), do NOT
@@ -241,6 +220,27 @@ def build_summarize_fn(gateway: LlmGateway, *, model: str = "gpt-4o-mini"):
         }
 
     return summarize
+
+
+def _parse_summary_text(content: str, record: dict[str, Any]) -> str:
+    """Extract the summary text from the model's response. Handles the
+    structured schema (assembled deterministically by `_assemble_summary`, so
+    the model never controls markdown / section presence), the legacy
+    {"summary": ...} shape, and plain text when the provider ignored
+    response_format. Empty string when nothing usable came back."""
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, dict) and any(
+            k in parsed for k in ("status_line", "narrative", "key_updates")):
+        return _assemble_summary(parsed, _detect_service(record))
+    if isinstance(parsed, dict) and "summary" in parsed:
+        return str(parsed.get("summary") or "").strip()
+    if parsed is None:
+        # Provider ignored response_format and returned plain text.
+        return (content or "").strip()
+    return ""
 
 
 def _assemble_summary(parsed: dict[str, Any], service_id: str = "") -> str:

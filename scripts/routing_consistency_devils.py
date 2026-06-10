@@ -75,7 +75,8 @@ def consistency() -> None:
     for qi, q in enumerate(queries):
         # 3 fresh sessions, run concurrently
         with ThreadPoolExecutor(max_workers=3) as ex:
-            res = list(ex.map(lambda i: _post(q, f"cons-{qi}-{i}"), range(3)))
+            res = list(ex.map(
+                lambda i, q=q, qi=qi: _post(q, f"cons-{qi}-{i}"), range(3)))
         shapes = [_shape(r) for r in res]
         same = len(set(shapes)) == 1
         check(same, f"consistent: {q!r}",
@@ -166,7 +167,7 @@ def coverage() -> None:
         if shape is None:
             check(False, f"no-crash: {q!r}", err)
             continue
-        status, tool, cls = shape
+        status, _, cls = shape
         check(status not in ("", "failed") or cls == "no_match",
               f"valid outcome: {q!r}", f"{shape}")
         if exp is not None:

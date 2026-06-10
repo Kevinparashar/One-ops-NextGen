@@ -1,6 +1,6 @@
 """Prompt redaction — scrub PII before a prompt leaves to a provider.
 
-ARCHITECTURE.md §9: PII is redacted before it reaches the LLM Gateway prompt.
+docs/architecture/ARCHITECTURE.md §9: PII is redacted before it reaches the LLM Gateway prompt.
 This module is deterministic, pattern-based: it recognises structural PII
 shapes (email, phone, SSN, credit-card, IP) and replaces each with a typed
 placeholder. It is **not** a phrase list — it matches *structure*, not a

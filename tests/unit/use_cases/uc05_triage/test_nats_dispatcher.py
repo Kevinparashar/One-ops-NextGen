@@ -8,10 +8,7 @@ import pytest
 
 from oneops.errors import NATSUnavailableError
 from oneops.use_cases.uc05_triage.contracts import Proposal
-from oneops.use_cases.uc05_triage.nats_dispatcher import (
-    dispatch_decide,
-    dispatch_propose,
-)
+from oneops.use_cases.uc05_triage.nats_dispatcher import dispatch_decide
 
 
 def _proposal_json() -> str:
@@ -54,45 +51,6 @@ class _ReplyingNats:
 class _RaisingNats:
     async def request(self, subject, payload, *, timeout=30, headers=None):
         raise NATSUnavailableError("no worker")
-
-
-# ── dispatch_propose ────────────────────────────────────────────────────────
-
-class TestDispatchPropose:
-    @pytest.mark.asyncio
-    async def test_returns_proposal_on_success(self) -> None:
-        nats = _ReplyingNats(reply=_proposal_json().encode())
-        p = await dispatch_propose(
-            nats=nats, tenant_id="T001", service_id="incident",
-            ticket_row={"incident_id": "INC0000001",
-                        "title": "VPN", "description": "drops"},
-        )
-        assert p.ticket_id == "INC0000001"
-        # request was sent to the locked subject
-        subj, _ = nats.request_calls[0]
-        assert subj == "oneops.uc05.triage.propose"
-
-    @pytest.mark.asyncio
-    async def test_error_envelope_raises(self) -> None:
-        nats = _ReplyingNats(
-            reply=json.dumps({"error": "propose_failed",
-                              "message": "gateway down"}).encode())
-        with pytest.raises(RuntimeError, match="gateway down"):
-            await dispatch_propose(
-                nats=nats, tenant_id="T001", service_id="incident",
-                ticket_row={"incident_id": "X", "title": "x",
-                            "description": "y"},
-            )
-
-    @pytest.mark.asyncio
-    async def test_nats_down_propagates(self) -> None:
-        nats = _RaisingNats()
-        with pytest.raises(NATSUnavailableError):
-            await dispatch_propose(
-                nats=nats, tenant_id="T001", service_id="incident",  # type: ignore[arg-type]
-                ticket_row={"incident_id": "X", "title": "x",
-                            "description": "y"},
-            )
 
 
 # ── dispatch_decide ─────────────────────────────────────────────────────────

@@ -18,10 +18,11 @@ enforces it.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import AsyncIterator
 from typing import Any, Protocol
 
 from oneops.errors import LLMUpstreamError
-from oneops.llm.models import LlmRequest, TransportResult
+from oneops.llm.models import LlmRequest, StreamDelta, TransportResult
 
 
 def _estimate_tokens(text: str) -> int:
@@ -33,6 +34,15 @@ def _estimate_tokens(text: str) -> int:
 class LlmTransport(Protocol):
     async def complete(self, request: LlmRequest) -> TransportResult:
         """Send a completion request to the provider."""
+        ...
+
+    def complete_stream(
+        self, request: LlmRequest,
+    ) -> AsyncIterator[StreamDelta]:
+        """Stream a completion: yield incremental `StreamDelta(text=...)` as
+        tokens arrive, then a terminal `StreamDelta(final=True, ...usage)`.
+        The gateway accumulates the text and finalises cost from the terminal
+        delta."""
         ...
 
     async def embed(self, texts: list[str], *, model: str,
@@ -70,6 +80,39 @@ class EchoTransport:
         prompt_tokens = sum(_estimate_tokens(m.content) for m in request.messages)
         return TransportResult(
             content=content,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=_estimate_tokens(content),
+            finish_reason="stop",
+            actual_model=request.model,
+        )
+
+    async def complete_stream(
+        self, request: LlmRequest,
+    ) -> AsyncIterator[StreamDelta]:
+        """Deterministic streaming — splits the (canned/echoed) content into
+        word-sized deltas, then a terminal usage delta. Same content + token
+        accounting as `complete()`, just delivered incrementally so the stream
+        path is exercised hermetically (no network)."""
+        if self._fail_remaining > 0:
+            self._fail_remaining -= 1
+            raise LLMUpstreamError("EchoTransport: simulated transient failure")
+        if self._canned is not None:
+            content = self._canned
+        else:
+            last_user = next(
+                (m.content for m in reversed(request.messages)
+                 if m.role == "user"), "")
+            content = f"echo: {last_user}"
+        # Emit word-by-word (preserving trailing spaces) so consumers see >1
+        # delta — exercises incremental rendering.
+        parts = content.split(" ")
+        for i, part in enumerate(parts):
+            piece = part if i == len(parts) - 1 else part + " "
+            if piece:
+                yield StreamDelta(text=piece)
+        prompt_tokens = sum(_estimate_tokens(m.content) for m in request.messages)
+        yield StreamDelta(
+            final=True,
             prompt_tokens=prompt_tokens,
             completion_tokens=_estimate_tokens(content),
             finish_reason="stop",
@@ -117,10 +160,29 @@ class LiteLLMTransport:
         self._timeout_s = timeout_s
         # Lazy client — only built when needed so import time is cheap
         # (FaaS cold-start friendly). One client per process; httpx's
-        # AsyncClient is safe for concurrent use.
+        # AsyncClient is safe for concurrent use. The client is bound to the
+        # event loop it is created on, so we also remember that loop and
+        # rebuild if we are ever called from a different/closed loop.
         self._client: Any | None = None
+        self._client_loop: Any | None = None
 
     async def _get_client(self) -> Any:
+        import asyncio
+        loop = asyncio.get_running_loop()
+        # An httpx.AsyncClient is pinned to the event loop it was built on.
+        # Under uvicorn there is a single long-lived loop, so the client is
+        # created once and reused (connection pooling preserved). But some
+        # callers — notably the Starlette TestClient — drive each request on a
+        # fresh, short-lived loop; reusing a client bound to a now-closed loop
+        # raises "Event loop is closed". Detect a loop change and rebuild on the
+        # current loop rather than reuse a dead client.
+        # Only rebuild a client WE created (i.e. `_client_loop` is recorded) when
+        # the loop has changed. A client injected directly (e.g. tests set
+        # `t._client = fake`, leaving `_client_loop` None) is honoured as-is.
+        if (self._client is not None and self._client_loop is not None
+                and self._client_loop is not loop):
+            self._client = None          # stale client's loop is gone; drop the
+            self._client_loop = None     # reference (cannot aclose on a dead loop)
         if self._client is None:
             import httpx
             self._client = httpx.AsyncClient(
@@ -131,12 +193,14 @@ class LiteLLMTransport:
                     "content-type": "application/json",
                 },
             )
+            self._client_loop = loop
         return self._client
 
     async def aclose(self) -> None:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+            self._client_loop = None
 
     async def complete(self, request: LlmRequest) -> TransportResult:
         client = await self._get_client()
@@ -146,28 +210,7 @@ class LiteLLMTransport:
         # support prompt caching see flat-string content (the non-cached
         # path below). The mixed-shape branching keeps the simple case
         # token-identical with the pre-caching behaviour.
-        any_cached = any(getattr(m, "cache_control", False)
-                         for m in request.messages)
-        if any_cached:
-            messages_payload: list[dict[str, Any]] = []
-            for m in request.messages:
-                if getattr(m, "cache_control", False):
-                    messages_payload.append({
-                        "role": m.role,
-                        "content": [{
-                            "type": "text",
-                            "text": m.content,
-                            "cache_control": {"type": "ephemeral"},
-                        }],
-                    })
-                else:
-                    messages_payload.append({
-                        "role": m.role, "content": m.content,
-                    })
-        else:
-            messages_payload = [
-                {"role": m.role, "content": m.content} for m in request.messages
-            ]
+        messages_payload = _build_messages_payload(request.messages)
         body: dict[str, Any] = {
             "model": request.model,
             "messages": messages_payload,
@@ -179,66 +222,120 @@ class LiteLLMTransport:
         # text; the caller validates either way.
         if request.response_format.value == "json":
             body["response_format"] = {"type": "json_object"}
+        from oneops.errors import LLMUpstreamError
         try:
-            import httpx
-
-            from oneops.errors import LLMTimeoutError, LLMUpstreamError
-            try:
-                resp = await client.post("/chat/completions", json=body)
-            except httpx.TimeoutException as exc:
-                raise LLMTimeoutError(
-                    f"LiteLLM proxy timed out after {self._timeout_s:.0f}s",
-                    cause=exc) from exc
-            except httpx.HTTPError as exc:
-                raise LLMUpstreamError(
-                    f"LiteLLM proxy HTTP error: {exc}", cause=exc) from exc
-            if resp.status_code >= 500:
-                raise LLMUpstreamError(
-                    f"LiteLLM proxy returned {resp.status_code}: "
-                    f"{resp.text[:200]}")
-            if resp.status_code >= 400:
-                raise LLMUpstreamError(
-                    f"LiteLLM proxy returned {resp.status_code}: "
-                    f"{resp.text[:200]}")
-            payload = resp.json()
-        except (LLMTimeoutError, LLMUpstreamError):
+            payload = await self._post_chat(client, body)
+        except LLMUpstreamError:  # LLMTimeoutError is a subclass — caught here too
             raise
         except Exception as exc:                       # noqa: BLE001 — boundary
-            from oneops.errors import LLMUpstreamError
             raise LLMUpstreamError(
                 f"LiteLLM proxy: unexpected error {type(exc).__name__}: {exc}",
                 cause=exc) from exc
+        return _parse_completion(payload, request)
 
-        # OpenAI-compatible response shape.
-        choices = payload.get("choices") or []
-        if not choices:
-            from oneops.errors import LLMUpstreamError
-            raise LLMUpstreamError("LiteLLM proxy returned no choices")
-        choice = choices[0]
-        content = (choice.get("message") or {}).get("content") or ""
-        finish_reason = choice.get("finish_reason") or "stop"
-        usage = payload.get("usage") or {}
-        # Cache-token fields surface differently across providers:
-        #   * Anthropic (via LiteLLM): `cache_read_input_tokens` /
-        #     `cache_creation_input_tokens`
-        #   * OpenAI (auto-cached, server-side): `prompt_tokens_details:
-        #     {"cached_tokens": N}` — no creation count exposed.
-        # Read whatever the provider gave us; absence → 0.
-        cache_read = int(
-            usage.get("cache_read_input_tokens")
-            or ((usage.get("prompt_tokens_details") or {}).get("cached_tokens"))
-            or 0
-        )
-        cache_creation = int(usage.get("cache_creation_input_tokens") or 0)
-        return TransportResult(
-            content=str(content),
-            prompt_tokens=int(usage.get("prompt_tokens") or 0),
-            completion_tokens=int(usage.get("completion_tokens") or 0),
-            finish_reason=str(finish_reason),
-            actual_model=str(payload.get("model") or request.model),
-            cache_read_input_tokens=cache_read,
-            cache_creation_input_tokens=cache_creation,
-        )
+    async def complete_stream(
+        self, request: LlmRequest,
+    ) -> AsyncIterator[StreamDelta]:
+        """Stream /chat/completions (SSE). Yields a `StreamDelta(text=...)` per
+        content delta, then a terminal `StreamDelta(final=True, ...usage)`.
+
+        `stream_options.include_usage` asks LiteLLM/OpenAI to emit a final
+        chunk carrying token counts so cost accounting stays exact (no
+        estimation). A connection-level failure before the first byte raises
+        `LLMUpstreamError` (the gateway may retry); a mid-stream drop also
+        raises — but the gateway does NOT retry once deltas have been yielded
+        (the partial answer is already on the wire)."""
+        import json as _json
+
+        import httpx
+
+        from oneops.errors import LLMTimeoutError, LLMUpstreamError
+
+        client = await self._get_client()
+        body: dict[str, Any] = {
+            "model": request.model,
+            "messages": _build_messages_payload(request.messages),
+            "temperature": request.temperature,
+            "max_tokens": request.max_tokens,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if request.response_format.value == "json":
+            body["response_format"] = {"type": "json_object"}
+
+        prompt_tokens = 0
+        completion_tokens = 0
+        finish_reason = "stop"
+        actual_model = request.model
+        try:
+            async with client.stream(
+                "POST", "/chat/completions", json=body) as resp:
+                if resp.status_code >= 400:
+                    text = (await resp.aread()).decode("utf-8", "replace")
+                    raise LLMUpstreamError(
+                        f"LiteLLM proxy returned {resp.status_code}: "
+                        f"{text[:200]}")
+                async for line in resp.aiter_lines():
+                    line = line.strip()
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[len("data:"):].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = _json.loads(data)
+                    except ValueError:
+                        continue
+                    if chunk.get("model"):
+                        actual_model = chunk["model"]
+                    usage = chunk.get("usage")
+                    if usage:
+                        prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+                        completion_tokens = int(
+                            usage.get("completion_tokens", 0) or 0)
+                    for ch in chunk.get("choices", []):
+                        if ch.get("finish_reason"):
+                            finish_reason = ch["finish_reason"]
+                        delta = (ch.get("delta") or {}).get("content")
+                        if delta:
+                            yield StreamDelta(text=delta)
+        except httpx.TimeoutException as exc:
+            raise LLMTimeoutError(
+                f"LiteLLM proxy stream timed out after {self._timeout_s:.0f}s",
+                cause=exc) from exc
+        except LLMUpstreamError:
+            raise
+        except httpx.HTTPError as exc:
+            raise LLMUpstreamError(
+                f"LiteLLM proxy stream HTTP error: {exc}", cause=exc) from exc
+        # Some providers omit usage even with include_usage; fall back to an
+        # estimate so cost accounting is never silently zero.
+        if completion_tokens == 0:
+            completion_tokens = 1
+        yield StreamDelta(
+            final=True, prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens, finish_reason=finish_reason,
+            actual_model=actual_model)
+
+    async def _post_chat(self, client: Any, body: dict[str, Any]) -> dict[str, Any]:
+        """POST /chat/completions, mapping transport failures to typed errors
+        (timeout → LLMTimeoutError; HTTP / 4xx-5xx → LLMUpstreamError)."""
+        import httpx
+
+        from oneops.errors import LLMTimeoutError, LLMUpstreamError
+        try:
+            resp = await client.post("/chat/completions", json=body)
+        except httpx.TimeoutException as exc:
+            raise LLMTimeoutError(
+                f"LiteLLM proxy timed out after {self._timeout_s:.0f}s",
+                cause=exc) from exc
+        except httpx.HTTPError as exc:
+            raise LLMUpstreamError(
+                f"LiteLLM proxy HTTP error: {exc}", cause=exc) from exc
+        if resp.status_code >= 400:
+            raise LLMUpstreamError(
+                f"LiteLLM proxy returned {resp.status_code}: {resp.text[:200]}")
+        return resp.json()
 
     async def embed(self, texts: list[str], *, model: str,
                     dimensions: int | None = None) -> list[list[float]]:
@@ -260,6 +357,58 @@ class LiteLLMTransport:
         payload = resp.json()
         data = payload.get("data") or []
         return [list(map(float, row.get("embedding") or [])) for row in data]
+
+
+def _build_messages_payload(messages: Any) -> list[dict[str, Any]]:
+    """Anthropic prompt-cache content-block shape for messages flagged
+    cache_control=True (LiteLLM passes it through to Anthropic); flat-string
+    content otherwise — token-identical with the pre-caching path."""
+    if not any(getattr(m, "cache_control", False) for m in messages):
+        return [{"role": m.role, "content": m.content} for m in messages]
+    payload: list[dict[str, Any]] = []
+    for m in messages:
+        if getattr(m, "cache_control", False):
+            payload.append({
+                "role": m.role,
+                "content": [{
+                    "type": "text",
+                    "text": m.content,
+                    "cache_control": {"type": "ephemeral"},
+                }],
+            })
+        else:
+            payload.append({"role": m.role, "content": m.content})
+    return payload
+
+
+def _parse_completion(payload: dict[str, Any], request: LlmRequest) -> TransportResult:
+    """Map an OpenAI-compatible completion payload to a TransportResult. Cache-
+    token fields surface differently across providers (Anthropic via LiteLLM:
+    cache_read/creation_input_tokens; OpenAI: prompt_tokens_details.cached_tokens)
+    — read whatever is present, absence → 0."""
+    from oneops.errors import LLMUpstreamError
+    choices = payload.get("choices") or []
+    if not choices:
+        raise LLMUpstreamError("LiteLLM proxy returned no choices")
+    choice = choices[0]
+    content = (choice.get("message") or {}).get("content") or ""
+    finish_reason = choice.get("finish_reason") or "stop"
+    usage = payload.get("usage") or {}
+    cache_read = int(
+        usage.get("cache_read_input_tokens")
+        or ((usage.get("prompt_tokens_details") or {}).get("cached_tokens"))
+        or 0
+    )
+    cache_creation = int(usage.get("cache_creation_input_tokens") or 0)
+    return TransportResult(
+        content=str(content),
+        prompt_tokens=int(usage.get("prompt_tokens") or 0),
+        completion_tokens=int(usage.get("completion_tokens") or 0),
+        finish_reason=str(finish_reason),
+        actual_model=str(payload.get("model") or request.model),
+        cache_read_input_tokens=cache_read,
+        cache_creation_input_tokens=cache_creation,
+    )
 
 
 __all__ = ["LlmTransport", "EchoTransport", "LiteLLMTransport"]

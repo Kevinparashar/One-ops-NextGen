@@ -9,7 +9,7 @@ fields so:
   • The structured fields stay available for richer follow-ups
     ("filter to resolved", "show me the second one in detail").
 
-Output shape mirrors ai-service-use-cases.md §UC-2 "Output Format":
+Output shape mirrors docs/product/ai-service-use-cases.md §UC-2 "Output Format":
 
     Found 5 similar tickets (showing top 3):
 
@@ -140,52 +140,14 @@ def render(
     UC-2.6: "Found N incidents similar to INC0001020 from {label}, …".
     """
     if not resp.results:
-        # Empty path — explain why. Two sources of truth:
-        #   1. resp.message ("no significantly similar tickets…")
-        #   2. resp.warning ("limited context…")
-        # Render both so the user sees actionable next steps.
-        parts: list[str] = []
-        if resp.message:
-            parts.append(resp.message.capitalize() + ".")
-        else:
-            parts.append("No similar tickets found.")
-        if resp.warning:
-            parts.append(f"_Note: {resp.warning}._")
-        return "\n\n".join(parts)
+        return _render_empty(resp)
 
     rows = resp.results
     if show_at_most is not None and show_at_most > 0:
         rows = rows[:show_at_most]
 
-    header = (
-        f"Found {len(resp.results)} similar ticket"
-        f"{'s' if len(resp.results) != 1 else ''}"
-    )
-    if time_filter_label:
-        header += f" from {time_filter_label}"
-    if show_at_most is not None and show_at_most < len(resp.results):
-        header += f" (showing top {len(rows)})"
-    header += ":"
-
-    lines: list[str] = []
-
-    # Source-ticket echo block — lets the operator verify the match context
-    # at a glance ("you queried INC0001001 'VPN drops on handoff', cat=network,
-    # CI=CI0000001") before scanning the similar list.
-    src = resp.source_ticket
-    if src is not None and src.title:
-        src_status = (src.status or "").replace("_", " ").title()
-        head = f"_Your ticket:_ **{src.ticket_id}**"
-        if src_status:
-            head += f" — {src_status}"
-        lines.append(head)
-        lines.append(f'   "{(src.title or "").strip().strip(chr(34))}"')
-        src_meta = _meta_line(src)
-        if src_meta:
-            lines.append(f"   {src_meta}")
-        lines.append("")
-
-    lines.append(header)
+    lines: list[str] = _source_echo_lines(resp.source_ticket)
+    lines.append(_build_header(resp, rows, time_filter_label, show_at_most))
     lines.append("")
     for i, r in enumerate(rows, 1):
         lines.append(_line_for(i, r))
@@ -195,6 +157,53 @@ def render(
         lines.append(f"_Note: {resp.warning}._")
 
     return "\n".join(lines).rstrip()
+
+
+def _render_empty(resp: SimilarTicketsResponse) -> str:
+    """Empty-results path — explain why from the two sources of truth
+    (`resp.message`, `resp.warning`) so the user sees actionable next steps."""
+    parts: list[str] = []
+    if resp.message:
+        parts.append(resp.message.capitalize() + ".")
+    else:
+        parts.append("No similar tickets found.")
+    if resp.warning:
+        parts.append(f"_Note: {resp.warning}._")
+    return "\n\n".join(parts)
+
+
+def _build_header(
+    resp: SimilarTicketsResponse, rows: list, time_filter_label: str | None,
+    show_at_most: int | None,
+) -> str:
+    """The "Found N similar ticket(s) [from <label>] [(showing top K)]:" line."""
+    header = (
+        f"Found {len(resp.results)} similar ticket"
+        f"{'s' if len(resp.results) != 1 else ''}"
+    )
+    if time_filter_label:
+        header += f" from {time_filter_label}"
+    if show_at_most is not None and show_at_most < len(resp.results):
+        header += f" (showing top {len(rows)})"
+    return header + ":"
+
+
+def _source_echo_lines(src: Any) -> list[str]:
+    """Source-ticket echo block — lets the operator verify the match context at
+    a glance (id, status, title, meta) before scanning the similar list.
+    Returns the lines (with a trailing blank) or [] when there's no source."""
+    if src is None or not src.title:
+        return []
+    head = f"_Your ticket:_ **{src.ticket_id}**"
+    src_status = (src.status or "").replace("_", " ").title()
+    if src_status:
+        head += f" — {src_status}"
+    lines = [head, f'   "{(src.title or "").strip().strip(chr(34))}"']
+    src_meta = _meta_line(src)
+    if src_meta:
+        lines.append(f"   {src_meta}")
+    lines.append("")
+    return lines
 
 
 __all__ = ["render"]

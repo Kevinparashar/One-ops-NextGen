@@ -1,4 +1,4 @@
-"""Reads the `retrieval_schema` block from registries/service-schema.json.
+"""Reads the `retrieval_schema` block from registries/v2/platform/service-schema.json.
 
 Schema-driven dispatch: the engine's SQL is composed from this block instead
 of hardcoded templates. Adding a column = JSON edit, not a code change.
@@ -19,7 +19,7 @@ from typing import Any
 # Resolve from this file's location so test runs and prod runs both work.
 _DEFAULT_PATH = (
     Path(__file__).resolve().parents[5]
-    / "registries" / "service-schema.json"
+    / "registries" / "v2" / "platform" / "service-schema.json"
 )
 
 

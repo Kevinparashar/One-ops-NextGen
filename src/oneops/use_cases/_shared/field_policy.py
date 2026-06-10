@@ -3,7 +3,7 @@
 A handler that returns an entity record must not carry a hardcoded list of
 fields to strip — that is a static catalogue (Component Spec C12). Instead each
 field carries a *data classification*, declared as registry data in
-`registries/v2/field_policy.json`, and a handler exposes a field only when its
+`registries/v2/platform/field_policy.json`, and a handler exposes a field only when its
 classification ranks below the withhold threshold.
 
 The *principle* lives here in code ("expose what ranks below the threshold");
@@ -18,7 +18,7 @@ from typing import Any
 
 from oneops.errors import ConfigError
 
-_DEFAULT_PATH = "registries/v2/field_policy.json"
+_DEFAULT_PATH = "registries/v2/platform/field_policy.json"
 
 # Sensitivity ladder, low → high. A field is exposable when its rank is
 # strictly below the configured withhold rank.

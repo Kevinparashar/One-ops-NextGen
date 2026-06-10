@@ -84,6 +84,15 @@ class ExecutorState(TypedDict, total=False):
     # this is the hot window loaded for the turn.
     conversation_history: list[dict[str, str]]
 
+    # ── Pre-routed dispatch (forced-agent path) ──────────────────────────
+    # When set, the `route` node SKIPS the LLM router and builds the plan
+    # directly from these agent ids — a first-class "pre-routed" execution path
+    # for callers that already selected the agent(s): a team manager's
+    # member-selector, the button/HTTP routes, the /propose fast-path. Ids with
+    # no active registry record are dropped (never invent an agent); if none
+    # survive, the turn is a no-confident-match. Empty/absent → normal routing.
+    forced_agent_ids: list[str]
+
     # ── Active focus (Stage 2 LangGraph-native fix, 2026-05-28) ──────────
     # The single source of truth for "which record is the conversation
     # about." Computed deterministically by `update_focus` at the start of

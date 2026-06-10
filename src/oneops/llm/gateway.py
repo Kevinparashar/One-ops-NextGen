@@ -17,6 +17,7 @@ to a provider — `test_no_direct_provider` is the CI gate that enforces it.
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncIterator
 from dataclasses import replace
 
 from oneops.errors import (
@@ -26,7 +27,7 @@ from oneops.errors import (
     LLMUpstreamError,
 )
 from oneops.llm.cost import CostTracker
-from oneops.llm.models import LlmRequest, LlmResponse
+from oneops.llm.models import LlmRequest, LlmResponse, LlmStreamChunk
 from oneops.llm.quota import QuotaGuard
 from oneops.llm.redaction import redact_messages
 from oneops.llm.transport import LlmTransport
@@ -191,6 +192,120 @@ class LlmGateway:
             f"LLM call failed after {self._max_retries + 1} attempt(s)"
             + (" and a fallback" if self._fallback_model else ""),
             cause=last_exc)
+
+    async def call_stream(
+        self, request: LlmRequest,
+    ) -> AsyncIterator[LlmStreamChunk]:
+        """Stream one model call through the egress discipline.
+
+        Same gates as `call()` — quota, redaction, cost, observability — but
+        cost/Langfuse are finalised at stream completion (token counts arrive
+        in the terminal delta). Yields `LlmStreamChunk(delta=...)` per token,
+        then a terminal `LlmStreamChunk(done=True, response=<LlmResponse>)`.
+
+        Retry/fallback semantics differ deliberately: once a delta has been
+        yielded to the caller the partial answer is already on the wire, so a
+        mid-stream failure CANNOT be retried — it propagates as
+        `LLMGatewayError`. (Connection-establishment failures surface on the
+        first `anext`; the caller decides whether to fall back to non-streaming.)
+        A provider that streams is assumed reliable enough for the live path;
+        callers that need at-least-once delivery use `call()`.
+        """
+        _stream_t0 = time.monotonic()
+        with _tracer.start_as_current_span(
+            "llm.call_stream",
+            attributes={"oneops.tenant_id": request.tenant_id,
+                        "oneops.user_id": request.user_id,
+                        "llm.model": request.model,
+                        "llm.stream": True},
+        ) as span:
+            # 1. Quota.
+            if self._quota is not None:
+                self._quota.check_and_charge(request.tenant_id)
+
+            # 2. Redaction — scrub PII before the prompt leaves.
+            redacted_pii: tuple[str, ...] = ()
+            outbound = request
+            if self._redact:
+                messages, found = redact_messages(request.messages)
+                redacted_pii = tuple(sorted(found))
+                outbound = replace(request, messages=messages)
+            span.set_attribute("llm.redacted_pii", len(redacted_pii))
+
+            # 3. Stream from the transport. Any error becomes the gateway's one
+            #    failure type (LLMGatewayError) — no mid-stream retry.
+            pieces: list[str] = []
+            final_delta = None
+            try:
+                async for delta in self._transport.complete_stream(outbound):
+                    if delta.final:
+                        final_delta = delta
+                        break
+                    if delta.text:
+                        pieces.append(delta.text)
+                        yield LlmStreamChunk(delta=delta.text)
+            except Exception as exc:  # noqa: BLE001 — boundary, typed below
+                increment("ai.llm.call_stream.errors.total",
+                          model=request.model, reason=type(exc).__name__)
+                raise LLMGatewayError(
+                    f"LLM stream failed ({type(exc).__name__})",
+                    cause=exc) from exc
+
+            content = "".join(pieces)
+            prompt_tokens = final_delta.prompt_tokens if final_delta else 0
+            completion_tokens = (
+                final_delta.completion_tokens if final_delta else 0)
+            served_model = (
+                (final_delta.actual_model if final_delta else "")
+                or outbound.model)
+            finish_reason = final_delta.finish_reason if final_delta else "stop"
+            cache_read = (
+                final_delta.cache_read_input_tokens if final_delta else 0)
+            cache_creation = (
+                final_delta.cache_creation_input_tokens if final_delta else 0)
+
+            # 4. Cost accounting (same path as call(), deferred to stream end).
+            cost = self._cost.record(
+                request.tenant_id, served_model,
+                prompt_tokens, completion_tokens)
+            latency_ms = int((time.monotonic() - _stream_t0) * 1000)
+            span.set_attribute("llm.cost_usd", cost)
+            span.set_attribute("llm.total_tokens",
+                               prompt_tokens + completion_tokens)
+            if cache_read > 0:
+                span.set_attribute("llm.cache_read_input_tokens", cache_read)
+            set_langfuse_generation(
+                span, model=served_model,
+                prompt=[{"role": m.role, "content": m.content}
+                        for m in outbound.messages],
+                completion=content,
+                input_tokens=prompt_tokens, output_tokens=completion_tokens,
+                cost_usd=cost)
+            histogram("ai.llm.call.duration_ms", float(latency_ms),
+                      model=served_model, fell_back="false")
+
+            # Build the terminal chunk while the span is still open (cost and
+            # attributes are already recorded on it), but DEFER the yield until
+            # after the span's context manager exits. The consumer stops
+            # iterating on this terminal chunk, so its GeneratorExit must not
+            # fire inside `start_as_current_span`: doing so detaches the OTel
+            # context token during async-generator close, which often runs in a
+            # different asyncio context than the one that attached it
+            # ("ValueError: Token was created in a different Context"). Closing
+            # the span here — in the same context it opened — keeps the trace
+            # clean with zero latency cost (the deferred yield is instant and
+            # per-token yields above still nest correctly during active stream).
+            terminal_chunk = LlmStreamChunk(done=True, response=LlmResponse(
+                content=content, model=served_model,
+                prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                cost_usd=cost, latency_ms=latency_ms,
+                finish_reason=finish_reason, redacted_pii=redacted_pii,
+                fell_back=False, cache_read_input_tokens=cache_read,
+                cache_creation_input_tokens=cache_creation))
+
+        # Span closed above (same context it was opened in) — now safe to hand
+        # the terminal chunk to the consumer; its GeneratorExit detaches nothing.
+        yield terminal_chunk
 
     async def embed(
         self, texts: list[str], *, model: str, tenant_id: str,

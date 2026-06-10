@@ -46,6 +46,10 @@ from oneops.llm.models import LlmMessage, LlmRequest, ResponseFormat
 from oneops.observability.metrics import histogram, increment
 from oneops.policy.composer import Profile, compose
 
+# Telemetry/HTTP literals → constants (sonar S1192).
+_AI_UC08_JUDGE_VERDICT_TOTAL = "ai.uc08.judge.verdict.total"
+_UC08_JUDGE_VERDICT = "uc08.judge.verdict"
+
 _log = structlog.get_logger("oneops.uc08.judge")
 _tracer = trace.get_tracer("oneops.uc08.judge")
 
@@ -170,7 +174,7 @@ def _truncate(text: str, limit: int = JUDGE_MAX_INPUT_CHARS) -> str:
     return text[:limit] + " […truncated]"
 
 
-def _parse(raw: str, judge_name: str) -> tuple[JudgeVerdict, float, str]:
+def _parse(raw: str, _judge_name: str) -> tuple[JudgeVerdict, float, str]:
     """Closed-enum parse. Returns (verdict, confidence, reasoning).
 
     On any parse failure: UNCERTAIN, 0.0, '<reason>'. Never raises.
@@ -243,10 +247,10 @@ async def _call_judge(
                 timeout_s=JUDGE_TIMEOUT_S,
                 tenant_id=tenant_id,
             )
-            span.set_attribute("uc08.judge.verdict", "UNCERTAIN")
+            span.set_attribute(_UC08_JUDGE_VERDICT, "UNCERTAIN")
             span.set_attribute("uc08.judge.failure", "timeout")
             increment(
-                "ai.uc08.judge.verdict.total",
+                _AI_UC08_JUDGE_VERDICT_TOTAL,
                 judge=judge_name,
                 verdict="UNCERTAIN",
                 failure="timeout",
@@ -266,10 +270,10 @@ async def _call_judge(
                 error=f"{type(exc).__name__}: {exc}"[:200],
                 tenant_id=tenant_id,
             )
-            span.set_attribute("uc08.judge.verdict", "UNCERTAIN")
+            span.set_attribute(_UC08_JUDGE_VERDICT, "UNCERTAIN")
             span.set_attribute("uc08.judge.failure", type(exc).__name__)
             increment(
-                "ai.uc08.judge.verdict.total",
+                _AI_UC08_JUDGE_VERDICT_TOTAL,
                 judge=judge_name,
                 verdict="UNCERTAIN",
                 failure="gateway",
@@ -285,11 +289,11 @@ async def _call_judge(
 
         verdict, confidence, reasoning = _parse(raw, judge_name)
         elapsed_ms = (time.perf_counter() - started) * 1000.0
-        span.set_attribute("uc08.judge.verdict", verdict.value)
+        span.set_attribute(_UC08_JUDGE_VERDICT, verdict.value)
         span.set_attribute("uc08.judge.confidence", confidence)
         span.set_attribute("uc08.judge.latency_ms", elapsed_ms)
         increment(
-            "ai.uc08.judge.verdict.total",
+            _AI_UC08_JUDGE_VERDICT_TOTAL,
             judge=judge_name,
             verdict=verdict.value,
         )

@@ -6,7 +6,7 @@ or any DB lookup, the reference must be canonicalised to one form.
 
 This is **one normalizer for the whole platform** — entity-ID prefixes are
 platform vocabulary, not use-case vocabulary. The prefix → service map is
-*data*, read from `registries/service-schema.json` (`id_prefix` +
+*data*, read from `registries/v2/platform/service-schema.json` (`id_prefix` +
 `alias_prefixes`). Adding a service later = one registry row, no code change
 (thumb rule #2 — registry-driven, never a hardcoded list).
 
@@ -29,7 +29,7 @@ from oneops.observability import get_logger
 
 _log = get_logger("oneops.router.entity_id")
 
-_DEFAULT_SCHEMA = "registries/service-schema.json"
+_DEFAULT_SCHEMA = "registries/v2/platform/service-schema.json"
 
 # Canonical id body width across every service (INC0001234, KB0005010, …).
 # Anything 1-2 digits is too short to be a real id (REJECTED). 3-6 digits is
@@ -58,6 +58,10 @@ _BARE_DIGITS = re.compile(r"\b(\d{2,12})\b")
 # Separators then a digit — used to tell that an alpha word is the prefix head
 # of a separated ID ("inc" in "inc-0048-213"), which pass 1 already owns.
 _LEADS_DIGITS = re.compile(r"[ \t\-_]*\d")
+# Mixed-case prefix garble ("INCabc", "REQ_test") — a caps prefix with a
+# lower/alnum tail. Pass-2.5 territory (pure-upper → pass 2, digit-bearing
+# → pass 1).
+_MIXED_RE = re.compile(r"\b([A-Z]{2,5}[A-Za-z0-9]{1,10})\b")
 # Everything that is not a letter or digit is a separator to be stripped.
 _SEPARATORS = re.compile(r"[^0-9A-Za-z]")
 
@@ -254,14 +258,29 @@ class EntityIdNormalizer:
         malformed: list[NormalizationResult] = []
         seen_ok: set[str] = set()
         seen_bad: set[str] = set()
+        self._pass1_digit_tokens(text, entities, seen_ok, malformed, seen_bad)
+        self._pass2_digitless_garbles(text, malformed, seen_bad)
+        self._pass25_mixed_case(text, malformed, seen_bad)
+        self._pass3_bare_digits(text, entities, malformed, seen_bad)
+        return ExtractionResult(tuple(entities), tuple(malformed))
 
-        def _record_bad(result: NormalizationResult) -> None:
-            key = (result.raw or "").strip().upper()
-            if key not in seen_bad:
-                seen_bad.add(key)
-                malformed.append(result)
+    def _record_bad(
+        self, malformed: list[NormalizationResult], seen_bad: set[str],
+        result: NormalizationResult,
+    ) -> None:
+        """Append a malformed near-miss, deduped by its upper-cased raw token."""
+        key = (result.raw or "").strip().upper()
+        if key not in seen_bad:
+            seen_bad.add(key)
+            malformed.append(result)
 
-        # ── pass 1 — digit-bearing tokens ────────────────────────────────
+    def _pass1_digit_tokens(
+        self, text: str, entities: list[NormalizedEntity], seen_ok: set[str],
+        malformed: list[NormalizationResult], seen_bad: set[str],
+    ) -> None:
+        """Pass 1 — digit-bearing tokens ("INC0048213", "INCX0048"). Valid IDs
+        become entities; prefix-matched-but-bad tokens become near-misses;
+        prefix-less noise is ignored."""
         for match in _CANDIDATE.finditer(text):
             result = self.normalize(match.group(0))
             if result.ok and result.entity is not None:
@@ -269,86 +288,75 @@ class EntityIdNormalizer:
                     seen_ok.add(result.entity.entity_id)
                     entities.append(result.entity)
             elif result.matched_prefix:
-                _record_bad(result)
-            # else: noise (no known prefix) — not an entity attempt, ignored.
+                self._record_bad(malformed, seen_bad, result)
 
-        # ── pass 2 — digit-less prefix garbles ───────────────────────────
+    def _pass2_digitless_garbles(
+        self, text: str, malformed: list[NormalizationResult],
+        seen_bad: set[str],
+    ) -> None:
+        """Pass 2 — digit-less prefix garbles (a bare "INC" with the number
+        forgotten). A word heading a separated digit-bearing ID ("inc" in
+        "inc-0048-213") is already owned by pass 1 and skipped."""
         for match in _ALPHA_WORD.finditer(text):
             word = match.group(0)
-            # A word that heads a separated digit-bearing ID ("inc" in
-            # "inc-0048-213") is already owned by pass 1 — do not re-flag it.
             if _LEADS_DIGITS.match(text, match.end()):
                 continue
             if not self._is_digitless_id_attempt(word):
                 continue
             result = self.normalize(word)
             if not result.ok and result.matched_prefix:
-                _record_bad(result)
+                self._record_bad(malformed, seen_bad, result)
 
-        # ── pass 2.5 — mixed-case prefix garbles ("INCabc", "REQ_test") ──
-        # A caps prefix followed by a lowercase or alphanumeric tail is
-        # almost always a botched ID attempt — the user typed the prefix
-        # in caps (deliberate signal) then fumbled the number. Pure-upper
-        # ("INCABC") is caught by pass 2; pure-lower ("incident") is an
-        # English word and ignored; this branch handles the in-between
-        # mixed case (2026-05-30 user-reported bug where "summarize
-        # INCabc" silently summarized a random ticket because the
-        # extractor returned zero entities AND zero malformed).
-        _MIXED = re.compile(r"\b([A-Z]{2,5}[A-Za-z0-9]{1,10})\b")
-        for match in _MIXED.finditer(text):
+    def _pass25_mixed_case(
+        self, text: str, malformed: list[NormalizationResult],
+        seen_bad: set[str],
+    ) -> None:
+        """Pass 2.5 — mixed-case prefix garbles ("INCabc", "REQ_test"). A caps
+        prefix + lowercase/alnum tail is almost always a botched ID (caps
+        prefix = deliberate signal). Pure-upper → pass 2; digit-bearing →
+        pass 1; pure-lower ("incident") is an English word and ignored.
+        (Closes the 2026-05-30 "summarize INCabc" silent-wrong-ticket bug.)"""
+        for match in _MIXED_RE.finditer(text):
             token = match.group(1)
-            # Already handled by pass 1 (digit-bearing) or pass 2 (all caps).
             if any(ch.isdigit() for ch in token):
                 continue                       # pass-1 territory
             if token.isupper():
                 continue                       # pass-2 territory
-            # Must start with a known prefix (otherwise it's just an
-            # unrelated capitalised acronym + suffix).
             upper = token.upper()
             matched_prefix = next(
                 (p for p in self._prefixes if upper.startswith(p)), "")
             if not matched_prefix:
                 continue
-            # Run through normalize to get a structured rejection reason.
             result = self.normalize(token)
             if not result.ok and result.matched_prefix:
-                _record_bad(result)
+                self._record_bad(malformed, seen_bad, result)
 
-        # ── pass 3 — bare digit runs that look like a botched ID ──────────
-        # 7+ digit runs with no surrounding prefix are almost always a
-        # botched ticket reference ("summarize 0001234" — user forgot the
-        # INC/REQ prefix). Without this pass, the message has zero entity
-        # references AND zero malformed near-misses, so the router falls
-        # through to focus-injection — silently summarising the WRONG ticket
-        # (2026-05-30 incident). Threshold = 7 because all ITSM IDs in this
-        # system are 7-digit; 4-6 digit numbers in messages are typically
-        # years/quantities/dates.
+    def _pass3_bare_digits(
+        self, text: str, entities: list[NormalizedEntity],
+        malformed: list[NormalizationResult], seen_bad: set[str],
+    ) -> None:
+        """Pass 3 — bare 7+ digit runs with no prefix ("summarize 0001234" —
+        user forgot the INC/REQ). Without this, such a message has zero
+        entities AND zero near-misses, so the router falls through to
+        focus-injection and silently summarises the wrong ticket (2026-05-30
+        incident). 7 because every ITSM id here is 7-digit; 4-6 digit numbers
+        are usually years/quantities/dates. Digit runs already inside a matched
+        entity or near-miss are skipped."""
         for match in _BARE_DIGITS.finditer(text):
             body = match.group(1)
             if len(body) < 7:
                 continue
-            # Skip if this digit run sits inside an already-matched entity
-            # (e.g. "INC0001234" — pass 1 grabbed the whole token; the
-            # "0001234" suffix should not also appear as a near-miss).
-            already_covered = any(
-                e.entity_id.endswith(body) for e in entities
-            )
-            if already_covered:
+            if any(e.entity_id.endswith(body) for e in entities):
                 continue
-            already_bad = any(
-                (b.raw or "").endswith(body) for b in malformed
-            )
-            if already_bad:
+            if any((b.raw or "").endswith(body) for b in malformed):
                 continue
-            _record_bad(NormalizationResult.bad(
+            self._record_bad(malformed, seen_bad, NormalizationResult.bad(
                 body,
                 f'"{body}" looks like a record number but is missing its '
                 f'type prefix. Please share the full ID — '
                 f'e.g. "INC{body}" for an incident or "REQ{body}" for a '
                 f'request.',
             ))
-
-        return ExtractionResult(tuple(entities), tuple(malformed))
 
     def _is_digitless_id_attempt(self, word: str) -> bool:
         """True when a digit-free word is a genuine entity-ID attempt — so it
@@ -363,9 +371,14 @@ class EntityIdNormalizer:
             blocks every natural KB-search query — 2026-05-27 incident. A
             two-letter id is still reachable through pass-1 once the user
             types the number ("KB0005001").
-          * ALL-CAPS token led by a prefix and longer than the prefix
-            ("INCABC", "KBXYZ") — the trailing garble is the deliberate
-            ID-style signal that tells these apart from plain words.
+          * ALL-CAPS token led by a 3+-letter prefix and longer than it
+            ("INCABC", "REQXYZ") — the trailing garble is the deliberate
+            ID-style signal that tells these apart from plain words. 2-letter
+            prefixes (SR, KB, CI) are EXCLUDED here too: an all-caps word that
+            merely STARTS with one ("SRE" = Site Reliability Engineer, "CIO",
+            "KBASE") is an ordinary acronym, not a botched id — flagging it
+            hijacks the turn (2026-06-09 incident). The real id is still
+            reachable once the user types the number.
 
         Lower-case / title-case prefixes never qualify ("Incident", "inc",
         "request") — those are English usage."""
@@ -375,7 +388,7 @@ class EntityIdNormalizer:
             return True
         if word.isupper():
             return any(upper.startswith(p) and len(upper) > len(p)
-                       for p in self._prefixes)
+                       for p in self._prefixes if len(p) >= 3)
         return False
 
     # ── user-facing clarification ────────────────────────────────────────

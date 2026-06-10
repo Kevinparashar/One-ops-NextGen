@@ -4,7 +4,7 @@
 A pathologically deep template must raise a clear `InvalidTemplateError` (config
 bug → 422) instead of an ungraceful RecursionError — while every real (shallow)
 template substitutes exactly as before. Pure-function test, no DB (hermetic unit).
-See docs/change-log.md Batch C-2.
+See docs/history/change-log.md Batch C-2.
 """
 from __future__ import annotations
 

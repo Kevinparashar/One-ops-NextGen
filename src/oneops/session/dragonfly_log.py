@@ -32,12 +32,15 @@ from oneops.session.backend import ConversationEvent
 
 _log = get_logger("oneops.session.dragonfly_log")
 
+# Repeated literals → constants (sonar S1192).
+_TENANT_ID_AND_SESSION_ID_ARE_MANDATORY = "tenant_id and session_id are mandatory"
+
 _KEY_PREFIX = "oneops:session:log"
 
 
 def _log_key(tenant_id: str, session_id: str) -> str:
     if not tenant_id or not session_id:
-        raise ValueError("tenant_id and session_id are mandatory")
+        raise ValueError(_TENANT_ID_AND_SESSION_ID_ARE_MANDATORY)
     return f"{_KEY_PREFIX}:{tenant_id}:{session_id}"
 
 
@@ -76,7 +79,7 @@ class DragonflyEventLog:
         position). The protobuf's own `turn_index` is what the read path
         uses for ordering; the list length is informational."""
         if not tenant_id or not session_id:
-            raise ValueError("tenant_id and session_id are mandatory")
+            raise ValueError(_TENANT_ID_AND_SESSION_ID_ARE_MANDATORY)
         payload = event.SerializeToString()
         key = _log_key(tenant_id, session_id)
         # Pipeline so the cap-LTRIM happens in the same round-trip as the
@@ -97,7 +100,7 @@ class DragonflyEventLog:
     ) -> list[ConversationEvent]:
         """Every event for the session with `turn_index >= from_turn`."""
         if not tenant_id or not session_id:
-            raise ValueError("tenant_id and session_id are mandatory")
+            raise ValueError(_TENANT_ID_AND_SESSION_ID_ARE_MANDATORY)
         key = _log_key(tenant_id, session_id)
         raw_payloads: list[bytes] = await self._redis.lrange(key, 0, -1)
         events: list[ConversationEvent] = []

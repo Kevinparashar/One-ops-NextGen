@@ -149,7 +149,7 @@ _RESPONSES: dict[str, str] = {
 _PUNCT_ONLY_RE = re.compile(r"^[\W_]+$", re.UNICODE)
 # Pure-emoji detection — any glyph in common emoji ranges, no letters/digits.
 _EMOJI_ONLY_RE = re.compile(
-    r"^[\s\U0001F300-\U0001FAFF\U00002600-\U000027BF✀-➿]+$",
+    r"^[\s\U0001F300-\U0001FAFF\U00002600-\U000027BF]+$",
     re.UNICODE,
 )
 # Canonical-ID shape — generic prefix+digit pattern; matches every entity
@@ -210,106 +210,74 @@ Off-topic chat:
                          pure greeting/thanks/farewell. e.g. "what did
                          you do today", "tell me something fun". Keep the
                          response polite but redirect to ITSM.
-- out_of_scope         : a SUBSTANTIVE question that is genuinely outside
-                         the IT/ITSM/ITOM domain. STRICTLY limited to
-                         these categories:
-                           * weather, sports, news, politics
-                           * recipes, food, restaurants, travel
-                           * jokes, entertainment, music, movies
-                           * personal advice unrelated to work
-                           * creative tasks ("write me a poem",
-                             "translate this")
-                           * general-knowledge trivia ("who won the
-                             World Cup", "capital of France")
+- out_of_scope         : classify here ONLY when the message is substantive and
+                         its PRIMARY subject is clearly outside IT / ITSM / ITOM /
+                         service-desk / workplace-technology ownership. Decide by
+                         OPERATIONAL OWNERSHIP, never by surface keywords.
 
-                         CRITICAL — IT how-to questions are ALWAYS
-                         IN-DOMAIN, return `none`. Even when OneOps
-                         itself may not have the article. Examples that
-                         MUST be `none` (NOT out_of_scope):
-                           * "how do I reset my LDAP password"
-                           * "how do I configure kubernetes pod
-                             autoscaling"
-                           * "why is my outlook so slow"
-                           * "vpn keeps dropping"
-                           * "how do I install python on the build
-                             server"
-                           * "what is SSO" / "what is MFA"
-                           * "active directory not syncing"
-                           * "exchange queue depth high"
+                         THE TEST — ask: would an IT, ITSM, ITOM, service-desk,
+                         operations, DevOps/SRE, network/infrastructure,
+                         identity/security, database, application-support, or
+                         enterprise-technology team reasonably handle, triage,
+                         track, or troubleshoot this for a user or system?
+                           * yes / plausibly yes  → `none`
+                           * clear no (strictly a non-IT domain) → `out_of_scope`
 
-                         CRITICAL — HOMONYM RESOLUTION. Many ordinary
-                         English words have a separate IT meaning. When
-                         such a word appears NEXT TO an IT term, take
-                         the IT meaning and return `none`. Do NOT let
-                         the personal-life sense of the homonym flip
-                         your decision to `out_of_scope`.
+                         BIAS — `out_of_scope` is a HIGH-CONFIDENCE exclusion.
+                         When in doubt, ALWAYS return `none`. NEVER use
+                         `out_of_scope` for missing docs, unknown tools,
+                         unavailable features/integrations, missing permissions,
+                         unclear phrasing, short field reads, or a topic change
+                         that stays inside IT — those are `none`, resolved
+                         downstream (the KB composer says "no article found", the
+                         router asks for clarification, etc.).
 
-                           * "sleep" = bedtime OR laptop standby. With
-                             "VPN", "laptop", "standby", "wake" nearby
-                             it means standby. → `none`
-                           * "drop" = dance step OR packet loss. With
-                             "Wi-Fi", "tunnel", "connection" nearby it
-                             means packet loss. → `none`
-                           * "wake" = morning OR resume-from-standby.
-                             With "laptop", "from sleep" nearby it means
-                             resume. → `none`
-                           * "stuck" = emotion OR hung process. With
-                             "queue", "build", "deploy" nearby it means
-                             a hung resource. → `none`
+                         IN-SCOPE (→ `none`):
+                           * ITSM / service desk — incidents, outages, errors,
+                             login/access failures, slowness, broken workflows;
+                             requests for hardware, software, access, accounts,
+                             devices, or environments; onboarding/offboarding;
+                             problems and changes; and ticket fields (status,
+                             priority, SLA, owner, …).
+                           * ITOM / infra — monitoring, alerts, metrics, logs;
+                             network (Wi-Fi, VPN, DNS, firewall); servers/VMs,
+                             cloud, containers, databases; endpoint management
+                             (laptops, patching, antivirus); CMDB / assets.
+                           * IT knowledge / how-to — troubleshooting, setup,
+                             configuration, documentation — even when no article
+                             exists.
+                           * Cross-functional IT — a message that NAMES a
+                             business function (HR, finance, legal, facilities,
+                             travel, procurement) but whose ACTUAL subject is
+                             that function's IT system, portal, login, access,
+                             workflow, report, or data ("the payroll app is
+                             down", "I can't log in to the HR portal").
 
-                         Worked example:
-                           input: "documentation about VPN reconnection
-                                   after sleep?"
-                           reasoning: "documentation about X" is asking
-                                      for written IT content. "VPN" is
-                                      an IT service. "sleep" is laptop
-                                      standby in this context (paired
-                                      with "VPN reconnection").
-                           answer:  `none` (the router/KB handles it).
+                         OUT-OF-SCOPE (→ `out_of_scope`) — only when substantive
+                         AND owned by a non-IT function with NO IT system /
+                         access / workflow / technical issue attached:
+                           * HR people/policy (leave, salary, benefits,
+                             appraisal, conduct);
+                           * finance business (reimbursement amount, invoice
+                             approval, budgets, tax);
+                           * facilities physical space (seating, cafeteria,
+                             parking, building/furniture, physical keys);
+                           * admin/legal/travel (legal advice, flight/hotel
+                             booking, visa, contract interpretation);
+                           * personal/general life (weather, sport, food,
+                             entertainment, shopping, health, non-work topics).
 
-                         Rule: if the question names ANY of the
-                         following — an IT system, OS, application,
-                         service, protocol, device, error, login,
-                         password, credential, network, server, cloud,
-                         database, container, deployment, monitoring,
-                         backup, security, compliance — it is
-                         IN-DOMAIN. The router/KB will handle it; the
-                         composer will say "no article" if there's no
-                         match.
+                         HOMONYMS — many ordinary words also have an IT meaning;
+                         when one sits near an IT term, take the IT meaning →
+                         `none`: "sleep/wake" near laptop/VPN/session; "drop"
+                         near packet/Wi-Fi/tunnel; "stuck" near queue/job/deploy;
+                         "down/slow" near app/server/site/DB; "blocked/locked"
+                         near account/access/firewall/password.
 
-                         When in doubt between out_of_scope and none,
-                         choose `none`. A false OOS silently blocks a
-                         legitimate IT question; CASE B in the KB
-                         composer is the right place to say "no
-                         article found."
-
-                         **Focus-aware override (2026-05-29).** When the
-                         conversation has an ACTIVE FOCUS RECORD (an
-                         incident, problem, change, asset, or CI the
-                         user is currently working on), a query whose
-                         subject is clearly unrelated to that focused
-                         record AND to general IT/ITSM is
-                         `out_of_scope`. The off-topic signal is the
-                         change of subject, not the verb shape.
-
-                         Examples (use the principle, not the words):
-                           * focus = INC0001005 (Exchange mailbox
-                             issue), user asks "how to fix the
-                             bluetooth connectivity" → `out_of_scope`
-                             (bluetooth on a personal device is not
-                             on this incident and not an enterprise
-                             IT subject).
-                           * focus = INC0001005, user asks "lets meet
-                             tomorrow now" → `out_of_scope` (meeting
-                             scheduling is not ITSM).
-                           * focus = INC0001005, user asks "any data
-                             on this" → `none` (legitimate follow-up
-                             about the focused incident).
-                           * focus = INC0001005, user asks "outlook
-                             keeps crashing" → `none` (outlook IS the
-                             focused incident's subject; legitimate).
-                           * no focus, user asks "how do I fix VPN"
-                             → `none` (general IT how-to, in-domain).
+                         ACTIVE FOCUS — never let an active focus record turn a
+                         valid IT request into `out_of_scope`. A user may switch
+                         topics any turn; if the new subject stays inside IT,
+                         return `none`. Judge the message on its OWN subject.
 
 Catch-all:
 - none                 : ANYTHING that is not clearly one of the labels
@@ -378,12 +346,16 @@ class _AbstainingClassifier:
 def _normalize(message: str) -> str:
     s = (message or "").strip().lower()
     s = re.sub(r"\s+", " ", s)
-    s = re.sub(r"[?.!,;:]+$", "", s)
+    s = s.rstrip("?.!,;:")          # trailing punctuation; rstrip = no-regex, no ReDoS (S5852)
     return s
 
 
 def _cache_key(*, tenant_id: str, message: str) -> str:
-    h = hashlib.md5(_normalize(message).encode("utf-8")).hexdigest()[:16]
+    # md5 is a cache-key digest only (non-cryptographic) — usedforsecurity=False
+    # marks intent and clears the weak-hash hotspot (S4790).
+    h = hashlib.md5(
+        _normalize(message).encode("utf-8"), usedforsecurity=False,
+    ).hexdigest()[:16]
     # Tenant prefix is structural — a cache entry can never leak across
     # tenants (defensive, even though the classification has no business
     # data — different tenants may have different scope conventions).

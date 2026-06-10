@@ -65,7 +65,7 @@ def test_session_history_starts_empty_for_new_session(client):
 # LLM gateway — they hang offline (no stub), so they are not unit tests. Marked
 # `integration` to run in the integration lane (live LLM / OpenAI routing). Future
 # improvement: stub the gateway and return them to the unit lane. See P0-1 in
-# docs/production-readiness-audit.md.
+# docs/planning/production-readiness-audit.md.
 def test_two_chat_turns_on_one_session_id_persist_both(client):
     session_id = _unique_session_id("sess_e2e_test_durable")
     # Turn 1

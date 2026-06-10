@@ -9,9 +9,9 @@ hermetically. The chat-door closure `_stream_turn` (app.py) applies the IDENTICA
 pattern (log internally + opaque "request_id=…" final_response); it is not unit-
 tested here because exercising it requires a full TestClient streaming lifespan,
 which hangs when several app-building modules share a process (a test-infra issue,
-not a product bug — tracked in docs/risk-register.md). The pattern it uses is the
+not a product bug — tracked in docs/planning/risk-register.md). The pattern it uses is the
 one proven below, and mirrors the Batch-B non-stream handler in test_error_no_leak.
-See docs/change-log.md Batch C-3.
+See docs/history/change-log.md Batch C-3.
 """
 from __future__ import annotations
 

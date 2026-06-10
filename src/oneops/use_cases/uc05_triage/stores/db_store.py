@@ -43,6 +43,11 @@ from oneops.use_cases.uc05_triage.queue import (
 
 _log = get_logger("oneops.use_cases.uc05_triage.stores.db")
 
+# Telemetry literals (single source — sonar S1192).
+_ONEOPS_TENANT_ID = "oneops.tenant_id"
+_UC05_SERVICE_ID = "uc05.service_id"
+_UC05_STORE = "uc05.store"
+
 # Service → (table, primary-key column). UC-5 owns incident + request only.
 _SERVICE_TABLE: dict[str, tuple[str, str]] = {
     "incident": ("itsm.incident", "incident_id"),
@@ -131,9 +136,9 @@ class DbStore:
         if not ticket_id or not tenant_id:
             raise KeyError(ticket_id)
         with span("uc05.store.get_ticket",
-                  **{"oneops.tenant_id": tenant_id,
-                     "uc05.service_id": service_id,
-                     "uc05.ticket_id": ticket_id, "uc05.store": "postgres"}):
+                  **{_ONEOPS_TENANT_ID: tenant_id,
+                     _UC05_SERVICE_ID: service_id,
+                     "uc05.ticket_id": ticket_id, _UC05_STORE: "postgres"}):
             pool = await self._ensure_pool()
             try:
                 async with pool.acquire() as conn:
@@ -156,8 +161,8 @@ class DbStore:
         the JSON store). Server-side closed-status filter bounds the result."""
         table, _pk = self._resolve(service_id)
         with span("uc05.store.list_all",
-                  **{"oneops.tenant_id": tenant_id,
-                     "uc05.service_id": service_id, "uc05.store": "postgres"}):
+                  **{_ONEOPS_TENANT_ID: tenant_id,
+                     _UC05_SERVICE_ID: service_id, _UC05_STORE: "postgres"}):
             pool = await self._ensure_pool()
             try:
                 async with pool.acquire() as conn:
@@ -196,10 +201,10 @@ class DbStore:
         when = now or datetime.now(UTC)
 
         with span("uc05.store.apply",
-                  **{"oneops.tenant_id": tenant_id,
+                  **{_ONEOPS_TENANT_ID: tenant_id,
                      "oneops.user_id": actor_user_id,
-                     "uc05.service_id": service_id,
-                     "uc05.ticket_id": ticket_id, "uc05.store": "postgres"}):
+                     _UC05_SERVICE_ID: service_id,
+                     "uc05.ticket_id": ticket_id, _UC05_STORE: "postgres"}):
             set_parts: list[str] = []
             args: list[Any] = []
             i = 1

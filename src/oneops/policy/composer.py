@@ -212,20 +212,49 @@ def _render_situation(dynamic_context: Mapping[str, Any] | None) -> str:
             continue
         label = key.replace("_", " ")
         if isinstance(value, list):
-            lines.append(f"\n### {label}")
-            for item in value:
-                if isinstance(item, dict):
-                    snippet = ", ".join(f"{k}={v}" for k, v in item.items() if v not in (None, ""))
-                    lines.append(f"- {snippet}")
-                else:
-                    lines.append(f"- {item}")
+            lines.extend(_render_list(label, value))
         elif isinstance(value, dict):
-            snippet = ", ".join(f"{k}={v}" for k, v in value.items() if v not in (None, ""))
+            snippet = _dict_snippet(value)
             if snippet:
                 lines.append(f"- **{label}**: {snippet}")
         else:
             lines.append(f"- **{label}**: {value}")
     return "\n".join(lines) if len(lines) > 1 else ""
+
+
+def _dict_snippet(value: Mapping[str, Any]) -> str:
+    """Inline ``k=v, k=v`` rendering of a dict, skipping None/empty values."""
+    return ", ".join(
+        f"{k}={v}" for k, v in value.items() if v not in (None, ""))
+
+
+def _render_list(label: str, value: list) -> list[str]:
+    """Render a list value as a ``### label`` sub-section of bullet items
+    (dict items become ``k=v`` snippets)."""
+    out = [f"\n### {label}"]
+    for item in value:
+        if isinstance(item, dict):
+            out.append(f"- {_dict_snippet(item)}")
+        else:
+            out.append(f"- {item}")
+    return out
+
+
+def _build_parts(
+    profile_name: str, ctx: dict[str, str], extra_sections: list[str] | None,
+) -> list[str]:
+    """Assemble the profile's policy blocks (substituting the user-context
+    template — `$missing` literals stay if a key is omitted) plus any UC
+    extra_sections, in order."""
+    parts: list[str] = []
+    for block_name in POLICY_PROFILES[profile_name]:
+        body = get_block(block_name)
+        if block_name == "USER_CONTEXT_TEMPLATE":
+            body = Template(body).safe_substitute(ctx)
+        parts.append(body)
+    if extra_sections:
+        parts.extend(extra_sections)
+    return parts
 
 
 def compose(
@@ -271,21 +300,12 @@ def compose(
         if cached is not None:
             return cached
 
-    ctx = {k: "" for k in USER_CONTEXT_KEYS}
+    ctx = dict.fromkeys(USER_CONTEXT_KEYS, "")
     if context:
         for k, v in context.items():
             ctx[k] = "" if v is None else str(v)
 
-    parts: list[str] = []
-    for block_name in POLICY_PROFILES[profile_name]:
-        body = get_block(block_name)
-        if block_name == "USER_CONTEXT_TEMPLATE":
-            # Safe substitution — `$missing` literal stays if a key is omitted.
-            body = Template(body).safe_substitute(ctx)
-        parts.append(body)
-
-    if extra_sections:
-        parts.extend(extra_sections)
+    parts = _build_parts(profile_name, ctx, extra_sections)
 
     situation = _render_situation(dynamic_context)
     if situation:

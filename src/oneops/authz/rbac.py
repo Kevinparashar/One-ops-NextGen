@@ -1,6 +1,6 @@
 """RBAC — coarse role → permission resolution.
 
-The role catalog is data (`registries/role-permission-registry.json`, a
+The role catalog is data (`registries/v2/platform/role-permission-registry.json`, a
 durable asset). `RbacResolver` loads it once and answers `permissions_for(role)`.
 RBAC is the *coarse* gate; ABAC (abac.py) refines per tenant/resource/attribute.
 
@@ -24,7 +24,7 @@ _log = get_logger("oneops.authz.rbac")
 # A role holding this permission satisfies any scope check (super-user).
 ADMIN_PERMISSION = "admin"
 
-_DEFAULT_REGISTRY = "registries/role-permission-registry.json"
+_DEFAULT_REGISTRY = "registries/v2/platform/role-permission-registry.json"
 
 
 class RbacResolver:

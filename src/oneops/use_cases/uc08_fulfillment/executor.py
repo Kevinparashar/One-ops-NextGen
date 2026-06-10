@@ -127,7 +127,21 @@ def _transitively_blocked_task_ids(
     }
     if not failed_tmpl:
         return []
-    poisoned: set[str] = set(failed_tmpl)
+    poisoned = _poisoned_templates(tasks, failed_tmpl)
+    return [
+        (t["task_id"], t["state"], t["version"])
+        for t in tasks
+        if t["state"] in ("pending", "ready") and t["template_task_id"] in poisoned
+    ]
+
+
+def _poisoned_templates(
+    tasks: list[dict[str, Any]], seed: set[str],
+) -> set[str]:
+    """Fixpoint closure: every template task that transitively depends on a
+    failed (seed) template. Iterates to a fixed point so a chain
+    A→B→C poisons C even when only A failed."""
+    poisoned: set[str] = set(seed)
     changed = True
     while changed:
         changed = False
@@ -135,16 +149,10 @@ def _transitively_blocked_task_ids(
             tmpl = t["template_task_id"]
             if tmpl in poisoned:
                 continue
-            for dep in t.get("depends_on") or []:
-                if dep in poisoned:
-                    poisoned.add(tmpl)
-                    changed = True
-                    break
-    return [
-        (t["task_id"], t["state"], t["version"])
-        for t in tasks
-        if t["state"] in ("pending", "ready") and t["template_task_id"] in poisoned
-    ]
+            if any(dep in poisoned for dep in (t.get("depends_on") or [])):
+                poisoned.add(tmpl)
+                changed = True
+    return poisoned
 
 
 def _is_terminal(tasks: list[dict[str, Any]]) -> tuple[bool, str]:
@@ -451,50 +459,10 @@ async def _execute_plan_locked(
             "uc08.ritm_id": ritm_id,
         },
     ):
-        # Initial RITM transition + stuck-task recovery.
-        conn = await cp()
-        try:
-            ritm = await _db.get_ritm(
-                tenant_id=tenant_id, ritm_id=ritm_id, conn=conn,
-            )
-            if ritm is None:
-                raise RequestItemNotFoundError(
-                    f"RITM {ritm_id} not found for tenant {tenant_id}",
-                )
-            if ritm["state"] == "requested":
-                await _db.transition_ritm_state(
-                    tenant_id=tenant_id, ritm_id=ritm_id,
-                    from_state="requested", to_state="in_progress",
-                    version=ritm["version"], conn=conn,
-                )
-
-            recovered = await conn.fetch(
-                """
-                UPDATE itsm.task
-                   SET state='ready',
-                       retry_count = retry_count + 1,
-                       error_message='recovered_from_orphan',
-                       updated_at=now(),
-                       version = version + 1
-                 WHERE tenant_id=$1 AND ritm_id=$2
-                   AND state='in_progress'
-                   AND started_at < now() - ($3 || ' minutes')::interval
-                RETURNING task_id
-                """,
-                tenant_id, ritm_id, str(_STUCK_TASK_RECOVERY_MINUTES),
-            )
-            if recovered:
-                _log.warning("uc08.executor.stuck_tasks_recovered",
-                             ritm_id=ritm_id, count=len(recovered))
-        finally:
-            await conn.close()
+        await _init_ritm_and_recover(
+            tenant_id=tenant_id, ritm_id=ritm_id, connection_provider=cp)
 
         sem = asyncio.Semaphore(_WAVE_CONCURRENCY)
-
-        async def _bounded(coro):
-            async with sem:
-                return await coro
-
         for _wave in range(_MAX_WAVES):
             conn = await cp()
             try:
@@ -504,30 +472,9 @@ async def _execute_plan_locked(
             finally:
                 await conn.close()
 
-            # Cascade-skip: tasks downstream of any failed task get
-            # 'skipped' so _is_terminal can fire.
-            to_skip = _transitively_blocked_task_ids(tasks)
-            if to_skip:
-                conn = await cp()
-                try:
-                    for task_id, cur_state, ver in to_skip:
-                        await _db.transition_task_state(
-                            tenant_id=tenant_id, task_id=task_id,
-                            from_state=cur_state, to_state="skipped",
-                            version=ver,
-                            error_message="upstream_task_failed",
-                            error_code="CASCADE_SKIPPED",
-                            conn=conn,
-                        )
-                finally:
-                    await conn.close()
-                conn = await cp()
-                try:
-                    tasks = await _db.list_tasks_for_ritm(
-                        tenant_id=tenant_id, ritm_id=ritm_id, conn=conn,
-                    )
-                finally:
-                    await conn.close()
+            tasks = await _apply_cascade_skips(
+                tenant_id=tenant_id, ritm_id=ritm_id,
+                connection_provider=cp, tasks=tasks)
 
             terminal, ritm_outcome = _is_terminal(tasks)
             if terminal:
@@ -546,21 +493,9 @@ async def _execute_plan_locked(
                 )
 
             ready_tasks = [t for t in tasks if t["task_id"] in ready_ids]
-            results = await asyncio.gather(*(
-                _bounded(_execute_one_task(
-                    tenant_id=tenant_id, ritm_id=ritm_id,
-                    task=t, adapter=adapter,
-                    connection_provider=cp,
-                ))
-                for t in ready_tasks
-            ), return_exceptions=True)
-
-            for t, res in zip(ready_tasks, results, strict=False):
-                if isinstance(res, Exception):
-                    _log.error("uc08.executor.wave.task_raised",
-                               ritm_id=ritm_id, task_id=t["task_id"],
-                               error=str(res),
-                               error_type=type(res).__name__)
+            await _run_ready_wave(
+                tenant_id=tenant_id, ritm_id=ritm_id, adapter=adapter,
+                connection_provider=cp, ready_tasks=ready_tasks, sem=sem)
 
         return await _finalise(
             tenant_id=tenant_id, ritm_id=ritm_id,
@@ -568,6 +503,115 @@ async def _execute_plan_locked(
             tasks=[], connection_provider=cp, trace_id=trace_id,
             failure_reason=f"max waves ({_MAX_WAVES}) exceeded",
         )
+
+
+async def _init_ritm_and_recover(
+    *, tenant_id: str, ritm_id: str,
+    connection_provider: ConnectionProvider,
+) -> None:
+    """Initial RITM transition (requested → in_progress) plus orphaned-task
+    recovery: tasks stuck `in_progress` past `_STUCK_TASK_RECOVERY_MINUTES`
+    are bumped back to `ready` (retry_count incremented) so a crashed worker
+    can't strand a fulfillment."""
+    conn = await connection_provider()
+    try:
+        ritm = await _db.get_ritm(
+            tenant_id=tenant_id, ritm_id=ritm_id, conn=conn,
+        )
+        if ritm is None:
+            raise RequestItemNotFoundError(
+                f"RITM {ritm_id} not found for tenant {tenant_id}",
+            )
+        if ritm["state"] == "requested":
+            await _db.transition_ritm_state(
+                tenant_id=tenant_id, ritm_id=ritm_id,
+                from_state="requested", to_state="in_progress",
+                version=ritm["version"], conn=conn,
+            )
+
+        recovered = await conn.fetch(
+            """
+            UPDATE itsm.task
+               SET state='ready',
+                   retry_count = retry_count + 1,
+                   error_message='recovered_from_orphan',
+                   updated_at=now(),
+                   version = version + 1
+             WHERE tenant_id=$1 AND ritm_id=$2
+               AND state='in_progress'
+               AND started_at < now() - ($3 || ' minutes')::interval
+            RETURNING task_id
+            """,
+            tenant_id, ritm_id, str(_STUCK_TASK_RECOVERY_MINUTES),
+        )
+        if recovered:
+            _log.warning("uc08.executor.stuck_tasks_recovered",
+                         ritm_id=ritm_id, count=len(recovered))
+    finally:
+        await conn.close()
+
+
+async def _apply_cascade_skips(
+    *, tenant_id: str, ritm_id: str,
+    connection_provider: ConnectionProvider,
+    tasks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Mark tasks downstream of any failed task as `skipped` (so
+    `_is_terminal` can fire) and return the refreshed task list. Returns
+    `tasks` unchanged when nothing needs skipping."""
+    cp = connection_provider
+    to_skip = _transitively_blocked_task_ids(tasks)
+    if not to_skip:
+        return tasks
+    conn = await cp()
+    try:
+        for task_id, cur_state, ver in to_skip:
+            await _db.transition_task_state(
+                tenant_id=tenant_id, task_id=task_id,
+                from_state=cur_state, to_state="skipped",
+                version=ver,
+                error_message="upstream_task_failed",
+                error_code="CASCADE_SKIPPED",
+                conn=conn,
+            )
+    finally:
+        await conn.close()
+    conn = await cp()
+    try:
+        return await _db.list_tasks_for_ritm(
+            tenant_id=tenant_id, ritm_id=ritm_id, conn=conn,
+        )
+    finally:
+        await conn.close()
+
+
+async def _run_ready_wave(
+    *, tenant_id: str, ritm_id: str, adapter: IntegrationAdapter,
+    connection_provider: ConnectionProvider,
+    ready_tasks: list[dict[str, Any]], sem: asyncio.Semaphore,
+) -> None:
+    """Execute one wave of ready tasks concurrently, bounded by `sem`. Task
+    exceptions are logged and swallowed — the wave loop re-reads state on the
+    next pass and decides terminal/partial from the DB, not from this gather."""
+    async def _bounded(coro):
+        async with sem:
+            return await coro
+
+    results = await asyncio.gather(*(
+        _bounded(_execute_one_task(
+            tenant_id=tenant_id, ritm_id=ritm_id,
+            task=t, adapter=adapter,
+            connection_provider=connection_provider,
+        ))
+        for t in ready_tasks
+    ), return_exceptions=True)
+
+    for t, res in zip(ready_tasks, results, strict=False):
+        if isinstance(res, Exception):
+            _log.error("uc08.executor.wave.task_raised",
+                       ritm_id=ritm_id, task_id=t["task_id"],
+                       error=str(res),
+                       error_type=type(res).__name__)
 
 
 # ── Terminal / partial status helpers ──────────────────────────────────────
@@ -753,53 +797,8 @@ async def compensate_ritm(
 
     results: list[dict[str, Any]] = []
     for t in completed:
-        binding = _COMPENSATION_REGISTRY.get(t["tool_id"])
-        if binding is None:
-            results.append({
-                "task_id": t["task_id"], "tool_id": t["tool_id"],
-                "compensation": "skipped_no_op",
-            })
-            continue
-        comp_tool_id, id_kwarg, id_source = binding
-        comp_callable = getattr(adapter, comp_tool_id, None)
-        if comp_callable is None:
-            results.append({
-                "task_id": t["task_id"], "tool_id": t["tool_id"],
-                "compensation": comp_tool_id, "ok": False,
-                "error": f"adapter missing method {comp_tool_id!r}",
-            })
-            continue
-        output = t.get("output_payload") or {}
-        if isinstance(output, dict) and "result" in output:
-            output = output["result"]
-        comp_id = (output or {}).get(id_source)
-        if not comp_id:
-            results.append({
-                "task_id": t["task_id"], "tool_id": t["tool_id"],
-                "compensation": comp_tool_id, "ok": False,
-                "error": f"missing {id_source!r} in output_payload",
-            })
-            continue
-        try:
-            resp = await comp_callable(
-                tenant_id=tenant_id,
-                idempotency_key=f"compensate:{ritm_id}:{t['task_id']}",
-                **{id_kwarg: comp_id},
-            )
-            results.append({
-                "task_id": t["task_id"], "tool_id": t["tool_id"],
-                "compensation": comp_tool_id,
-                "ok": bool(getattr(resp, "success", False)),
-            })
-        except Exception as exc:  # noqa: BLE001
-            _log.error("uc08.compensate.failed",
-                       ritm_id=ritm_id, task_id=t["task_id"],
-                       error=str(exc))
-            results.append({
-                "task_id": t["task_id"], "tool_id": t["tool_id"],
-                "compensation": comp_tool_id, "ok": False,
-                "error": str(exc),
-            })
+        results.append(await _compensate_one_task(
+            adapter=adapter, tenant_id=tenant_id, ritm_id=ritm_id, task=t))
 
     # Saga: 'fulfilled' is a valid source for cancellation. Only
     # 'cancelled' is a no-op terminal.
@@ -823,6 +822,48 @@ async def compensate_ritm(
         "reason": reason,
         "results": results,
     }
+
+
+async def _compensate_one_task(
+    *, adapter: IntegrationAdapter, tenant_id: str, ritm_id: str,
+    task: dict[str, Any],
+) -> dict[str, Any]:
+    """Saga-compensate one completed task. Never raises — returns a result
+    record describing the outcome: `skipped_no_op` when no compensation is
+    registered for the tool, an error record when the adapter lacks the
+    compensating method or the original output is missing the resource
+    handle, else the result of calling the registered compensating action."""
+    t = task
+    base = {"task_id": t["task_id"], "tool_id": t["tool_id"]}
+    binding = _COMPENSATION_REGISTRY.get(t["tool_id"])
+    if binding is None:
+        return {**base, "compensation": "skipped_no_op"}
+    comp_tool_id, id_kwarg, id_source = binding
+    comp_callable = getattr(adapter, comp_tool_id, None)
+    if comp_callable is None:
+        return {**base, "compensation": comp_tool_id, "ok": False,
+                "error": f"adapter missing method {comp_tool_id!r}"}
+    output = t.get("output_payload") or {}
+    if isinstance(output, dict) and "result" in output:
+        output = output["result"]
+    comp_id = (output or {}).get(id_source)
+    if not comp_id:
+        return {**base, "compensation": comp_tool_id, "ok": False,
+                "error": f"missing {id_source!r} in output_payload"}
+    try:
+        resp = await comp_callable(
+            tenant_id=tenant_id,
+            idempotency_key=f"compensate:{ritm_id}:{t['task_id']}",
+            **{id_kwarg: comp_id},
+        )
+        return {**base, "compensation": comp_tool_id,
+                "ok": bool(getattr(resp, "success", False))}
+    except Exception as exc:  # noqa: BLE001
+        _log.error("uc08.compensate.failed",
+                   ritm_id=ritm_id, task_id=t["task_id"],
+                   error=str(exc))
+        return {**base, "compensation": comp_tool_id, "ok": False,
+                "error": str(exc)}
 
 
 __all__ = ["execute_plan", "compensate_ritm"]

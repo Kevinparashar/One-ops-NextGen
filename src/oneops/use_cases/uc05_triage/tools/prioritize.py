@@ -12,7 +12,7 @@ Two completely separate paths by service_id:
   REQUEST — Deterministic (no LLM cost, fully auditable):
     impact  = derive_impact_for_request[catalog_category]  (+ VIP override)
     urgency = derive_urgency_for_request[sla_state]
-    Both maps live in registries/service-schema.json under the request entry.
+    Both maps live in registries/v2/platform/service-schema.json under the request entry.
 
 Then for BOTH paths, priority is a matrix lookup:
     priority = priority_matrix[impact][urgency]
@@ -41,10 +41,13 @@ from oneops.use_cases.uc05_triage.contracts import (
     Urgency,
 )
 
+# Repeated literals → constants (sonar S1192).
+_ON_BUSINESS = "On Business"
+
 # Same path resolution pattern as schema_loader
 _DEFAULT_SCHEMA_PATH = (
     Path(__file__).resolve().parents[5]
-    / "registries" / "service-schema.json"
+    / "registries" / "v2" / "platform" / "service-schema.json"
 )
 
 # Safe middle-tier default when both the LLM and any fallback fail. Picked
@@ -55,7 +58,7 @@ _SAFE_DEFAULT_IMPACT: Impact = "On Users"
 _SAFE_DEFAULT_URGENCY: Urgency = "Medium"
 
 _VALID_IMPACTS: frozenset[str] = frozenset(
-    {"Low", "On Users", "On Department", "On Business"}
+    {"Low", "On Users", "On Department", _ON_BUSINESS}
 )
 _VALID_URGENCIES: frozenset[str] = frozenset(
     {"Low", "Medium", "High", "Urgent"}
@@ -71,7 +74,7 @@ def normalise_priority(
 ) -> str | None:
     """Convert any priority string to the Motadata canonical vocabulary.
 
-    Reads `priority_aliases` from registries/service-schema.json. Behaviour:
+    Reads `priority_aliases` from registries/v2/platform/service-schema.json. Behaviour:
       • None / empty   → None
       • Already canonical (Low/Medium/High/Urgent) → returned unchanged
       • Known alias (P1/P2/P3/P4)                  → mapped to canonical
@@ -210,7 +213,6 @@ async def _prioritize_impl(
     else:
         impact, urgency, basis = _request_path(
             suggested_category=suggested_category,
-            suggested_catalog_item_id=suggested_catalog_item_id,
             vip_flag=vip_flag,
             sla_state=sla_state,
             derive_impact_block=derive_impact_block,
@@ -273,8 +275,8 @@ async def _incident_path(
     urgency: Urgency = raw_urgency if urgency_ok else _SAFE_DEFAULT_URGENCY  # type: ignore[assignment]
 
     # VIP override — if the reporter is VIP, never drop below On Business
-    if vip_flag and impact != "On Business":
-        impact = "On Business"
+    if vip_flag and impact != _ON_BUSINESS:
+        impact = _ON_BUSINESS
 
     basis = {
         "impact": "llm_inferred" if impact_ok else "safe_default_llm_invalid",
@@ -287,55 +289,40 @@ async def _incident_path(
 
 # ── Request path (deterministic maps) ────────────────────────────────────────
 
-def _request_path(
-    *,
-    suggested_category: str | None,
-    suggested_catalog_item_id: str | None,
-    vip_flag: bool,
-    sla_state: str | None,
-    derive_impact_block: dict[str, Any],
-    derive_urgency_block: dict[str, Any],
-) -> tuple[Impact, Urgency, dict[str, str]]:
-    # Impact map by catalog category, with VIP override + sensible default
-    impact_map = (
-        derive_impact_block.get("by_catalog_category") or {}
-        if derive_impact_block
-        else {}
-    )
+def _derive_impact(
+    suggested_category: str | None, vip_flag: bool,
+    block: dict[str, Any],
+) -> tuple[Impact, str]:
+    """Impact by catalog category, with VIP override + safe default. Returns
+    (impact, basis)."""
+    impact_map = (block.get("by_catalog_category") or {}) if block else {}
     impact_default = (
-        derive_impact_block.get("default_when_unmatched") or _SAFE_DEFAULT_IMPACT
-        if derive_impact_block
-        else _SAFE_DEFAULT_IMPACT
-    )
+        block.get("default_when_unmatched") or _SAFE_DEFAULT_IMPACT
+    ) if block else _SAFE_DEFAULT_IMPACT
     vip_override = (
-        derive_impact_block.get("vip_user_override") or "On Business"
-        if derive_impact_block
-        else "On Business"
-    )
+        block.get("vip_user_override") or _ON_BUSINESS
+    ) if block else _ON_BUSINESS
 
     cat_key = (suggested_category or "").lower().strip()
-    raw_impact = impact_map.get(cat_key, impact_default)
-    if vip_flag:
-        raw_impact = vip_override
+    raw_impact = vip_override if vip_flag else impact_map.get(cat_key, impact_default)
     impact: Impact = raw_impact if raw_impact in _VALID_IMPACTS else _SAFE_DEFAULT_IMPACT  # type: ignore[assignment]
+    if vip_flag:
+        impact_basis = "vip_override"
+    elif cat_key in impact_map:
+        impact_basis = f"catalog_category[{cat_key}]"
+    else:
+        impact_basis = "default_when_unmatched"
+    return impact, impact_basis
 
-    impact_basis = (
-        "vip_override" if vip_flag
-        else f"catalog_category[{cat_key}]" if cat_key in impact_map
-        else "default_when_unmatched"
-    )
 
-    # Urgency map by SLA state, with default
-    urgency_map = (
-        derive_urgency_block.get("by_sla_state") or {}
-        if derive_urgency_block
-        else {}
-    )
+def _derive_urgency(
+    sla_state: str | None, block: dict[str, Any],
+) -> tuple[Urgency, str]:
+    """Urgency by SLA state, with safe default. Returns (urgency, basis)."""
+    urgency_map = (block.get("by_sla_state") or {}) if block else {}
     urgency_default = (
-        derive_urgency_block.get("default_when_no_sla") or _SAFE_DEFAULT_URGENCY
-        if derive_urgency_block
-        else _SAFE_DEFAULT_URGENCY
-    )
+        block.get("default_when_no_sla") or _SAFE_DEFAULT_URGENCY
+    ) if block else _SAFE_DEFAULT_URGENCY
     sla_key = (sla_state or "").strip()
     raw_urgency = urgency_map.get(sla_key, urgency_default)
     urgency: Urgency = raw_urgency if raw_urgency in _VALID_URGENCIES else _SAFE_DEFAULT_URGENCY  # type: ignore[assignment]
@@ -343,7 +330,20 @@ def _request_path(
         f"sla_state[{sla_key}]" if sla_key in urgency_map
         else "default_when_no_sla"
     )
+    return urgency, urgency_basis
 
+
+def _request_path(
+    *,
+    suggested_category: str | None,
+    vip_flag: bool,
+    sla_state: str | None,
+    derive_impact_block: dict[str, Any],
+    derive_urgency_block: dict[str, Any],
+) -> tuple[Impact, Urgency, dict[str, str]]:
+    impact, impact_basis = _derive_impact(
+        suggested_category, vip_flag, derive_impact_block)
+    urgency, urgency_basis = _derive_urgency(sla_state, derive_urgency_block)
     return impact, urgency, {"impact": impact_basis, "urgency": urgency_basis}
 
 

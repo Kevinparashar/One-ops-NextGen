@@ -27,6 +27,7 @@ Edge cases handled at the boundary:
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from typing import Any, NoReturn
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -46,9 +47,15 @@ from oneops.use_cases.uc02_similar_tickets.id_resolver import (
     resolve as resolve_id,
 )
 
+# Telemetry/HTTP literals → constants (sonar S1192).
+_AI_AGENT_RUNS_TOTAL = "ai.agent.runs.total"
+
 _log = get_logger("oneops.api.uc02")
 
-router = APIRouter(prefix="/api/uc02", tags=["uc02-similar-tickets"])
+router = APIRouter(
+    prefix="/api/uc02", tags=["uc02-similar-tickets"],
+    responses={401: {"description": "Missing or invalid identity headers"},
+               403: {"description": "Role not permitted for this endpoint"}})
 
 # Same role set as UC-5 — service-desk-grade and above can run similarity.
 # end_user can call too but the SQL RBAC predicate filters their results
@@ -159,17 +166,82 @@ def _cache_key(
     return "uc02:sim:" + hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
+# ── route helpers ──────────────────────────────────────────────────────────
+
+
+async def _cache_get_response(
+    *, ckey: str, tenant_id: str, service_id: ServiceId, canonical_id: str,
+) -> dict[str, Any] | None:
+    """Edge-cache lookup. Returns the cached response dict (with `cached`
+    stamped True) on a hit, or None on miss / disabled cache / lookup error
+    (a cache failure must never fail the request)."""
+    if _cache_get is None:
+        return None
+    try:
+        cached = await _cache_get(tenant_id=tenant_id, key=ckey)
+    except Exception:                                      # noqa: BLE001
+        return None
+    if cached is None:
+        return None
+    _metric_inc("ai.uc02.cache.hits.total", 1,
+                tenant_id=tenant_id, service_id=service_id)
+    _log.info("oneops.api.uc02.cache_hit",
+              tenant_id=tenant_id, ticket_id=canonical_id)
+    cached["cached"] = True
+    return cached
+
+
+async def _cache_put_response(
+    *, ckey: str, tenant_id: str, service_id: ServiceId,
+    resp: SimilarTicketsResponse,
+) -> None:
+    """Write a successful response to the edge cache. No-op when the cache is
+    disabled; a write failure is swallowed (never fatal)."""
+    if _cache_put is None:
+        return
+    try:
+        await _cache_put(
+            tenant_id=tenant_id, key=ckey,
+            value=resp.model_dump(mode="json"),
+        )
+        _metric_inc("ai.uc02.cache.writes.total", 1,
+                    tenant_id=tenant_id, service_id=service_id)
+    except Exception:                                      # noqa: BLE001
+        pass  # cache write failure is never fatal
+
+
+def _raise_uc02_runner_error(
+    e: RuntimeError, *, tenant_id: str, service_id: ServiceId,
+    canonical_id: str,
+) -> NoReturn:
+    """Map a runner RuntimeError to the spec'd HTTP status: 503 for a pending
+    embedding refresh, 404 for a missing ticket (same message for missing vs
+    auth, to avoid existence leaks — UC-2.4/2.7), else 500."""
+    msg = str(e)
+    if "no symptom_anchor embedding" in msg:
+        _metric_inc("ai.uc02.anchor_pending.total", 1,
+                    tenant_id=tenant_id, service_id=service_id)
+        raise HTTPException(
+            503, detail="embedding refresh pending for this ticket — "
+                        "please retry in a few seconds")
+    if "not found" in msg.lower():
+        raise HTTPException(404, detail="ticket not found")
+    _log.warning("oneops.api.uc02.runner_error",
+                 tenant_id=tenant_id, ticket_id=canonical_id, error=msg)
+    raise HTTPException(500, detail="similar tickets lookup failed")
+
+
 # ── route ────────────────────────────────────────────────────────────────────
 
 
-@router.post("/similar-tickets", response_model=SimilarTicketsResponse)
+@router.post("/similar-tickets", responses={400: {"description": "Invalid request"}, 404: {"description": "Not found"}, 500: {"description": "Internal server error"}, 503: {"description": "Service unavailable"}})
 async def similar_tickets(
     payload: SimilarTicketsRouteRequest,
     request: Request,
 ) -> SimilarTicketsResponse:
     """Find tickets similar to `payload.ticket_id` for the calling tenant.
 
-    Spec: ai-service-use-cases.md §UC-2.
+    Spec: docs/product/ai-service-use-cases.md §UC-2.
     """
     tenant_id, user_id, role = _principal(request)
     _require_role(role)
@@ -190,7 +262,7 @@ async def similar_tickets(
     # `uc02_similar_tickets`). Previously this emitted
     # the legacy `similar_tickets_agent` label which split the dashboard
     # into two phantom rows. Aligned 2026-05-30.
-    _metric_inc("ai.agent.runs.total", 1,
+    _metric_inc(_AI_AGENT_RUNS_TOTAL, 1,
                 agent_id="uc02_similar_tickets",
                 tenant_id=tenant_id, service_id=service_id,
                 status="started")
@@ -210,22 +282,15 @@ async def similar_tickets(
             tenant_id=tenant_id, user_id=user_id, role=role,
             body=payload, canonical_id=canonical_id, service_id=service_id,
         )
-        if _cache_get is not None:
-            try:
-                cached = await _cache_get(tenant_id=tenant_id, key=ckey)
-            except Exception:                                      # noqa: BLE001
-                cached = None
-            if cached is not None:
-                _metric_inc("ai.uc02.cache.hits.total", 1,
-                            tenant_id=tenant_id, service_id=service_id)
-                _log.info("oneops.api.uc02.cache_hit",
-                          tenant_id=tenant_id, ticket_id=canonical_id)
-                cached["cached"] = True
-                _metric_inc("ai.agent.runs.total", 1,
-                            agent_id="uc02_similar_tickets",
-                            tenant_id=tenant_id, service_id=service_id,
-                            status="success")
-                return SimilarTicketsResponse(**cached)
+        cached = await _cache_get_response(
+            ckey=ckey, tenant_id=tenant_id, service_id=service_id,
+            canonical_id=canonical_id)
+        if cached is not None:
+            _metric_inc(_AI_AGENT_RUNS_TOTAL, 1,
+                        agent_id="uc02_similar_tickets",
+                        tenant_id=tenant_id, service_id=service_id,
+                        status="success")
+            return SimilarTicketsResponse(**cached)
 
         if _similar_runner is None:
             raise HTTPException(
@@ -248,22 +313,9 @@ async def similar_tickets(
                 diagnosis_confirm=payload.diagnosis_confirm,
             )
         except RuntimeError as e:
-            msg = str(e)
-            if "no symptom_anchor embedding" in msg:
-                # Ticket is real but its anchor row is not yet computed.
-                # 503 says "try again shortly" — refresh worker will catch up.
-                _metric_inc("ai.uc02.anchor_pending.total", 1,
-                            tenant_id=tenant_id, service_id=service_id)
-                raise HTTPException(
-                    503, detail="embedding refresh pending for this ticket — "
-                                "please retry in a few seconds")
-            if "not found" in msg.lower():
-                # Distinguishes a genuinely missing ticket from auth — but the
-                # message is the same to avoid existence leaks (UC-2.4/2.7).
-                raise HTTPException(404, detail="ticket not found")
-            _log.warning("oneops.api.uc02.runner_error",
-                         tenant_id=tenant_id, ticket_id=canonical_id, error=msg)
-            raise HTTPException(500, detail="similar tickets lookup failed")
+            _raise_uc02_runner_error(
+                e, tenant_id=tenant_id, service_id=service_id,
+                canonical_id=canonical_id)
         except Exception:                                          # noqa: BLE001
             _log.exception("oneops.api.uc02.unexpected",
                            tenant_id=tenant_id, ticket_id=canonical_id)
@@ -271,19 +323,10 @@ async def similar_tickets(
 
         _metric_inc("ai.uc02.cache.misses.total", 1,
                     tenant_id=tenant_id, service_id=service_id)
-        # ── Cache write (success path only) ──────────────────────────────────
-        if _cache_put is not None:
-            try:
-                await _cache_put(
-                    tenant_id=tenant_id, key=ckey,
-                    value=resp.model_dump(mode="json"),
-                )
-                _metric_inc("ai.uc02.cache.writes.total", 1,
-                            tenant_id=tenant_id, service_id=service_id)
-            except Exception:                                      # noqa: BLE001
-                pass  # cache write failure is never fatal
+        await _cache_put_response(
+            ckey=ckey, tenant_id=tenant_id, service_id=service_id, resp=resp)
 
-        _metric_inc("ai.agent.runs.total", 1,
+        _metric_inc(_AI_AGENT_RUNS_TOTAL, 1,
                     agent_id="uc02_similar_tickets",
                     tenant_id=tenant_id, service_id=service_id,
                     status="success")

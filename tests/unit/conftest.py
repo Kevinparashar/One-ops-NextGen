@@ -1,6 +1,6 @@
 """Unit-suite test isolation + marker policy.
 
-Two cross-cutting fixes (see docs/production-readiness-audit.md P0-1):
+Two cross-cutting fixes (see docs/planning/production-readiness-audit.md P0-1):
 
 1. **Marker policy** — auto-mark every test under ``tests/unit/`` as ``unit``
    unless it explicitly opts into a heavier lane (``integration`` / ``slow`` /
@@ -31,6 +31,20 @@ def pytest_collection_modifyitems(config, items):  # noqa: ARG001
     for item in items:
         if _HEAVIER_LANES.isdisjoint(item.keywords):
             item.add_marker(pytest.mark.unit)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_agent_transport(monkeypatch):
+    """Force in-process agent transport for every unit test.
+
+    `tests/conftest.py` loads `.env` (which sets `AGENT_TRANSPORT=nats`), so an
+    app built via `build_app()` in a unit test would start NATS agent workers
+    whose lifespan teardown can deadlock the test — most visibly when a turn is
+    forced to raise (the worker leaves a NATS connection a second app build
+    can't drain). No unit test needs real NATS; integration tests live in a
+    separate dir without this fixture and keep `nats`. Test isolation only —
+    no product behaviour change."""
+    monkeypatch.setenv("AGENT_TRANSPORT", "local")
 
 
 @pytest.fixture(autouse=True)

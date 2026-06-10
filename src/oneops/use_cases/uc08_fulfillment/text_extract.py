@@ -182,6 +182,48 @@ def _clean_description(user_text: str) -> str:
     return cleaned
 
 
+def _truncate_for_llm(text: str) -> tuple[str, bool]:
+    """Truncate (at a sentence boundary near the limit when possible) only what
+    we send to the LLM — the full text stays the fallback description so audit
+    fidelity is never lost. Returns (llm_input, truncated)."""
+    if len(text) <= MAX_LLM_INPUT_CHARS:
+        return text, False
+    truncated_at = MAX_LLM_INPUT_CHARS
+    for marker in (". ", "? ", "! "):
+        idx = text.rfind(marker, 0, MAX_LLM_INPUT_CHARS)
+        if idx > MAX_LLM_INPUT_CHARS - 400:
+            truncated_at = idx + 1
+            break
+    return text[:truncated_at] + " […truncated for LLM]", True
+
+
+def _extract_title(parsed: dict[str, Any], raw_text: str) -> tuple[str, str]:
+    """Closed validation of the LLM title → (title, title_source). Falls back
+    to a truncation-derived title; strips common chat lead-in filler."""
+    llm_title = parsed.get("title")
+    if not isinstance(llm_title, str) or not llm_title.strip():
+        return _build_fallback_title(raw_text), "fallback_truncation"
+    t = llm_title.strip()
+    if len(t) > MAX_TITLE_CHARS:
+        t = t[:MAX_TITLE_CHARS]
+    for filler in ("Hi team, ", "Hello team, ", "Hi, "):
+        if t.lower().startswith(filler.lower()):
+            t = t[len(filler):].strip()
+    return t, "llm_extract"
+
+
+def _extract_description(parsed: dict[str, Any], raw_text: str) -> tuple[str, str]:
+    """Closed validation of the LLM description → (description, source). Falls
+    back to the cleaned verbatim user text; caps at MAX_DESCRIPTION_CHARS."""
+    llm_desc = parsed.get("description")
+    if not isinstance(llm_desc, str) or not llm_desc.strip():
+        return _clean_description(raw_text), "fallback_verbatim"
+    description = llm_desc.strip()
+    if len(description) > MAX_DESCRIPTION_CHARS:
+        description = description[:MAX_DESCRIPTION_CHARS - 3] + "..."
+    return description, "llm_preserved"
+
+
 async def extract_title_and_description(
     *,
     user_text: str,
@@ -212,18 +254,7 @@ async def extract_title_and_description(
 
     # Pre-truncate ONLY what we send to the LLM. The full text remains
     # the fallback description so we never lose audit fidelity.
-    llm_input = raw_text
-    truncated = False
-    if len(llm_input) > MAX_LLM_INPUT_CHARS:
-        # Cut at sentence boundary near the limit when possible.
-        truncated_at = MAX_LLM_INPUT_CHARS
-        for marker in (". ", "? ", "! "):
-            idx = llm_input.rfind(marker, 0, MAX_LLM_INPUT_CHARS)
-            if idx > MAX_LLM_INPUT_CHARS - 400:
-                truncated_at = idx + 1
-                break
-        llm_input = llm_input[:truncated_at] + " […truncated for LLM]"
-        truncated = True
+    llm_input, truncated = _truncate_for_llm(raw_text)
 
     sys_prompt = compose(
         Profile.FEATURE_AGENT_JSON,
@@ -290,32 +321,9 @@ async def extract_title_and_description(
                 raw_response=raw,
             )
 
-        # Title — closed validation
-        llm_title = parsed.get("title")
-        if not isinstance(llm_title, str) or not llm_title.strip():
-            title = _build_fallback_title(raw_text)
-            title_source = "fallback_truncation"
-        else:
-            t = llm_title.strip()
-            if len(t) > MAX_TITLE_CHARS:
-                t = t[:MAX_TITLE_CHARS]
-            # Strip common chat-lead-in filler the LLM sometimes leaves.
-            for filler in ("Hi team, ", "Hello team, ", "Hi, "):
-                if t.lower().startswith(filler.lower()):
-                    t = t[len(filler):].strip()
-            title = t
-            title_source = "llm_extract"
-
-        # Description — closed validation
-        llm_desc = parsed.get("description")
-        if not isinstance(llm_desc, str) or not llm_desc.strip():
-            description = _clean_description(raw_text)
-            description_source = "fallback_verbatim"
-        else:
-            description = llm_desc.strip()
-            if len(description) > MAX_DESCRIPTION_CHARS:
-                description = description[:MAX_DESCRIPTION_CHARS - 3] + "..."
-            description_source = "llm_preserved"
+        # Title + description — closed validation (LLM value or fallback)
+        title, title_source = _extract_title(parsed, raw_text)
+        description, description_source = _extract_description(parsed, raw_text)
 
         reasoning = (parsed.get("reasoning") or "")[:280]
 

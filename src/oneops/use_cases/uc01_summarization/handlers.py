@@ -1,4 +1,4 @@
-"""UC-1 tool handlers — built to the Component Spec (docs/COMPONENT_SPEC.md).
+"""UC-1 tool handlers — built to the Component Spec (docs/architecture/COMPONENT_SPEC.md).
 
 `get_ticket_details` returns the field snapshot of one ITSM work record.
 

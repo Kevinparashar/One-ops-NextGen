@@ -1,0 +1,28 @@
+{
+  "_meta": {
+    "purpose": "Counter-example regression set — queries that LOOK like one agent but belong to another. Each locks a known routing confusion so a future card/prompt change can't silently re-break it. Mined from scripts/retrieval_eval.py hard-negatives (2026-06-07) where the embedding ranked the wrong agent first; the reranker must correct them.",
+    "schema": "query | correct_route (str|list) | must_not_route (agents this query must NOT land on) | confusion (label) | channel (chat|button)",
+    "source": "retrieval_eval --dump /tmp/hard_negatives.json",
+    "created": "2026-06-07",
+    "use": "scripts/counter_example_eval.py — offline retrieve+rerank (production config, abstain 0.32). FAIL if any must_not_route agent is chosen."
+  },
+  "records": [
+    {"query": "summarise incident INC0001021", "correct_route": "uc01_summarization", "must_not_route": ["uc02_similar_tickets"], "confusion": "summarize_vs_similar", "channel": "chat"},
+    {"query": "what's the current state of CHG0004021", "correct_route": "uc01_summarization", "must_not_route": ["uc02_similar_tickets"], "confusion": "summarize_vs_similar", "channel": "chat"},
+    {"query": "fill me in on INC0001021", "correct_route": "uc01_summarization", "must_not_route": ["uc02_similar_tickets"], "confusion": "summarize_vs_similar", "channel": "chat"},
+
+    {"query": "show me duplicates of INC0001001", "correct_route": "uc02_similar_tickets", "must_not_route": ["uc01_summarization"], "confusion": "similar_vs_summarize", "channel": "chat"},
+    {"query": "is INC0001001 a duplicate of anything", "correct_route": "uc02_similar_tickets", "must_not_route": ["uc01_summarization"], "confusion": "similar_vs_summarize", "channel": "chat"},
+
+    {"query": "how should I resolve INC0001001", "correct_route": "uc03_kb_lookup", "must_not_route": ["uc01_summarization", "uc02_similar_tickets", "uc05_triage", "uc08_fulfillment"], "confusion": "howto_with_id_vs_record", "channel": "chat"},
+    {"query": "how to fix the problem reported in INC0001001", "correct_route": "uc03_kb_lookup", "must_not_route": ["uc01_summarization", "uc02_similar_tickets", "uc05_triage"], "confusion": "howto_with_id_vs_record", "channel": "chat"},
+    {"query": "is there a fix documented for INC0001021", "correct_route": "uc03_kb_lookup", "must_not_route": ["uc02_similar_tickets"], "confusion": "howto_with_id_vs_record", "channel": "chat"},
+    {"query": "find me a solution for the issue in INC0001001", "correct_route": "uc03_kb_lookup", "must_not_route": ["uc01_summarization", "uc02_similar_tickets", "uc05_triage"], "confusion": "howto_with_id_vs_record", "channel": "chat"},
+    {"query": "knowledge article about reporting phishing", "correct_route": "uc03_kb_lookup", "must_not_route": ["uc02_similar_tickets"], "confusion": "kb_topic_vs_similar", "channel": "chat"},
+    {"query": "any information related to INC0001001", "correct_route": "uc03_kb_lookup", "must_not_route": ["uc05_triage", "uc08_fulfillment"], "confusion": "info_available_for_vs_record_ambiguous", "channel": "chat"},
+
+    {"query": "where should ticket INC0001001 go", "correct_route": "uc05_triage", "must_not_route": ["uc01_summarization", "uc02_similar_tickets"], "confusion": "triage_vs_record", "channel": "button"},
+    {"query": "which team should handle INC0001021", "correct_route": "uc05_triage", "must_not_route": ["uc02_similar_tickets"], "confusion": "triage_vs_similar", "channel": "button"},
+    {"query": "classify and route INC0001001", "correct_route": "uc05_triage", "must_not_route": ["uc01_summarization"], "confusion": "triage_vs_record", "channel": "button"}
+  ]
+}

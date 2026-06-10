@@ -1,4 +1,4 @@
-"""Router — the routing funnel (ARCHITECTURE.md §3).
+"""Router — the routing funnel (docs/architecture/ARCHITECTURE.md §3).
 
     user message
       │  stage 0a  decompose into sub-queries          (LLM, or passthrough)
@@ -29,6 +29,8 @@ that did not route are reported in `RouteResult.unrouted`.
 """
 from __future__ import annotations
 
+import os
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -36,6 +38,7 @@ from oneops.authz.descriptors import from_agent_record
 from oneops.authz.models import Principal
 from oneops.authz.service import AuthzService
 from oneops.observability import get_logger, get_tracer, set_langfuse_io
+from oneops.observability.metrics import increment
 from oneops.registry.service import RegistryService
 from oneops.router.conditions import evaluate, survives_filter
 from oneops.router.decompose import Decomposer, PassthroughDecomposer
@@ -43,13 +46,62 @@ from oneops.router.disambiguation import Disambiguator
 from oneops.router.glossary import Glossary
 from oneops.router.plan import RouteResult, SubQueryRoute, assemble_plan
 from oneops.router.retrieval import CandidateRetriever
-from oneops.router.rewrite import ConversationTurn, PassthroughRewriter, Rewriter
+from oneops.router.rewrite import (
+    ConversationTurn,
+    PassthroughRewriter,
+    Rewriter,
+    is_followup_reference,
+)
 from oneops.router.signals import RequestSignals, Ternary, with_intents
 
 _log = get_logger("oneops.router")
 _tracer = get_tracer("oneops.router")
 
 DEFAULT_TOP_K = 10
+
+
+def parallel_embed_enabled() -> bool:
+    """Latency flag (default OFF). When ON, the router pre-warms the query
+    embedding CONCURRENTLY with the decompose/split LLM call — both read only
+    the raw message, so the embed round-trip overlaps the split instead of
+    running sequentially after it (Stage-2 retrieve then hits the warm
+    embedding cache). Structure- and quality-preserving: NO stage is removed,
+    NO prompt changes, NO routing decision changes — only the scheduling.
+    Set ONEOPS_ROUTER_PARALLEL_EMBED to 1/true/yes/on to enable."""
+    return os.getenv("ONEOPS_ROUTER_PARALLEL_EMBED", "0").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def confidence_skip_enabled() -> bool:
+    """Latency flag (default OFF). When ON, Stage 3.6 skips the LLM
+    disambiguator when the top surviving candidate's retrieval score
+    OVERWHELMINGLY dominates the runner-up AND it is a definite PASS — the
+    choice is then unambiguous, so the ~1.5s LLM call is wasted.
+
+    Quality guard: the hard semantic cases (axis A "what do we know about X"
+    vs axis B "what info available for X") retrieve uc01 AND uc03 with CLOSE
+    scores → small margin → they NEVER qualify for the skip and still go to
+    the LLM. Only a definite PASS top (activation already admits it
+    deterministically, no intent classification needed) with a large margin
+    skips — exactly the cases the LLM would agree on. Conservative by default.
+    Set ONEOPS_ROUTER_CONFIDENCE_SKIP to 1/true/yes/on to enable."""
+    return os.getenv("ONEOPS_ROUTER_CONFIDENCE_SKIP", "0").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def _confidence_skip_thresholds() -> tuple[float, float]:
+    """(min_top_score, min_margin) for the Stage 3.6 skip — env-tunable so the
+    band can be calibrated against real agent-retrieval scores without a code
+    change. Conservative defaults: only a strong, clearly-dominant top skips."""
+    try:
+        score = float(os.getenv("ONEOPS_ROUTER_CONFIDENCE_SKIP_MIN_SCORE", "0.62"))
+    except ValueError:
+        score = 0.62
+    try:
+        margin = float(os.getenv("ONEOPS_ROUTER_CONFIDENCE_SKIP_MIN_MARGIN", "0.15"))
+    except ValueError:
+        margin = 0.15
+    return score, margin
 
 
 @dataclass
@@ -76,7 +128,9 @@ class Router:
         *,
         decomposer: Decomposer | None = None,
         rewriter: Rewriter | None = None,
+        unified_splitter: Any | None = None,
         top_k: int = DEFAULT_TOP_K,
+        route_cache: Any | None = None,
     ) -> None:
         self._registry = registry
         self._glossary = glossary
@@ -87,7 +141,16 @@ class Router:
         # single self-contained sub-query, the common case, needing no LLM.
         self._decomposer = decomposer or PassthroughDecomposer()
         self._rewriter = rewriter or PassthroughRewriter()
+        # Latency: when an LlmUnifiedSplitter is injected (flag on), ONE call
+        # does reference-resolution + splitting, replacing decompose + the
+        # speculative rewrite. None ⇒ the two-call path (default, unchanged).
+        self._unified_splitter = unified_splitter
         self._top_k = top_k
+        # Route-decision cache (router/route_cache.py). None ⇒ disabled (no
+        # behaviour change). When set, a hit returns the funnel verdict without
+        # running decompose+rewrite+disambiguate; the plan is rebuilt fresh via
+        # assemble_plan and still EXECUTED fresh downstream, so data is current.
+        self._route_cache = route_cache
 
     async def route(
         self,
@@ -111,6 +174,33 @@ class Router:
             if not query_text or not query_text.strip():
                 return RouteResult.no_match("empty query", ["stage0: empty query"])
 
+            # ── Route-decision cache lookup (before any LLM) ─────────────
+            # The route is the most cross-session-stable thing in the system.
+            # On a hit we skip decompose+rewrite+disambiguate (3 LLM calls)
+            # and rebuild the plan deterministically — execution still runs
+            # fresh downstream, so the answer is current. Key = normalized
+            # query + routing signals + focus + domain + role + conversation
+            # digest + registry fingerprint (every input the funnel reads).
+            cache_key = self._route_cache_key(query_text, principal, signals,
+                                              history, request_ctx)
+            cached = await self._route_cache_lookup(cache_key, principal, span)
+            if cached is not None:
+                return cached
+
+            # ── Speculative embed pre-warm (flag-gated) ──────────────────
+            # The Stage-2 retrieve embed and the decompose/split LLM call both
+            # read ONLY the raw message — independent work that runs
+            # sequentially today. Fire the embed NOW so it overlaps the split;
+            # retrieve() then hits the warm embedding cache. Pure scheduling
+            # change — same stages, same retrieval, same routing decisions.
+            import asyncio as _asyncio
+            prewarm_task = None
+            if (parallel_embed_enabled()
+                    and hasattr(self._retriever, "prewarm_embed")):
+                prewarm_task = _asyncio.create_task(
+                    self._retriever.prewarm_embed(
+                        query_text, tenant_id=principal.tenant_id))
+
             # ── Stage 0a + 0b — speculative parallel execution ───────────
             # Decompose and rewrite are both LLM calls (~1.2-1.5s each).
             # Single-sub-query messages (the overwhelming common case) get
@@ -121,30 +211,56 @@ class Router:
             # rewrite (saves ~1.3s). If it returns multi-sub-query or a
             # mutated single sub-query, we fall back to per-sub-query
             # rewrites and discard the speculative result.
-            import asyncio as _asyncio
-            decompose_task = _asyncio.create_task(
-                self._decomposer.decompose(query_text, request_ctx=request_ctx))
-            spec_rewrite_task = _asyncio.create_task(
-                self._rewriter.rewrite(
-                    query_text, history=history, request_ctx=request_ctx))
-            subqueries = await decompose_task
-            span.set_attribute("router.subquery_count", len(subqueries))
-            diag.append(f"stage0a: decomposed into {len(subqueries)} sub-query(ies)")
-            spec_usable = (
-                len(subqueries) == 1
-                and subqueries[0].text.strip() == (query_text or "").strip()
-            )
-            if not spec_usable:
-                spec_rewrite_task.cancel()
-                try:
-                    await spec_rewrite_task
-                except _asyncio.CancelledError:
-                    pass
-                except Exception:                                # noqa: BLE001
-                    pass
-                span.set_attribute("router.spec_rewrite_used", False)
+            if self._unified_splitter is not None:
+                # ── Merged path (one LLM call) ───────────────────────────
+                # Reference-resolution + splitting in ONE round-trip. The
+                # returned sub-queries are already self-contained, so the
+                # per-sub-query rewrite below becomes a passthrough (no second
+                # LLM call, no wasted speculative rewrite). RCA 2026-06-09.
+                subqueries = await self._unified_splitter.split(
+                    query_text, history=history, request_ctx=request_ctx)
+                span.set_attribute("router.subquery_count", len(subqueries))
+                span.set_attribute("router.unified_split", True)
+                diag.append(
+                    f"stage0: unified-split into {len(subqueries)} "
+                    f"sub-query(ies) (refs resolved in one call)")
+                spec_rewrite_task = None
+                spec_usable = False
             else:
-                span.set_attribute("router.spec_rewrite_used", True)
+                # ── Two-call path (default) — speculative parallel ───────
+                # Decompose and rewrite are both LLM calls (~1.2-1.5s each).
+                # Single-sub-query messages (the common case) get rewriter
+                # input identical to decompose's only output — so we
+                # speculatively kick off rewrite on the WHOLE message in
+                # parallel with decompose, using it when decompose returns 1
+                # unmutated sub-query, else discarding it for per-sub rewrites.
+                decompose_task = _asyncio.create_task(
+                    self._decomposer.decompose(
+                        query_text, request_ctx=request_ctx))
+                spec_rewrite_task = _asyncio.create_task(
+                    self._rewriter.rewrite(
+                        query_text, history=history, request_ctx=request_ctx))
+                subqueries = await decompose_task
+                span.set_attribute("router.subquery_count", len(subqueries))
+                diag.append(
+                    f"stage0a: decomposed into {len(subqueries)} sub-query(ies)")
+                spec_usable = (
+                    len(subqueries) == 1
+                    and subqueries[0].text.strip() == (query_text or "").strip()
+                )
+                await self._cancel_speculative(
+                    spec_rewrite_task, spec_usable, span)
+
+            # Join the speculative embed pre-warm (ran concurrently with the
+            # split above). The embedding cache is now warm, so the per-
+            # sub-query Stage-2 retrieve embed is a cache hit instead of a
+            # fresh round-trip. Awaiting here costs ~max(split, embed) total
+            # instead of split+embed sequential — it never adds latency vs the
+            # flag-off path (the task started before the split). Best-effort.
+            if prewarm_task is not None:
+                with suppress(Exception):
+                    await prewarm_task
+                span.set_attribute("router.parallel_embed", True)
 
             routes: list[SubQueryRoute] = []
             unrouted: list[str] = []
@@ -152,100 +268,11 @@ class Router:
             any_policy_denied = False
 
             for sq in subqueries:
-                # ── Stage 0b — rewrite (resolve references) ──────────────
-                if spec_usable:
-                    rewrite = await spec_rewrite_task
-                else:
-                    rewrite = await self._rewriter.rewrite(
-                        sq.text, history=history, request_ctx=request_ctx)
-                # Extract entities from THIS sub-query's text (post-rewrite
-                # if applicable) and use that scoped list for routing +
-                # binding. Without scoping, a message like "summarize
-                # INC0001001 and INC0001002" produces N sub-queries that
-                # all bind to the FIRST whole-message entity. Each
-                # sub-query must see only the entities it itself names —
-                # otherwise N plan steps run with N copies of the same
-                # ticket_id.
-                from dataclasses import replace as _replace
-
-                from oneops.router.entity_id import EntityIdNormalizer
-                normalizer = EntityIdNormalizer.from_registry_file()
-                sq_text_for_extract = rewrite.text if rewrite.changed else sq.text
-                sq_extracted = normalizer.extract(sq_text_for_extract)
-                if sq_extracted.entities:
-                    sq_entities = tuple(
-                        (e.entity_id, e.service_id)
-                        for e in sq_extracted.entities)
-                    sq_signals = _replace(
-                        signals, present_entities=sq_entities)
-                    diag.append(
-                        f"[{sq.id}] stage0b: scoped entities → "
-                        f"{[e.entity_id for e in sq_extracted.entities]}")
-                else:
-                    # No entity in THIS sub-query text. STRUCTURAL FIX
-                    # (Stage 2.5, 2026-05-28): the LangGraph state's
-                    # focus is the authoritative active subject. When
-                    # focus is set AND the sub-query is a focus-bound
-                    # follow-up (no new entity in text, no explicit
-                    # KB doc-noun), use the state focus as
-                    # present_entities. This bypasses the rewriter and
-                    # disambiguator's probabilistic choices for the
-                    # common follow-up case — Stage 3 admits the focus's
-                    # owner agent on a hard structural signal.
-                    #
-                    # Replaces three earlier heuristic layers:
-                    #   • rewriter focus injection (LLM, drift-prone)
-                    #   • disambiguator focus block (prompt addition)
-                    #   • linked-record-only backstop (too narrow)
-                    #
-                    # When focus is empty (fresh session / no prior
-                    # entity), fall through to the existing path — the
-                    # disambiguator and boundary responder handle
-                    # off-domain / no-context cases per existing rules.
-                    sq_signals = _replace(signals, present_entities=())
-                    state_focus_id = (
-                        request_ctx.get("focus_entity_id") or ""
-                    ).strip()
-                    state_focus_service = (
-                        request_ctx.get("focus_service_id") or ""
-                    ).strip()
-                    # Inject the state focus as present_entities for THIS
-                    # sub-query when state focus is set and the sub-query
-                    # itself names no entity. Stage 3 then admits both
-                    # UC-1 and UC-3 as candidates with a concrete subject;
-                    # the LLM disambiguator (with focus context in its
-                    # prompt) decides which agent owns this turn. This
-                    # matches V1's architecture: the LLM is the authority
-                    # on intent; the state focus is the authority on the
-                    # active subject. No keyword regex on the routing
-                    # path — see [[poc5mw1-focus-state-channel-2026-05-28]].
-                    if state_focus_id and state_focus_service:
-                        sq_signals = _replace(
-                            signals,
-                            present_entities=((state_focus_id, state_focus_service),),
-                        )
-                        diag.append(
-                            f"[{sq.id}] stage0b: focus-bound follow-up → "
-                            f"{state_focus_id} (state authoritative)")
-                    elif _references_linked_record(sq_text_for_extract):
-                        # Belt-and-braces fallback for the linked-record
-                        # case when state focus is somehow missing —
-                        # scan history. Only fires when state focus is
-                        # empty (rare).
-                        focus = _extract_focus_from_history(
-                            history, normalizer)
-                        if focus is not None:
-                            sq_signals = _replace(
-                                signals, present_entities=(focus,))
-                            diag.append(
-                                f"[{sq.id}] stage0b: history-scan focus → "
-                                f"{focus[0]} (state focus was empty)")
-                if rewrite.changed:
-                    diag.append(f"[{sq.id}] stage0b: rewritten -> {rewrite.text!r}")
-
-                outcome = await self._funnel(
-                    rewrite.text, principal, sq_signals, request_ctx,
-                    sq.id, diag, original_text=sq.text)
+                outcome = await self._route_subquery(
+                    sq, spec_rewrite_task=spec_rewrite_task,
+                    spec_usable=spec_usable, signals=signals,
+                    request_ctx=request_ctx, history=history,
+                    diag=diag, principal=principal)
 
                 if outcome.agent_ids:
                     routes.append(SubQueryRoute(
@@ -261,27 +288,248 @@ class Router:
                     any_policy_denied = any_policy_denied or outcome.policy_denied
                     diag.append(f"[{sq.id}] unrouted: {outcome.reason}")
 
-            # ── Merge ────────────────────────────────────────────────────
-            if not routes:
-                # With a single sub-query, surface its specific reason so the
-                # boundary responder can be precise; with several, summarise.
-                if len(subqueries) == 1 and fail_reasons:
-                    reason = fail_reasons[0]
-                else:
-                    reason = "no sub-query produced a confident route"
-                if any_policy_denied:
-                    return RouteResult.policy_denied(reason, diag)
-                return RouteResult.no_match(reason, diag)
+            return await self._finalize_route(
+                routes=routes, unrouted=unrouted, fail_reasons=fail_reasons,
+                any_policy_denied=any_policy_denied, subqueries=subqueries,
+                cache_key=cache_key, principal=principal, span=span,
+                diag=diag, query_text=query_text)
 
-            plan = assemble_plan(routes, self._registry)
-            span.set_attribute("router.plan_steps", len(plan.steps))
-            span.set_attribute("router.unrouted", len(unrouted))
-            diag.append(f"plan: {len(plan.steps)} step(s) -> {list(plan.agent_ids)}")
-            set_langfuse_io(
-                span, input=query_text,
-                output={"agents": list(plan.agent_ids),
-                        "steps": len(plan.steps), "unrouted": len(unrouted)})
-            return RouteResult.routed(plan, diag, unrouted)
+    # ── route-decision cache helpers ─────────────────────────────────────
+
+    async def _cancel_speculative(
+        self, spec_rewrite_task: Any, spec_usable: bool, span: Any,
+    ) -> None:
+        """Resolve the speculative whole-message rewrite. Usable (single
+        sub-query == whole message) → keep it. Otherwise cancel it and swallow
+        the teardown CancelledError — but re-raise if THIS coroutine is itself
+        being cancelled, so the turn aborts cleanly (S7497)."""
+        import asyncio
+        if spec_usable:
+            span.set_attribute("router.spec_rewrite_used", True)
+            return
+        spec_rewrite_task.cancel()
+        try:
+            await spec_rewrite_task
+        except asyncio.CancelledError:
+            ct = asyncio.current_task()
+            if ct is not None and ct.cancelling():
+                raise
+        except Exception:                                # noqa: BLE001
+            pass
+        span.set_attribute("router.spec_rewrite_used", False)
+
+    async def _finalize_route(
+        self, *, routes: list, unrouted: list, fail_reasons: list,
+        any_policy_denied: bool, subqueries: list, cache_key: str | None,
+        principal: Principal, span: Any, diag: list[str], query_text: str,
+    ) -> RouteResult:
+        """Merge the per-sub-query outcomes into the final RouteResult: cache +
+        return the no_match/policy_denied verdict when nothing routed, else
+        assemble the plan and cache the routed decision."""
+        if not routes:
+            # Single sub-query → surface its specific reason (precise boundary
+            # response); several → summarise.
+            if len(subqueries) == 1 and fail_reasons:
+                reason = fail_reasons[0]
+            else:
+                reason = "no sub-query produced a confident route"
+            outcome = "policy_denied" if any_policy_denied else "no_match"
+            await self._route_cache_store(
+                cache_key, principal, outcome=outcome,
+                routes=[], unrouted=[], reason=reason)
+            if any_policy_denied:
+                return RouteResult.policy_denied(reason, diag)
+            return RouteResult.no_match(reason, diag)
+
+        await self._route_cache_store(
+            cache_key, principal, outcome="routed",
+            routes=routes, unrouted=unrouted, reason="")
+        plan = assemble_plan(routes, self._registry)
+        span.set_attribute("router.plan_steps", len(plan.steps))
+        span.set_attribute("router.unrouted", len(unrouted))
+        diag.append(f"plan: {len(plan.steps)} step(s) -> {list(plan.agent_ids)}")
+        set_langfuse_io(
+            span, input=query_text,
+            output={"agents": list(plan.agent_ids),
+                    "steps": len(plan.steps), "unrouted": len(unrouted)})
+        return RouteResult.routed(plan, diag, unrouted)
+
+    async def _route_subquery(
+        self, sq: Any, *, spec_rewrite_task: Any, spec_usable: bool,
+        signals: RequestSignals, request_ctx: dict, history: list,
+        diag: list[str], principal: Principal,
+    ) -> Any:
+        """Process one sub-query: rewrite (speculative whole-message result when
+        usable, else per-sub-query), scope signals to the sub-query's own
+        entities/focus, then run the funnel. Returns the funnel outcome."""
+        if self._unified_splitter is not None:
+            # Merged path — the splitter already resolved references into
+            # sq.text; a second rewrite call would be redundant (and an extra
+            # LLM round-trip). Pass the text through unchanged.
+            from oneops.router.rewrite import RewriteResult
+            rewrite = RewriteResult.unchanged(sq.text)
+        elif spec_usable:
+            rewrite = await spec_rewrite_task
+        else:
+            rewrite = await self._rewriter.rewrite(
+                sq.text, history=history, request_ctx=request_ctx)
+        sq_signals = self._scope_subquery_signals(
+            sq, rewrite, signals, request_ctx, history, diag)
+        if rewrite.changed:
+            diag.append(f"[{sq.id}] stage0b: rewritten -> {rewrite.text!r}")
+        return await self._funnel(
+            rewrite.text, principal, sq_signals, request_ctx,
+            sq.id, diag, original_text=sq.text)
+
+    def _scope_subquery_signals(
+        self, sq: Any, rewrite: Any, signals: RequestSignals,
+        request_ctx: dict, history: list, diag: list[str],
+    ) -> RequestSignals:
+        """Scope routing signals to the entities THIS sub-query names
+        (post-rewrite), so "summarize INC1 and INC2" doesn't bind every step to
+        the first entity. When the sub-query names no entity, inject the
+        LangGraph state focus as the authoritative subject (the structural fix
+        that replaced rewriter/disambiguator focus heuristics); as a rare
+        fallback, a history-scanned focus for explicit linked-record refs."""
+        from dataclasses import replace as _replace
+
+        from oneops.router.entity_id import EntityIdNormalizer
+        normalizer = EntityIdNormalizer.from_registry_file()
+        sq_text_for_extract = rewrite.text if rewrite.changed else sq.text
+        sq_extracted = normalizer.extract(sq_text_for_extract)
+        if sq_extracted.entities:
+            sq_entities = tuple(
+                (e.entity_id, e.service_id) for e in sq_extracted.entities)
+            diag.append(
+                f"[{sq.id}] stage0b: scoped entities → "
+                f"{[e.entity_id for e in sq_extracted.entities]}")
+            return _replace(signals, present_entities=sq_entities)
+
+        state_focus_id = (request_ctx.get("focus_entity_id") or "").strip()
+        state_focus_service = (request_ctx.get("focus_service_id") or "").strip()
+        # Bind the focus as the subject ONLY for a genuine bare follow-up (a
+        # pronoun / linked-record reference). An independent intent ("I need a
+        # second monitor") has its own subject and must route on its own merits
+        # — binding the focus here is what made every entity-less request
+        # inherit the focused record's agent (the topic-switch / midflow-intent
+        # bug). Card-driven, scales to 100 UCs (no per-UC vocabulary).
+        if (state_focus_id and state_focus_service
+                and is_followup_reference(sq_text_for_extract)):
+            diag.append(
+                f"[{sq.id}] stage0b: focus-bound follow-up → "
+                f"{state_focus_id} (explicit reference)")
+            return _replace(
+                signals,
+                present_entities=((state_focus_id, state_focus_service),))
+        if state_focus_id:
+            diag.append(
+                f"[{sq.id}] stage0b: independent intent — focus NOT bound "
+                f"(routes on its own intent)")
+        if _references_linked_record(sq_text_for_extract):
+            # Belt-and-braces fallback when state focus is somehow missing —
+            # scan history. Only fires when state focus is empty (rare).
+            focus = _extract_focus_from_history(history, normalizer)
+            if focus is not None:
+                diag.append(
+                    f"[{sq.id}] stage0b: history-scan focus → "
+                    f"{focus[0]} (state focus was empty)")
+                return _replace(signals, present_entities=(focus,))
+        return _replace(signals, present_entities=())
+
+    async def _route_cache_lookup(
+        self, cache_key: str | None, principal: Principal, span: Any,
+    ) -> RouteResult | None:
+        """Route-decision cache get → a rebuilt RouteResult on a usable hit,
+        else None (cache disabled / miss / malformed entry). The plan is
+        reassembled fresh against the current registry downstream; a cache
+        failure must never break routing."""
+        if self._route_cache is None or cache_key is None:
+            return None
+        try:
+            hit = await self._route_cache.get(
+                tenant_id=principal.tenant_id, key=cache_key)
+        except Exception as exc:                          # noqa: BLE001
+            _log.warning("router.route_cache_get_failed", error=str(exc)[:160])
+            hit = None
+        if hit is not None:
+            result = self._result_from_cache(hit)
+            if result is not None:
+                increment("oneops.router.route_cache.hit")
+                span.set_attribute("router.route_cache", "hit")
+                return result
+        increment("oneops.router.route_cache.miss")
+        span.set_attribute("router.route_cache", "miss")
+        return None
+
+    def _route_cache_key(
+        self, query_text: str, principal: Principal,
+        signals: RequestSignals, history: list, request_ctx: dict,
+    ) -> str | None:
+        """Build the cache key from every input the funnel reads. Returns None
+        (cache skipped) if the cache is disabled or key construction fails —
+        never let caching break routing."""
+        if self._route_cache is None:
+            return None
+        try:
+            from oneops.router.route_cache import (
+                conversation_digest,
+                route_cache_key,
+                signals_digest,
+            )
+            return route_cache_key(
+                query=query_text,
+                role=principal.role,
+                domain=(request_ctx.get("domain") or ""),
+                focus_entity_id=(request_ctx.get("focus_entity_id") or ""),
+                focus_service_id=(request_ctx.get("focus_service_id") or ""),
+                sig_digest=signals_digest(signals),
+                conv_digest=conversation_digest(history),
+                registry_fingerprint=self._registry.routing_fingerprint(),
+            )
+        except Exception as exc:                                   # noqa: BLE001
+            _log.warning("router.route_cache_key_failed", error=str(exc)[:160])
+            return None
+
+    def _result_from_cache(self, hit: dict) -> RouteResult | None:
+        """Rebuild a RouteResult from a cached decision. The plan is reassembled
+        against the CURRENT registry (deterministic, no LLM). Returns None on a
+        malformed entry so the caller falls through to a fresh route."""
+        try:
+            outcome = hit.get("outcome")
+            reason = hit.get("reason") or ""
+            diag = ["route-cache: hit"]
+            if outcome == "routed":
+                from oneops.router.route_cache import deserialize_routes
+                routes = deserialize_routes(hit.get("routes") or [])
+                if not routes:
+                    return None
+                plan = assemble_plan(routes, self._registry)
+                return RouteResult.routed(plan, diag, list(hit.get("unrouted") or []))
+            if outcome == "policy_denied":
+                return RouteResult.policy_denied(reason, diag)
+            if outcome == "no_match":
+                return RouteResult.no_match(reason, diag)
+        except Exception as exc:                                   # noqa: BLE001
+            _log.warning("router.route_cache_rebuild_failed", error=str(exc)[:160])
+        return None
+
+    async def _route_cache_store(
+        self, cache_key: str | None, principal: Principal, *,
+        outcome: str, routes: list, unrouted: list, reason: str,
+    ) -> None:
+        """Persist the funnel verdict. Best-effort — a cache write must never
+        break a successful route."""
+        if self._route_cache is None or cache_key is None:
+            return
+        try:
+            from oneops.router.route_cache import serialize_decision
+            value = serialize_decision(
+                outcome=outcome, routes=routes, unrouted=unrouted, reason=reason)
+            await self._route_cache.put(
+                tenant_id=principal.tenant_id, key=cache_key, value=value)
+            increment("oneops.router.route_cache.store")
+        except Exception as exc:                                   # noqa: BLE001
+            _log.warning("router.route_cache_put_failed", error=str(exc)[:160])
 
     # ── the per-sub-query funnel (stages 1-4) ────────────────────────────
 
@@ -324,6 +572,125 @@ class Router:
         # catches the FAIL-once-intent-known case (e.g. "summarize
         # PBM0003001" → UC-3 carried as INDETERMINATE, LLM classifies intent
         # as 'summary', re-eval drops UC-3).
+        survivors_with_verdict, policy_denied_any = await self._stage3_filter(
+            candidates, principal, signals, sq_id, diag)
+        survivors = [c for c, _v in survivors_with_verdict]
+
+        if not survivors:
+            reason = ("every candidate was denied by access policy"
+                      if policy_denied_any
+                      else "no candidate passed the activation-condition filter")
+            return _FunnelOutcome([], {}, reason, policy_denied_any)
+
+        # Stage 3.5 — deterministic single-survivor shortcut.
+        # When stage 3 narrows to exactly one candidate AND that candidate's
+        # activation evaluates to a definite PASS (not just survived as
+        # INDETERMINATE), there is nothing to disambiguate — skip the LLM.
+        # When the sole survivor evaluated as INDETERMINATE (e.g. UC-3 with
+        # an `intent_in` clause that the LLM hasn't classified yet), the
+        # LLM disambiguator MUST run: it has the option to return no_match,
+        # which is what should happen for OOS queries like "tell me a joke"
+        # that incidentally only have UC-3 surviving via INDETERMINATE.
+        # Skipping in that case lets every off-topic query silently route
+        # to UC-3 — the 2026-05-27 routing-leak bug.
+        # Single-survivor shortcut: route directly to the sole candidate,
+        # regardless of PASS vs INDETERMINATE. OOS / greetings / jokes
+        # are caught upstream by the Stage-1 control gate; by the time
+        # only one agent survives stages 1-3, that agent IS the right
+        # handler. Letting the disambiguator decline on a single-option
+        # query is the bug that produced "Are you looking to create a
+        # ticket or KB?" for `salesforce sync lag` (2026-05-27).
+        # Stage 3.4 — deterministic preroute (X6, 2026-05-28). High-confidence
+        # patterns the LLM disambiguator was found to mishandle (bare entity
+        # id → UC-1; content-noun / knowledge-verb + entity → UC-3) are
+        # routed here directly, BEFORE the single-survivor shortcut. Runs on
+        # the rewritten text. Target agent must be a registered active agent
+        # AND must have survived stages 1-3 (post-authz / post-activation).
+        preroute_outcome = self._try_preroute(
+            survivors, signals, text, normalized, original_text, sq_id, diag)
+        if preroute_outcome is not None:
+            return preroute_outcome
+
+        if len(survivors) == 1:
+            sole = survivors[0]
+            diag.append(
+                f"[{sq_id}] stage3.5: single survivor {sole.agent_id} (PASS) — "
+                "skipping disambiguation")
+            # `_chat_bind` threads the rewritten sub-query text as
+            # `user_message`/`query` so UC handlers can pick their own
+            # full-summary vs field-read path (UC-1 field_read branch,
+            # ISS-016); the step runner's data-driven tool-picker uses the
+            # parameter shape to choose the tool.
+            bound = self._chat_bind(sole.agent_id, signals, text)
+            return _FunnelOutcome([sole.agent_id], {sole.agent_id: bound},
+                                  "", False)
+
+        # Stage 3.6 — confidence-gated disambiguator skip (flag-gated).
+        # When 2+ survive but the top candidate's retrieval score
+        # OVERWHELMINGLY dominates the runner-up AND it is a definite PASS,
+        # the choice is unambiguous — the ~1.5s LLM call would only confirm
+        # it. The hard axis-A/B cases retrieve uc01/uc03 with CLOSE scores
+        # (small margin) → they never qualify and still run Stage 4. Only a
+        # definite PASS top skips: activation already admits it
+        # deterministically, so no intent classification is needed (the same
+        # safety the single-survivor shortcut relies on).
+        skip = self._try_confidence_skip(
+            survivors, survivors_with_verdict, signals, text, sq_id, diag)
+        if skip is not None:
+            return skip
+
+        # Stage 4 — LLM disambiguation over survivors only.
+        return await self._stage4_disambiguate(
+            normalized, survivors, survivors_with_verdict, signals,
+            request_ctx, text, sq_id, diag)
+
+    def _try_confidence_skip(
+        self, survivors: list, survivors_with_verdict: list[tuple[Any, Ternary]],
+        signals: RequestSignals, text: str, sq_id: str, diag: list[str],
+    ) -> _FunnelOutcome | None:
+        """Stage 3.6 — skip the LLM disambiguator when the top survivor's
+        retrieval score clearly dominates the runner-up AND it is a definite
+        PASS. Returns the routed outcome, or None when the band is not met
+        (→ Stage 4 LLM runs). Flag-gated; off ⇒ always None (unchanged)."""
+        if not confidence_skip_enabled() or len(survivors) < 2:
+            return None
+        # survivors preserve retrieval order (Stage 3 iterates candidates
+        # best-score-first); [0] is the top, [1] the runner-up.
+        top, second = survivors[0], survivors[1]
+        top_verdict = survivors_with_verdict[0][1]
+        top_score = float(getattr(top, "score", 0.0) or 0.0)
+        second_score = float(getattr(second, "score", 0.0) or 0.0)
+        margin = top_score - second_score
+        min_score, min_margin = _confidence_skip_thresholds()
+        qualifies = (
+            top_verdict is Ternary.PASS
+            and top_score >= min_score
+            and margin >= min_margin)
+        if not qualifies:
+            return None
+        diag.append(
+            f"[{sq_id}] stage3.6: confidence-skip → {top.agent_id} "
+            f"(score={top_score:.3f}, margin={margin:.3f} ≥ {min_margin}, PASS) "
+            "— skipping LLM disambiguation")
+        increment("oneops.router.confidence_skip")
+        bound = self._chat_bind(top.agent_id, signals, text)
+        return _FunnelOutcome([top.agent_id], {top.agent_id: bound}, "", False)
+
+    async def _stage3_filter(
+        self,
+        candidates: list,
+        principal: Principal,
+        signals: RequestSignals,
+        sq_id: str,
+        diag: list[str],
+    ) -> tuple[list[tuple[Any, Ternary]], bool]:
+        """Stage 3 — activation-condition (three-valued) + ABAC filter.
+
+        Returns the surviving candidates each paired with their PASS /
+        INDETERMINATE verdict (carried forward as the Stage-4 tiebreaker),
+        plus a flag recording whether any candidate was denied by policy
+        (used to distinguish "denied" from "no match" in the no-survivor
+        diagnostic)."""
         survivors_with_verdict: list[tuple[Any, Ternary]] = []
         policy_denied_any = False
         with _tracer.start_as_current_span(
@@ -360,37 +727,27 @@ class Router:
                 input=[c.agent_id for c in candidates],
                 output={"survivors": [c.agent_id for c in survivors],
                         "policy_denied": policy_denied_any})
+        return survivors_with_verdict, policy_denied_any
 
-        if not survivors:
-            reason = ("every candidate was denied by access policy"
-                      if policy_denied_any
-                      else "no candidate passed the activation-condition filter")
-            return _FunnelOutcome([], {}, reason, policy_denied_any)
+    def _try_preroute(
+        self,
+        survivors: list,
+        signals: RequestSignals,
+        text: str,
+        normalized: str,
+        original_text: str | None,
+        sq_id: str,
+        diag: list[str],
+    ) -> _FunnelOutcome | None:
+        """Stage 3.4 — deterministic preroute (X6, 2026-05-28).
 
-        # Stage 3.5 — deterministic single-survivor shortcut.
-        # When stage 3 narrows to exactly one candidate AND that candidate's
-        # activation evaluates to a definite PASS (not just survived as
-        # INDETERMINATE), there is nothing to disambiguate — skip the LLM.
-        # When the sole survivor evaluated as INDETERMINATE (e.g. UC-3 with
-        # an `intent_in` clause that the LLM hasn't classified yet), the
-        # LLM disambiguator MUST run: it has the option to return no_match,
-        # which is what should happen for OOS queries like "tell me a joke"
-        # that incidentally only have UC-3 surviving via INDETERMINATE.
-        # Skipping in that case lets every off-topic query silently route
-        # to UC-3 — the 2026-05-27 routing-leak bug.
-        # Single-survivor shortcut: route directly to the sole candidate,
-        # regardless of PASS vs INDETERMINATE. OOS / greetings / jokes
-        # are caught upstream by the Stage-1 control gate; by the time
-        # only one agent survives stages 1-3, that agent IS the right
-        # handler. Letting the disambiguator decline on a single-option
-        # query is the bug that produced "Are you looking to create a
-        # ticket or KB?" for `salesforce sync lag` (2026-05-27).
-        # Stage 3.4 — deterministic preroute (X6, 2026-05-28). High-confidence
-        # patterns the LLM disambiguator was found to mishandle (bare entity
-        # id → UC-1; content-noun / knowledge-verb + entity → UC-3) are
-        # routed here directly, BEFORE the single-survivor shortcut. Runs on
-        # the rewritten text. Target agent must be a registered active agent
-        # AND must have survived stages 1-3 (post-authz / post-activation).
+        High-confidence patterns the LLM disambiguator was found to
+        mishandle (bare entity id → UC-1; content-noun / knowledge-verb +
+        entity → UC-3) route here directly, BEFORE the single-survivor
+        shortcut. Target must be a registered active agent that survived
+        stages 1-3. Returns the routed outcome, or None when no pattern
+        fires (the funnel then continues to the single-survivor shortcut /
+        Stage 4)."""
         from oneops.router.disambiguation import _deterministic_preroute
         survivor_ids = {c.agent_id for c in survivors}
         # Evaluate preroute on the ORIGINAL user text (before the rewriter
@@ -420,122 +777,122 @@ class Router:
                       normalized=normalized,
                       survivor_ids=sorted(survivor_ids),
                       preroute_target=pre_target[0] if pre_target else None)
-            if pre_target is not None:
-                agent_id, _intent, _rationale = pre_target
-                pre_span.set_attribute("oneops.router.preroute.target", agent_id)
-                pre_span.set_attribute("oneops.router.preroute.rationale",
-                                       _rationale)
-                diag.append(
-                    f"[{sq_id}] stage3.4: preroute → {agent_id} ({_rationale})")
-                agent = self._registry.agents.get_optional(agent_id)
-                bound = _bind_entities_to_fast_path(
-                    agent, {}, signals.present_entities, self._registry)
-                if text:
-                    bound = dict(bound)
-                    bound["user_message"] = text
-                    bound.setdefault("query", text)
-                return _FunnelOutcome([agent_id], {agent_id: bound}, "", False)
-
-        if len(survivors) == 1:
-            sole = survivors[0]
+            if pre_target is None:
+                return None
+            agent_id, _intent, _rationale = pre_target
+            pre_span.set_attribute("oneops.router.preroute.target", agent_id)
+            pre_span.set_attribute("oneops.router.preroute.rationale",
+                                   _rationale)
             diag.append(
-                f"[{sq_id}] stage3.5: single survivor {sole.agent_id} (PASS) — "
-                "skipping disambiguation")
-            agent = self._registry.agents.get_optional(sole.agent_id)
-            bound = _bind_entities_to_fast_path(
-                agent, {}, signals.present_entities, self._registry)
-            # Thread the rewritten sub-query text so UC handlers can
-            # decide between full-summary and field-read paths on their
-            # own (UC-1 internal field_read branch, ISS-016).
-            if text:
-                bound = dict(bound)
-                bound["user_message"] = text
-                # Generic chat → query binding. Tools that take a `query`
-                # parameter (e.g. UC-3 search_kb) read this directly; tools
-                # that don't need it ignore it. No UC-specific code here —
-                # the step runner's data-driven tool-picker (step_runner._
-                # pick_tool) uses the parameter shape to choose which tool
-                # of the agent's tool_refs to invoke.
-                bound.setdefault("query", text)
-            return _FunnelOutcome([sole.agent_id], {sole.agent_id: bound},
-                                  "", False)
+                f"[{sq_id}] stage3.4: preroute → {agent_id} ({_rationale})")
+            bound = self._chat_bind(agent_id, signals, text)
+            return _FunnelOutcome([agent_id], {agent_id: bound}, "", False)
 
-        # Stage 4 — LLM disambiguation over survivors only.
+    async def _stage4_disambiguate(
+        self,
+        normalized: str,
+        survivors: list,
+        survivors_with_verdict: list[tuple[Any, Ternary]],
+        signals: RequestSignals,
+        request_ctx: dict,
+        text: str,
+        sq_id: str,
+        diag: list[str],
+    ) -> _FunnelOutcome:
+        """Stage 4 — LLM disambiguation over survivors only, with the
+        PASS-vs-INDETERMINATE tiebreaker and the post-stage-4 intent-
+        resolved re-check.
+
+        When the disambiguator declines but exactly one survivor was a
+        definite PASS, route to it (PASS > INDETERMINATE). Otherwise bind
+        the chosen agents' parameters and return them."""
         result = await self._disambiguator.disambiguate(
             normalized, survivors, request_ctx=request_ctx)
         if not result.is_confident_match:
-            # Architectural tiebreaker (fix B, 2026-05-28): when the LLM
-            # disambiguator declines but Stage 3 had exactly one definite
-            # PASS candidate (with all other survivors as INDETERMINATE),
-            # route to the PASS candidate. PASS > INDETERMINATE is the
-            # natural fallback under the existing three-valued logic —
-            # PASS means "activation_condition definitely admits this
-            # query under current signals", INDETERMINATE means "might
-            # admit pending intent classification". When the LLM cannot
-            # decide between a definite admission and a speculative one,
-            # honour the definite one. This fixes the regression that
-            # surfaced when the abac_tags.service pre-filter was removed
-            # (Issue 2): UC-3 now correctly survives stage 3 as
-            # INDETERMINATE for ticket-entity queries, which made
-            # multi-turn field-reads ("who is it assigned to?") return
-            # clarification instead of routing to UC-1.
-            pass_candidates = [c for c, v in survivors_with_verdict
-                               if v is Ternary.PASS]
-            if len(pass_candidates) == 1:
-                sole = pass_candidates[0]
-                diag.append(
-                    f"[{sq_id}] stage4-tiebreaker: disambiguator declined, "
-                    f"routing to sole PASS candidate {sole.agent_id} "
-                    f"(other survivors were INDETERMINATE)")
-                agent = self._registry.agents.get_optional(sole.agent_id)
-                bound = _bind_entities_to_fast_path(
-                    agent, {}, signals.present_entities, self._registry)
-                if text:
-                    bound = dict(bound)
-                    bound["user_message"] = text
-                    bound.setdefault("query", text)
-                return _FunnelOutcome([sole.agent_id], {sole.agent_id: bound},
-                                      "", False)
-            return _FunnelOutcome(
-                [], {}, result.rationale or "no confident match", False)
+            return self._declined_outcome(
+                result, survivors_with_verdict, signals, text, sq_id, diag)
 
-        # Post-stage-4 guard — re-evaluate conditions with the now-known intent.
-        chosen: list[str] = []
-        if result.intents:
-            resolved = with_intents(signals, frozenset(result.intents))
-            for agent_id in result.selected_agent_ids:
-                agent = self._registry.agents.get_optional(agent_id)
-                if agent is None or not survives_filter(agent.activation_condition, resolved):
-                    diag.append(f"[{sq_id}] stage4-guard: drop {agent_id} — "
-                                "condition FAIL under classified intent")
-                    continue
-                chosen.append(agent_id)
-        else:
-            chosen = list(result.selected_agent_ids)
-
+        chosen = self._resolve_chosen(result, signals, sq_id, diag)
         if not chosen:
             return _FunnelOutcome(
                 [], {}, "selected agent(s) failed the intent-resolved check", False)
+        params = self._bind_chosen_params(chosen, result, signals, text)
+        return _FunnelOutcome(chosen, params, "", False)
 
-        # Bind extracted entities into each chosen agent's parameters. The
-        # disambiguator may have set `parameters_by_agent` directly (LLM
-        # path) — those win. For any required input field still empty, we
-        # auto-bind from `signals.present_entities` using the same shape
-        # the fast-path dispatcher uses (ticket_id ← first incident-ish
-        # entity, etc.). This makes chat ("summarize INC0001015") behave
-        # identically to button ({ticket_id: INC0001015}) — same handler,
-        # same parameter shape.
+    def _chat_bind(
+        self, agent_id: str, signals: RequestSignals, text: str,
+        base: dict[str, str] | None = None,
+    ) -> dict[str, str]:
+        """Bind a chosen agent's chat-path parameters: auto-bind present
+        entities into the fast-path shape (LLM-set `base` params win), then
+        thread the raw user text as `user_message`/`query` so handlers can
+        pick their own field-read vs full path. Returns a fresh dict."""
+        agent = self._registry.agents.get_optional(agent_id)
+        bound = _bind_entities_to_fast_path(
+            agent, dict(base or {}), signals.present_entities, self._registry)
+        if text:
+            bound = dict(bound)
+            bound["user_message"] = text
+            bound.setdefault("query", text)
+        return bound
+
+    def _declined_outcome(
+        self, result: Any, survivors_with_verdict: list[tuple[Any, Ternary]],
+        signals: RequestSignals, text: str, sq_id: str, diag: list[str],
+    ) -> _FunnelOutcome:
+        """Disambiguator declined. Tiebreaker (fix B, 2026-05-28): when Stage
+        3 had exactly one definite PASS candidate (others INDETERMINATE),
+        route to it — PASS > INDETERMINATE under the three-valued logic.
+        This recovers multi-turn field-reads ("who is it assigned to?") that
+        otherwise returned clarification after the abac_tags.service
+        pre-filter removal (Issue 2). Else: no confident match."""
+        pass_candidates = [c for c, v in survivors_with_verdict
+                           if v is Ternary.PASS]
+        if len(pass_candidates) == 1:
+            sole = pass_candidates[0]
+            diag.append(
+                f"[{sq_id}] stage4-tiebreaker: disambiguator declined, "
+                f"routing to sole PASS candidate {sole.agent_id} "
+                f"(other survivors were INDETERMINATE)")
+            bound = self._chat_bind(sole.agent_id, signals, text)
+            return _FunnelOutcome([sole.agent_id], {sole.agent_id: bound},
+                                  "", False)
+        return _FunnelOutcome(
+            [], {}, result.rationale or "no confident match", False)
+
+    def _resolve_chosen(
+        self, result: Any, signals: RequestSignals,
+        sq_id: str, diag: list[str],
+    ) -> list[str]:
+        """Post-stage-4 guard: re-evaluate activation conditions with the
+        now-classified intent, dropping any selected agent that no longer
+        survives. Pass-through when the disambiguator set no intents."""
+        if not result.intents:
+            return list(result.selected_agent_ids)
+        resolved = with_intents(signals, frozenset(result.intents))
+        chosen: list[str] = []
+        for agent_id in result.selected_agent_ids:
+            agent = self._registry.agents.get_optional(agent_id)
+            if agent is None or not survives_filter(agent.activation_condition, resolved):
+                diag.append(f"[{sq_id}] stage4-guard: drop {agent_id} — "
+                            "condition FAIL under classified intent")
+                continue
+            chosen.append(agent_id)
+        return chosen
+
+    def _bind_chosen_params(
+        self, chosen: list[str], result: Any,
+        signals: RequestSignals, text: str,
+    ) -> dict[str, dict[str, str]]:
+        """Bind each chosen agent's parameters. The disambiguator's
+        `parameters_by_agent` win; required-but-empty fields auto-bind from
+        present entities so chat ("summarize INC0001015") behaves
+        identically to the button path ({ticket_id: INC0001015})."""
         params: dict[str, dict[str, str]] = {}
         for aid in chosen:
-            agent = self._registry.agents.get_optional(aid)
-            from_llm = result.params_for(aid)
-            bound = _bind_entities_to_fast_path(
-                agent, dict(from_llm), signals.present_entities, self._registry)
-            if text:
-                bound["user_message"] = text
-                bound.setdefault("query", text)
-            params[aid] = bound
-        return _FunnelOutcome(chosen, params, "", False)
+            params[aid] = self._chat_bind(
+                aid, signals, text, base=result.params_for(aid))
+        return params
 
 
 # Entity-shaped parameter names — the closed set of registry-recognised
@@ -639,59 +996,101 @@ def _bind_entities_to_fast_path(
         return existing_params
 
     out = dict(existing_params)
+    _bind_fast_path_fields(agent, out, present_entities)
+    _bind_tool_params(agent, out, present_entities, registry)
+    return out
 
-    # Pass 1: fast-path input fields (button path; service-gated).
-    if agent.fast_path is not None:
-        agent_services = set(agent.abac_tags.service or ())
-        compatible_entity = None
-        for eid, esvc in present_entities:
-            if not agent_services or esvc in agent_services:
-                compatible_entity = (eid, esvc)
-                break
-        if compatible_entity is not None:
-            entity_id, _entity_service = compatible_entity
-            for field in agent.fast_path.input_fields:
-                if field.name in out and out[field.name]:
-                    continue                              # LLM set it
-                if field.name in _ENTITY_FIELD_NAMES:
-                    out[field.name] = entity_id
-                    continue
-                if field.auto_derive_from and field.auto_derive_from in out:
-                    derived = _derive_for_chat(
-                        field.name, out[field.auto_derive_from])
-                    if derived:
-                        out[field.name] = derived
 
-    # Pass 2: tool parameters (chat path; per-param accept-list).
-    # Iterate over each tool's parameters; for each entity-shaped param
-    # name, bind a present entity that the param accepts. Idempotent —
-    # never overrides an already-set value.
+def _bind_fast_path_fields(
+    agent: Any, out: dict[str, str],
+    present_entities: tuple[tuple[str, str], ...],
+) -> None:
+    """Pass 1 (button path; service-gated). Bind the first service-
+    compatible present entity into the agent's `fast_path.input_fields`,
+    deriving non-entity fields via `auto_derive_from`. Mutates `out`;
+    never overrides a value the LLM disambiguator already set."""
+    if agent.fast_path is None:
+        return
+    agent_services = set(agent.abac_tags.service or ())
+    compatible = _first_compatible_entity(present_entities, agent_services)
+    if compatible is None:
+        return
+    entity_id, _entity_service = compatible
+    for field in agent.fast_path.input_fields:
+        _bind_field(field, out, entity_id)
+
+
+def _first_compatible_entity(
+    present_entities: tuple[tuple[str, str], ...],
+    agent_services: set[str],
+) -> tuple[str, str] | None:
+    """First present entity whose service the agent serves (or any entity
+    when the agent declares no service scope)."""
+    for eid, esvc in present_entities:
+        if not agent_services or esvc in agent_services:
+            return (eid, esvc)
+    return None
+
+
+def _bind_field(field: Any, out: dict[str, str], entity_id: str) -> None:
+    """Bind one fast-path input field: entity-shaped fields take the entity
+    id; others derive via `auto_derive_from`. Never overrides a value the
+    LLM disambiguator already set."""
+    if field.name in out and out[field.name]:
+        return                                    # LLM set it
+    if field.name in _ENTITY_FIELD_NAMES:
+        out[field.name] = entity_id
+        return
+    if field.auto_derive_from and field.auto_derive_from in out:
+        derived = _derive_for_chat(field.name, out[field.auto_derive_from])
+        if derived:
+            out[field.name] = derived
+
+
+def _bind_tool_params(
+    agent: Any, out: dict[str, str],
+    present_entities: tuple[tuple[str, str], ...],
+    registry: Any,
+) -> None:
+    """Pass 2 (chat path; per-param accept-list). For each entity-shaped
+    parameter across the agent's tool_refs, bind a present entity the
+    parameter accepts (`_PARAM_ACCEPTS`). Tool parameter contracts live on
+    the tool record, resolved lazily via the registry. Mutates `out`;
+    idempotent — never overrides an already-bound value."""
+    if registry is None:
+        return
     for tref in (getattr(agent, "tool_refs", None) or ()):
-        # Tool lookup via the registry. The agent's tool_refs carry tool_id
-        # only; the parameter contract is on the tool record itself.
-        # We resolve lazily because the agent record alone doesn't carry
-        # parameter shapes — they live on tool registrations (registry/v2/tools).
-        if registry is None:
-            continue
-        try:
-            tool = registry.tools.get_optional(tref.tool_id)
-        except Exception:                                  # noqa: BLE001
-            tool = None
+        tool = _resolve_tool(registry, tref)
         if tool is None:
             continue
         for p in (tool.parameters or ()):
-            pname = p.name
-            if pname not in _ENTITY_FIELD_NAMES:
-                continue
-            if out.get(pname):
-                continue                                  # already bound
-            accepts = _PARAM_ACCEPTS.get(pname, frozenset())
-            for eid, esvc in present_entities:
-                if not accepts or esvc in accepts:
-                    out[pname] = eid
-                    break
+            _bind_tool_param(p, out, present_entities)
 
-    return out
+
+def _resolve_tool(registry: Any, tref: Any) -> Any:
+    """Resolve a tool record from a tool_ref via the registry; None when the
+    record is absent or lookup raises (binding is best-effort)."""
+    try:
+        return registry.tools.get_optional(tref.tool_id)
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
+def _bind_tool_param(
+    p: Any, out: dict[str, str],
+    present_entities: tuple[tuple[str, str], ...],
+) -> None:
+    """Bind one entity-shaped tool parameter to the first present entity its
+    `_PARAM_ACCEPTS` list admits. No-op for non-entity or already-bound
+    params."""
+    pname = p.name
+    if pname not in _ENTITY_FIELD_NAMES or out.get(pname):
+        return
+    accepts = _PARAM_ACCEPTS.get(pname, frozenset())
+    for eid, esvc in present_entities:
+        if not accepts or esvc in accepts:
+            out[pname] = eid
+            return
 
 
 def _derive_for_chat(target_field: str, source_value: str) -> str | None:

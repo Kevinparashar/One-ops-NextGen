@@ -16,6 +16,7 @@ from oneops.use_cases._shared.ticket_store import (
     set_ticket_store,
 )
 from oneops.use_cases.uc01_summarization.tools import (
+    _record_bindable_fields,
     get_ticket_attachment_metadata,
     get_ticket_links,
     get_ticket_timeline,
@@ -302,3 +303,31 @@ async def test_summarize_invalid_inputs(store, args, ctx):
     out = await summarize_entity(args, ctx)
     assert out["outcome"] == "invalid_request"
     assert out["summary"] is None
+
+
+def test_bindable_excludes_search_embedding_noise_keeps_business_fields():
+    """The bindable surface keeps chainable business fields (incl. title /
+    description) but drops the search/embedding substrate columns so the
+    embedding blob never bloats the response."""
+    record = {
+        # business fields a downstream step may bind on — must survive
+        "incident_id": "INC0001001", "status": "open", "priority": "P2",
+        "title": "VPN disconnects", "description": "drops on handoff",
+        "related_change": "CHG0004001",
+        # substrate noise — must be excluded
+        "search_tsv": "'vpn':1A 'wi-fi':4A",
+        "embedding": "[" + ",".join(["0.0"] * 3072) + "]",
+        "embedding_model": "text-embedding-3-large", "embedding_version": "1.0",
+        "content_hash": "abc123", "embedded_at": "2026-04-01T09:10:00Z",
+        "_updated_at": "2026-04-01T15:00:00Z",
+    }
+    out = _record_bindable_fields(record)
+
+    # business fields kept (chaining unaffected)
+    for k in ("incident_id", "status", "priority", "title", "description",
+              "related_change"):
+        assert k in out, f"{k} should remain bindable"
+    # noise dropped
+    for k in ("search_tsv", "embedding", "embedding_model", "embedding_version",
+              "content_hash", "embedded_at", "_updated_at"):
+        assert k not in out, f"{k} must not leak into bindable"

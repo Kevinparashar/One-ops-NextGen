@@ -15,3 +15,10 @@ dist/
 *.bak
 *.log
 .DS_Store
+
+# SonarQube — local secrets + scanner artifacts (never commit)
+.sonar-admin-pass
+.sonar-token
+.scannerwork/
+sonar-issues-before.json
+sonar-issues-after.json

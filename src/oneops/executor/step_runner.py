@@ -24,10 +24,15 @@ import asyncio
 import time
 from typing import Any, Protocol
 
+from langgraph.errors import GraphInterrupt
+
 from oneops.errors import ToolHandlerError
 from oneops.observability import get_logger, get_tracer, set_langfuse_io
 from oneops.observability.event_sink import publish as _publish_event
 from oneops.observability.metrics import increment as _metric_inc
+
+# Telemetry literals → constants (sonar S1192).
+_STEP_STATUS = "step.status"
 
 
 def _tool_action(tool: Any) -> str:
@@ -164,6 +169,31 @@ class HandlerStepExecutor:
             return (explicit, None)        # surfaced loud by the caller
         return self._pick_tool(agent, step_params)
 
+    def _candidate_tool_ids(self, agent: Any) -> tuple[list[str], str]:
+        """The agent's candidate tool ids (its tool_refs, else its fast-path
+        primary tool) plus the declared primary_id."""
+        tool_refs = list(getattr(agent, "tool_refs", []) or [])
+        primary_id = (agent.fast_path.primary_tool_id
+                      if agent.fast_path else "")
+        candidate_ids = [t.tool_id for t in tool_refs] or (
+            [primary_id] if primary_id else [])
+        return candidate_ids, primary_id
+
+    def _primary_tool_if_fits(
+        self, primary_id: str, candidate_ids: list[str], present: set[str],
+    ) -> tuple[str, Any] | None:
+        """The declared primary tool, IF it's a candidate and its required
+        params are all present in `present`; else None."""
+        if not primary_id or primary_id not in candidate_ids:
+            return None
+        primary_tool = self._registry.tools.get_optional(primary_id)
+        if primary_tool is None:
+            return None
+        need = _required_params(primary_tool)
+        if not need or need.issubset(present):
+            return (primary_id, primary_tool)
+        return None
+
     def _pick_tool(
         self, agent: Any, step_params: dict[str, Any],
     ) -> tuple[str, Any]:
@@ -184,86 +214,26 @@ class HandlerStepExecutor:
         Returns `(tool_id, ToolRecord)`. Either is empty/None when no
         invokable tool can be resolved — the caller surfaces that loud.
         """
-        tool_refs = list(getattr(agent, "tool_refs", []) or [])
-        primary_id = (agent.fast_path.primary_tool_id
-                      if agent.fast_path else "")
-        candidate_ids: list[str] = [t.tool_id for t in tool_refs] or (
-            [primary_id] if primary_id else [])
+        candidate_ids, primary_id = self._candidate_tool_ids(agent)
         if not candidate_ids:
             return ("", None)
         if len(candidate_ids) == 1:
             only = candidate_ids[0]
             return (only, self._registry.tools.get_optional(only))
 
-        # Score by required-param coverage. The registry declares a
-        # tool's full parameter list including some that the step runner
-        # injects from the request context (`tenant_id`, `user_id`,
-        # `role`, `request_id`, `session_id`, `trace_id`) — they aren't
-        # in `step.parameters`, but they ARE available to the handler.
-        # Exclude them from the required-set check so e.g.
-        # `summarize_entity` (required: ticket_id+service_id+tenant_id)
-        # is not wrongly eliminated when step.params has only ticket_id
-        # and service_id.
-        _CONTEXT_BOUND = {"tenant_id", "user_id", "role", "request_id",
-                          "session_id", "trace_id"}
-        # Entity-shaped parameter names — must match the single source of
-        # truth in `oneops.router.router._ENTITY_FIELD_NAMES`. A tool
-        # requiring an entity-shaped parameter is a stronger semantic
-        # match than one requiring a free-text `query`, because the
-        # entity is a structured commitment. Used as the tie-break when
-        # multiple tools have the same required-param count.
-        _ENTITY_SHAPED = {
-            "ticket_id", "article_id", "entity_id",
-            "incident_id", "request_id", "problem_id",
-            "change_id", "asset_id", "ci_id", "kb_id",
-        }
         present = {k for k, v in step_params.items()
                    if v not in (None, "", [], {})}
 
-        def _required(t: Any) -> set[str]:
-            return {p.name for p in (t.parameters or [])
-                    if p.required and p.name not in _CONTEXT_BOUND}
+        # First pass — the agent's declared primary tool wins if it's a
+        # candidate and its required params are all present (the author named
+        # it as the chat default for this UC).
+        hit = self._primary_tool_if_fits(primary_id, candidate_ids, present)
+        if hit is not None:
+            return hit
 
-        def _specificity(need: set[str]) -> tuple[int, int]:
-            """Two-component score for tool ranking.
-
-            * Primary: count of required params (more = more specific).
-            * Secondary tie-break: count of entity-shaped names among
-              required (structured-entity match > free-text match).
-
-            Same `need.issubset(present)` precondition holds for every
-            candidate; this function only ranks among those that fit.
-            """
-            return (len(need), len(need & _ENTITY_SHAPED))
-
-        # First pass — does the agent's declared primary tool fit? If so,
-        # it wins (an agent author has explicitly named it as the chat
-        # default for this UC).
-        primary_tool = (self._registry.tools.get_optional(primary_id)
-                        if primary_id else None)
-        if primary_tool is not None and primary_id in candidate_ids:
-            need = _required(primary_tool)
-            if not need or need.issubset(present):
-                return (primary_id, primary_tool)
-
-        # Second pass — pick the tool with the highest specificity.
-        # Tie-break by entity-shaped required-param count (a tool that
-        # asks for `ticket_id` is a stronger match than one that asks
-        # for `query` when both fit the present params). Final tie-break
-        # is registry order via the `>` comparison (first writer wins).
-        best_id: str = ""
-        best_tool: Any = None
-        best_score: tuple[int, int] = (-1, -1)
-        for tid in candidate_ids:
-            t = self._registry.tools.get_optional(tid)
-            if t is None:
-                continue
-            need = _required(t)
-            if need and need.issubset(present):
-                score = _specificity(need)
-                if score > best_score:
-                    best_score = score
-                    best_id, best_tool = tid, t
+        # Second pass — highest specificity among tools whose required params
+        # are all present (tie-break entity-shaped, then registry order).
+        best_id, best_tool = self._best_specificity_tool(candidate_ids, present)
         if best_tool is not None:
             return (best_id, best_tool)
         # Fall back to the agent's declared primary tool (fast-path's
@@ -275,6 +245,30 @@ class HandlerStepExecutor:
         # silent dead-end.
         first = candidate_ids[0]
         return (first, self._registry.tools.get_optional(first))
+
+    def _best_specificity_tool(
+        self, candidate_ids: list[str], present: set[str],
+    ) -> tuple[str, Any]:
+        """Among candidates whose REQUIRED params are all present, return the
+        `(tool_id, ToolRecord)` with the highest specificity score. Tie-break
+        by entity-shaped required-param count (a tool that asks for `ticket_id`
+        beats one that asks for `query` when both fit); final tie-break is
+        registry order via the `>` comparison (first writer wins). Returns
+        `("", None)` when no candidate's required set fits `present`."""
+        best_id: str = ""
+        best_tool: Any = None
+        best_score: tuple[int, int] = (-1, -1)
+        for tid in candidate_ids:
+            t = self._registry.tools.get_optional(tid)
+            if t is None:
+                continue
+            need = _required_params(t)
+            if need and need.issubset(present):
+                score = _tool_specificity(need)
+                if score > best_score:
+                    best_score = score
+                    best_id, best_tool = tid, t
+        return (best_id, best_tool)
 
     def __init__(
         self,
@@ -328,15 +322,9 @@ class HandlerStepExecutor:
                        f"tool_refs missing or none satisfies the step "
                        f"parameter shape"))
 
-        try:
-            handler = self._resolver.resolve(tool.handler_ref)
-        except ToolHandlerError as exc:
-            return make_result(step, status="failed",
-                               error=f"handler unresolvable: {exc}")
-        except Exception as exc:                          # noqa: BLE001 — boundary
-            return make_result(step, status="failed",
-                               error=f"handler resolver raised "
-                                     f"{type(exc).__name__}: {exc}")
+        handler, handler_err = self._resolve_handler(tool, step)
+        if handler_err is not None:
+            return handler_err
 
         timeout_s = (tool.timeout_ms / 1000.0) if tool.timeout_ms else self._default_timeout_s
         arguments = dict(step.get("parameters") or {})
@@ -363,6 +351,35 @@ class HandlerStepExecutor:
             "action": _tool_action(tool),
         })
 
+        return await self._invoke_handler(
+            handler=handler, arguments=arguments, context=context, step=step,
+            rid=rid, agent_id=agent_id, tool_id=tool_id, timeout_s=timeout_s)
+
+    def _resolve_handler(
+        self, tool: Any, step: dict[str, Any],
+    ) -> tuple[Any, dict[str, Any] | None]:
+        """Resolve a tool's handler callable. Returns `(handler, None)` on
+        success, or `(None, failed_result)` when the handler ref is
+        unresolvable or the resolver raises."""
+        try:
+            return self._resolver.resolve(tool.handler_ref), None
+        except ToolHandlerError as exc:
+            return None, make_result(step, status="failed",
+                                     error=f"handler unresolvable: {exc}")
+        except Exception as exc:                          # noqa: BLE001 — boundary
+            return None, make_result(
+                step, status="failed",
+                error=f"handler resolver raised {type(exc).__name__}: {exc}")
+
+    async def _invoke_handler(
+        self, *, handler: Any, arguments: dict[str, Any],
+        context: dict[str, Any], step: dict[str, Any], rid: str,
+        agent_id: str, tool_id: str, timeout_s: float,
+    ) -> dict[str, Any]:
+        """Call the handler inside a `handler_call` span with a hard timeout,
+        emitting the started marker + Langfuse I/O + the terminal `tool_done`
+        event. Timeouts and raises are typed into a failed result via
+        `_handler_error_result`."""
         with _tracer.start_as_current_span(
             "executor.step.handler_call",
             attributes={
@@ -392,39 +409,22 @@ class HandlerStepExecutor:
                 output = await asyncio.wait_for(
                     handler(arguments, context), timeout=timeout_s,
                 )
-            except TimeoutError:
-                latency_ms = int((time.monotonic() - t0) * 1000)
-                span.set_attribute("error", True)
-                span.set_attribute("step.status", "timeout")
-                _log.warning("executor.step.timeout",
-                             agent_id=agent_id, tool_id=tool_id,
-                             timeout_s=timeout_s)
-                _publish_event(rid, {
-                    "type": "tool_done", "step_id": step.get("step_id") or "",
-                    "agent_id": agent_id, "tool_id": tool_id,
-                    "status": "failed", "latency_ms": latency_ms})
-                return make_result(
-                    step, status="failed",
-                    error=f"handler timed out after {timeout_s:.1f}s "
-                          f"(tool={tool_id})",
-                    tool_id=tool_id, latency_ms=latency_ms)
+            except GraphInterrupt:
+                # The handler PAUSED the turn (Conversational Interrupt
+                # Protocol — e.g. UC-8 catalog asking the user to pick an
+                # item). This is control flow, not a failure: it must
+                # propagate to LangGraph so the graph checkpoints and the API
+                # returns the interrupt. Never type it into a failed result.
+                raise
             except Exception as exc:                      # noqa: BLE001 — boundary
-                latency_ms = int((time.monotonic() - t0) * 1000)
-                span.set_attribute("error", True)
-                span.set_attribute("step.status", "failed")
-                _log.warning("executor.step.handler_raised",
-                             agent_id=agent_id, tool_id=tool_id,
-                             error=str(exc)[:200])
-                _publish_event(rid, {
-                    "type": "tool_done", "step_id": step.get("step_id") or "",
-                    "agent_id": agent_id, "tool_id": tool_id,
-                    "status": "failed", "latency_ms": latency_ms})
-                return make_result(
-                    step, status="failed",
-                    error=f"handler raised {type(exc).__name__}: {exc}",
-                    tool_id=tool_id, latency_ms=latency_ms)
+                # TimeoutError (a subclass of Exception) and any other handler
+                # exception both land here; `_handler_error_result` branches on
+                # the type for the span status + log + error text.
+                return self._handler_error_result(
+                    exc, step=step, rid=rid, agent_id=agent_id,
+                    tool_id=tool_id, timeout_s=timeout_s, t0=t0, span=span)
             latency_ms = int((time.monotonic() - t0) * 1000)
-            span.set_attribute("step.status", "success")
+            span.set_attribute(_STEP_STATUS, "success")
             span.set_attribute("step.latency_ms", latency_ms)
             # Langfuse: tool OUTPUT (redacted, content-gated).
             set_langfuse_io(span, output=output, observation_type="span")
@@ -434,6 +434,68 @@ class HandlerStepExecutor:
                 "status": "success", "latency_ms": latency_ms})
             return make_result(step, status="success", output=output,
                                tool_id=tool_id, latency_ms=latency_ms)
+
+    def _handler_error_result(
+        self, exc: BaseException, *, step: dict[str, Any], rid: str,
+        agent_id: str, tool_id: str, timeout_s: float, t0: float, span,
+    ) -> dict[str, Any]:
+        """Build the failed step result for a handler that timed out or raised.
+        A `TimeoutError` is reported as a timeout (distinct span status + log +
+        user-safe text); any other exception is reported as a handler raise.
+        Both publish a `tool_done(failed)` event and return a `failed` result."""
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        span.set_attribute("error", True)
+        if isinstance(exc, TimeoutError):
+            span.set_attribute(_STEP_STATUS, "timeout")
+            _log.warning("executor.step.timeout",
+                         agent_id=agent_id, tool_id=tool_id,
+                         timeout_s=timeout_s)
+            error = (f"handler timed out after {timeout_s:.1f}s "
+                     f"(tool={tool_id})")
+        else:
+            span.set_attribute(_STEP_STATUS, "failed")
+            _log.warning("executor.step.handler_raised",
+                         agent_id=agent_id, tool_id=tool_id,
+                         error=str(exc)[:200])
+            error = f"handler raised {type(exc).__name__}: {exc}"
+        _publish_event(rid, {
+            "type": "tool_done", "step_id": step.get("step_id") or "",
+            "agent_id": agent_id, "tool_id": tool_id,
+            "status": "failed", "latency_ms": latency_ms})
+        return make_result(step, status="failed", error=error,
+                           tool_id=tool_id, latency_ms=latency_ms)
+
+
+# Parameter names the step runner injects from the request envelope
+# (`tenant_id`, `user_id`, …) — present to the handler but never in
+# `step.parameters`. Excluded from the required-set check so e.g.
+# `summarize_entity` (required: ticket_id+service_id+tenant_id) is not wrongly
+# eliminated when the step carries only ticket_id and service_id.
+_CONTEXT_BOUND_PARAMS = {"tenant_id", "user_id", "role", "request_id",
+                         "session_id", "trace_id"}
+# Entity-shaped parameter names — must match the single source of truth in
+# `oneops.router.router._ENTITY_FIELD_NAMES`. A tool requiring an entity-shaped
+# parameter is a stronger semantic match than one requiring a free-text
+# `query`, so it wins the specificity tie-break.
+_ENTITY_SHAPED_PARAMS = {
+    "ticket_id", "article_id", "entity_id",
+    "incident_id", "request_id", "problem_id",
+    "change_id", "asset_id", "ci_id", "kb_id",
+}
+
+
+def _required_params(tool: Any) -> set[str]:
+    """Required parameter names for a tool, excluding the context-bound names
+    the step runner injects from the request envelope."""
+    return {p.name for p in (tool.parameters or [])
+            if p.required and p.name not in _CONTEXT_BOUND_PARAMS}
+
+
+def _tool_specificity(need: set[str]) -> tuple[int, int]:
+    """Two-component ranking score: (count of required params, count of
+    entity-shaped names among them). More required params = more specific;
+    structured-entity match outranks free-text match on equal counts."""
+    return (len(need), len(need & _ENTITY_SHAPED_PARAMS))
 
 
 def _build_handler_context(request: dict[str, Any]) -> dict[str, Any]:

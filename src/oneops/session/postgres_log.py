@@ -1,6 +1,6 @@
 """PostgresEventLog — the durable, append-only cold log (production `EventLog`).
 
-Schema: `migrations/0001_conversation_events.sql`. The table is append-only —
+Schema: `database/conversation/01_schema.sql`. The table is append-only —
 this class issues exactly one `INSERT` (append), `SELECT`s (read), and a
 retention `DELETE` (prune). There is no `UPDATE` path: a conversation event,
 once written, is immutable.

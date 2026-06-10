@@ -34,6 +34,13 @@ from oneops.observability import get_logger, span
 
 _log = get_logger("oneops.session_store")
 
+# Telemetry span names + attribute keys (single source — sonar S1192).
+_SPAN_LOAD = "state.load"
+_SPAN_UPDATE = "state.update"
+_ATTR_KIND = "state.kind"
+_ATTR_FOUND = "state.found"
+_ATTR_ERROR = "state.error"
+
 # Lua: atomic "deep-merge" of a JSON map.
 # Reads the existing JSON, parses it, top-level merges the new entries,
 # writes it back, refreshes TTL. All under the key's single-shard lock.
@@ -114,25 +121,25 @@ class SessionStore:
     # ── Conversation history ─────────────────────────────────────
     async def get_history(self, session_id: str) -> list[dict[str, Any]]:
         """Return list of {role, content, timestamp?}. Empty list if absent."""
-        with span("state.load", **{"state.kind": "history"}) as sp:
+        with span(_SPAN_LOAD, **{_ATTR_KIND: "history"}) as sp:
             raw = await self._r.get(self._history_key(session_id))
             if raw is None:
-                sp.set_attribute("state.found", False)
+                sp.set_attribute(_ATTR_FOUND, False)
                 return []
             await self._r.expire(self._history_key(session_id), self._ttl)
             try:
                 items = list(orjson.loads(raw))
-                sp.set_attribute("state.found", True)
+                sp.set_attribute(_ATTR_FOUND, True)
                 sp.set_attribute("state.history_len", len(items))
                 return items
             except orjson.JSONDecodeError as e:
                 _log.warning("history.json.decode_failed", session_id=session_id, error=str(e))
-                sp.set_attribute("state.error", "json_decode")
+                sp.set_attribute(_ATTR_ERROR, "json_decode")
                 return []
 
     async def append_history(self, session_id: str, role: str, content: str) -> int:
         """Append a turn. Returns new list length. Trimmed to max_history."""
-        with span("state.update", **{"state.kind": "history", "state.role": role, "state.content_len": len(content)}):
+        with span(_SPAN_UPDATE, **{_ATTR_KIND: "history", "state.role": role, "state.content_len": len(content)}):
             item = orjson.dumps({"role": role, "content": content})
             new_len = await self._append_list(
                 keys=[self._history_key(session_id)],
@@ -144,15 +151,15 @@ class SessionStore:
     async def get_focus(self, session_id: str) -> dict[str, Any]:
         """Return focus dict (active_subject / mentioned_subject / anchor_subject /
         pending_clarification). Empty dict if absent."""
-        with span("state.load", **{"state.kind": "focus"}) as sp:
+        with span(_SPAN_LOAD, **{_ATTR_KIND: "focus"}) as sp:
             raw = await self._r.get(self._focus_key(session_id))
             if raw is None:
-                sp.set_attribute("state.found", False)
+                sp.set_attribute(_ATTR_FOUND, False)
                 return {}
             await self._r.expire(self._focus_key(session_id), self._ttl)
             try:
                 d = dict(orjson.loads(raw))
-                sp.set_attribute("state.found", True)
+                sp.set_attribute(_ATTR_FOUND, True)
                 sp.set_attribute("state.focus_keys", len(d))
                 if "active_subject" in d and isinstance(d["active_subject"], dict):
                     eid = d["active_subject"].get("entity_id")
@@ -161,7 +168,7 @@ class SessionStore:
                 return d
             except orjson.JSONDecodeError as e:
                 _log.warning("focus.json.decode_failed", session_id=session_id, error=str(e))
-                sp.set_attribute("state.error", "json_decode")
+                sp.set_attribute(_ATTR_ERROR, "json_decode")
                 return {}
 
     async def update_focus(self, session_id: str, updates: dict[str, Any]) -> None:
@@ -175,9 +182,9 @@ class SessionStore:
         if not updates:
             return
         with span(
-            "state.update",
+            _SPAN_UPDATE,
             **{
-                "state.kind": "focus",
+                _ATTR_KIND: "focus",
                 "state.update_keys": ",".join(sorted(updates.keys())),
             },
         ):
@@ -189,8 +196,8 @@ class SessionStore:
     async def set_focus(self, session_id: str, focus: dict[str, Any]) -> None:
         """Replace focus state outright. Use sparingly; prefer update_focus."""
         with span(
-            "state.update",
-            **{"state.kind": "focus", "state.operation": "set", "state.focus_keys": len(focus)},
+            _SPAN_UPDATE,
+            **{_ATTR_KIND: "focus", "state.operation": "set", "state.focus_keys": len(focus)},
         ):
             await self._r.set(
                 self._focus_key(session_id),
@@ -208,15 +215,15 @@ class SessionStore:
     # ── Canonical state ──────────────────────────────────────────
     async def get_canonical_state(self, session_id: str) -> dict[str, Any]:
         """Return canonical_state dict. Empty dict if absent."""
-        with span("state.load", **{"state.kind": "canonical"}) as sp:
+        with span(_SPAN_LOAD, **{_ATTR_KIND: "canonical"}) as sp:
             raw = await self._r.get(self._canonical_key(session_id))
             if raw is None:
-                sp.set_attribute("state.found", False)
+                sp.set_attribute(_ATTR_FOUND, False)
                 return {}
             await self._r.expire(self._canonical_key(session_id), self._ttl)
             try:
                 d = dict(orjson.loads(raw))
-                sp.set_attribute("state.found", True)
+                sp.set_attribute(_ATTR_FOUND, True)
                 sp.set_attribute("state.key_count", len(d))
                 last_uc = d.get("last_successful_use_case")
                 if last_uc:
@@ -227,7 +234,7 @@ class SessionStore:
                 return d
             except orjson.JSONDecodeError as e:
                 _log.warning("canonical.json.decode_failed", session_id=session_id, error=str(e))
-                sp.set_attribute("state.error", "json_decode")
+                sp.set_attribute(_ATTR_ERROR, "json_decode")
                 return {}
 
     async def update_canonical_state(self, session_id: str, updates: dict[str, Any]) -> None:
@@ -235,9 +242,9 @@ class SessionStore:
         if not updates:
             return
         with span(
-            "state.update",
+            _SPAN_UPDATE,
             **{
-                "state.kind": "canonical",
+                _ATTR_KIND: "canonical",
                 "state.update_keys": ",".join(sorted(updates.keys())),
             },
         ):

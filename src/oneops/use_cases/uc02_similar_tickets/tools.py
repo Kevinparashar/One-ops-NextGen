@@ -64,6 +64,84 @@ async def _default_conn_provider():
     return await asyncpg.connect(pg_url)
 
 
+_UC2_BOUNDARY_MSG = (
+    "I can only find similar tickets for incidents and requests. The current "
+    "focus is a different record type — try asking about an incident (INC…) "
+    "or request (REQ…) instead."
+)
+
+
+def _resolve_boundary_response(exc: ResolveError) -> dict[str, Any]:
+    """Map a ResolveError to the friendly UC-2 boundary payload when the focus
+    is a record type UC-2 doesn't cover (problem / change / KB / …) — telling
+    the user what we CAN do, not what we can't. Any other resolver error is
+    re-raised as ValueError so the tool-runner emits a clean error envelope."""
+    msg = str(exc)
+    if "UC-2 supports" in msg or "service_id must be one of" in msg:
+        return {"display_text": _UC2_BOUNDARY_MSG,
+                "message": _UC2_BOUNDARY_MSG, "results": []}
+    raise ValueError(msg) from exc
+
+
+def _coerce_time_filter(raw_tf: Any) -> TimeFilter | None:
+    """Accept an already-validated TimeFilter or a dict (from JSON); anything
+    else (or a malformed dict) degrades to None — a bad scope must not kill the
+    query (§2.7: the operator sees time_filter.outcome=invalid on the span)."""
+    if isinstance(raw_tf, TimeFilter):
+        return raw_tf
+    if isinstance(raw_tf, dict):
+        try:
+            return TimeFilter(**raw_tf)
+        except Exception:                                          # noqa: BLE001
+            return None
+    return None
+
+
+def _find_similar_error_response(
+    exc: RuntimeError, *, ticket_id: str, tenant_id: str, service_id: Any,
+) -> dict[str, Any]:
+    """Translate find_similar's RuntimeError (not-found / anchor-pending) into a
+    clean chat payload so multi-turn keeps flowing; re-raise anything else."""
+    msg = str(exc).lower()
+    base = {"results": [], "source_ticket_id": ticket_id,
+            "service_id": service_id, "tenant_id": tenant_id}
+    if "not found" in msg:
+        return {"display_text":
+                f"Ticket {ticket_id} not found in tenant {tenant_id}.", **base}
+    if "anchor" in msg or "refresh" in msg:
+        return {"display_text": (
+            f"Embedding for {ticket_id} is still being computed — "
+            f"please try again in a moment."), **base}
+    raise exc
+
+
+def _gather_inputs(
+    arguments: dict[str, Any], context: dict[str, Any],
+) -> tuple[str, str, str, str, str | None]:
+    """Resolve (tenant_id, user_id, role, ticket_id_raw, service_id) from the
+    tool arguments + context, with multi-turn focus fallback (the executor sets
+    focus_entity_id / focus_service_id on the context after the previous turn,
+    so a follow-up like "are there any similar?" still binds). Raises ValueError
+    when tenant_id or a ticket is missing."""
+    tenant_id = str(context.get("tenant_id") or arguments.get("tenant_id") or "").strip()
+    user_id = str(context.get("user_id") or arguments.get("user_id") or "").strip()
+    role = str(context.get("role") or arguments.get("role") or "").strip()
+    ticket_id_raw = str(
+        arguments.get("ticket_id") or context.get("focus_entity_id") or ""
+    ).strip()
+    service_id = str(
+        arguments.get("service_id") or context.get("focus_service_id") or ""
+    ).strip().lower() or None
+    if not tenant_id:
+        raise ValueError("tenant_id missing from context and arguments")
+    if not ticket_id_raw:
+        raise ValueError(
+            "ticket_id is required — provide it explicitly (e.g. "
+            "'similar to INC0001234') or first set focus by summarising a "
+            "ticket")
+    return tenant_id, user_id, role, ticket_id_raw, service_id
+
+
 async def find_similar_entities(
     arguments: dict[str, Any], context: dict[str, Any],
 ) -> dict[str, Any]:
@@ -74,65 +152,14 @@ async def find_similar_entities(
     UC-1's `summarize_entity` fast-path contract. The id_resolver is the
     single source of truth for canonicalisation across button + chat.
     """
-    tenant_id = str(context.get("tenant_id") or arguments.get("tenant_id") or "").strip()
-    user_id = str(context.get("user_id") or arguments.get("user_id") or "").strip()
-    role = str(context.get("role") or arguments.get("role") or "").strip()
-
-    # Multi-turn focus binding (LangGraph state channel — see [[project_poc5mw1_focus_state_channel_2026_05_28]]).
-    # Follow-up turns like "are there any similar?" carry no ticket in the
-    # arguments; the executor sets focus_entity_id / focus_service_id on the
-    # tool context after the previous turn. We read both as fallbacks.
-    ticket_id_raw = str(
-        arguments.get("ticket_id")
-        or context.get("focus_entity_id")
-        or ""
-    ).strip()
-    service_id = str(
-        arguments.get("service_id")
-        or context.get("focus_service_id")
-        or ""
-    ).strip().lower() or None
-
-    if not tenant_id:
-        raise ValueError("tenant_id missing from context and arguments")
-    if not ticket_id_raw:
-        raise ValueError(
-            "ticket_id is required — provide it explicitly (e.g. "
-            "'similar to INC0001234') or first set focus by summarising a "
-            "ticket")
+    tenant_id, user_id, role, ticket_id_raw, service_id = _gather_inputs(
+        arguments, context)
 
     # Canonicalise + (when missing) auto-derive service_id from the prefix.
     try:
         resolved = _resolve_id(ticket_id_raw, service_id)
     except ResolveError as exc:
-        msg = str(exc)
-        # Out-of-scope service (problem / change / KB / etc.) — the user's
-        # focus is on a record type UC-2 doesn't cover. Return a friendly
-        # explanatory message instead of raising; the composer surfaces it
-        # via the `message` field so the chat shows a useful sentence
-        # rather than "I wasn't able to complete that request." This is
-        # the §UC-2 boundary case: tell the user what we can do, not what
-        # we can't.
-        if ("UC-2 supports" in msg
-                or "service_id must be one of" in msg):
-            return {
-                "display_text": (
-                    "I can only find similar tickets for incidents and "
-                    "requests. The current focus is a different record "
-                    "type — try asking about an incident (INC…) or request "
-                    "(REQ…) instead."
-                ),
-                "message": (
-                    "I can only find similar tickets for incidents and "
-                    "requests. The current focus is a different record "
-                    "type — try asking about an incident (INC…) or request "
-                    "(REQ…) instead."
-                ),
-                "results": [],
-            }
-        # Re-raise other resolver errors as ValueError so the tool-runner
-        # emits a clean tool-error envelope back to the composer.
-        raise ValueError(msg) from exc
+        return _resolve_boundary_response(exc)
 
     ticket_id = resolved.entity_id
     service_id = resolved.service_id
@@ -145,18 +172,8 @@ async def find_similar_entities(
     # TimeFilter — populated by the executor's conditional extractor step
     # for chat turns, or by the route directly for button calls. Accept dict
     # (from JSON) or already-validated TimeFilter; reject anything else.
-    raw_tf = context.get("time_filter") or arguments.get("time_filter")
-    time_filter: TimeFilter | None = None
-    if isinstance(raw_tf, TimeFilter):
-        time_filter = raw_tf
-    elif isinstance(raw_tf, dict):
-        try:
-            time_filter = TimeFilter(**raw_tf)
-        except Exception:                                          # noqa: BLE001
-            # Loud is rule §2.7, but a malformed scope shouldn't kill the
-            # whole query — degrade to no filter and the operator sees the
-            # span attribute time_filter.outcome=invalid for diagnosis.
-            time_filter = None
+    time_filter = _coerce_time_filter(
+        context.get("time_filter") or arguments.get("time_filter"))
 
     try:
         resp: SimilarTicketsResponse = await find_similar(
@@ -177,30 +194,8 @@ async def find_similar_entities(
             discriminator_model=_discriminator_model,
         )
     except RuntimeError as exc:
-        # `find_similar` raises RuntimeError for: not-found, anchor-pending,
-        # or DB unreachable. The chat composer needs a clean text response —
-        # we translate into a user-readable string so multi-turn keeps flowing.
-        msg = str(exc).lower()
-        if "not found" in msg:
-            return {
-                "display_text": f"Ticket {ticket_id} not found in tenant {tenant_id}.",
-                "results": [],
-                "source_ticket_id": ticket_id,
-                "service_id": service_id,
-                "tenant_id": tenant_id,
-            }
-        if "anchor" in msg or "refresh" in msg:
-            return {
-                "display_text": (
-                    f"Embedding for {ticket_id} is still being computed — "
-                    f"please try again in a moment."
-                ),
-                "results": [],
-                "source_ticket_id": ticket_id,
-                "service_id": service_id,
-                "tenant_id": tenant_id,
-            }
-        raise
+        return _find_similar_error_response(
+            exc, ticket_id=ticket_id, tenant_id=tenant_id, service_id=service_id)
 
     # Structured response (for downstream LLM refinement, follow-ups) +
     # pre-rendered chat-ready text. The chat composer reads `display_text`

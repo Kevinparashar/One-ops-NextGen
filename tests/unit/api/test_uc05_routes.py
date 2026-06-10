@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 
 from oneops.api.uc05_routes import (
     router,
+    set_executor_propose_runner,
     set_ticket_store,
-    set_tools_runner,
 )
 from oneops.use_cases.uc05_triage.contracts import Proposal
 from oneops.use_cases.uc05_triage.stores.json_store import JsonFixtureStore
@@ -64,7 +64,7 @@ def _fixture(tmp: Path) -> Path:
 @pytest.fixture
 def app(tmp_path: Path) -> FastAPI:
     set_ticket_store(JsonFixtureStore(_fixture(tmp_path)))
-    set_tools_runner(_fake_tools_runner)
+    set_executor_propose_runner(_fake_executor_runner)
     a = FastAPI()
     a.include_router(router)
     return a
@@ -75,13 +75,13 @@ def client(app: FastAPI) -> TestClient:
     return TestClient(app)
 
 
-# Stub Tools runner — returns a Proposal without calling real LLM/DB
-async def _fake_tools_runner(
-    *, ticket_row, service_id, tenant_id
+# Stub executor propose runner — returns a Proposal without the real executor.
+async def _fake_executor_runner(
+    *, service_id, ticket_id, tenant_id, user_id, role
 ):
     return Proposal(
         proposal_id="p-test-001",
-        ticket_id=ticket_row.get(f"{service_id}_id"),
+        ticket_id=ticket_id,
         service_id=service_id,
         tenant_id=tenant_id,
         created_at=datetime.now(UTC),

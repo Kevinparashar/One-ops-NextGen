@@ -107,6 +107,55 @@ def _otlp_path_accepts(endpoint: str, path: str, timeout_s: float = 0.5) -> bool
         return False
 
 
+def _probe_otlp(otlp_endpoint: str) -> tuple[bool, bool]:
+    """Probe the OTLP endpoint → (traces_attached, metrics_attached). Attach
+    only the paths the backend accepts (tempo accepts /v1/traces but 404s
+    /v1/metrics). Prints a stderr note when unreachable / nothing attachable."""
+    if not otlp_endpoint:
+        return False, False
+    if not _otlp_endpoint_reachable(otlp_endpoint):
+        import sys
+        print(
+            f"[observability] OTLP endpoint {otlp_endpoint} not reachable at "
+            f"startup; span + metric export disabled to avoid retry-storm. "
+            f"Spans are still emitted in-memory.",
+            file=sys.stderr,
+        )
+        return False, False
+    traces = _otlp_path_accepts(otlp_endpoint, "v1/traces")
+    metrics = _otlp_path_accepts(otlp_endpoint, "v1/metrics")
+    if not traces and not metrics:
+        import sys
+        print(
+            f"[observability] OTLP endpoint {otlp_endpoint} reachable but "
+            f"neither /v1/traces nor /v1/metrics accepted POSTs. "
+            f"Span + metric export disabled.",
+            file=sys.stderr,
+        )
+    return traces, metrics
+
+
+def _build_meter_provider(
+    resource: Any, metrics_attached: bool, otlp_endpoint: str,
+) -> MeterProvider:
+    """Meter provider with an OTLP periodic exporter when metrics are
+    attachable (interval env-tunable via OTEL_METRIC_EXPORT_INTERVAL_MS,
+    default 60s); else an in-memory-only provider (counters still update for
+    in-process readers — tests, dev assertions)."""
+    if not metrics_attached:
+        return MeterProvider(resource=resource)
+    metric_exporter = OTLPMetricExporter(
+        endpoint=f"{otlp_endpoint.rstrip('/')}/v1/metrics")
+    interval = 60_000
+    raw_iv = os.getenv("OTEL_METRIC_EXPORT_INTERVAL_MS")
+    if raw_iv:
+        with contextlib.suppress(ValueError):
+            interval = max(1_000, int(raw_iv))
+    reader = PeriodicExportingMetricReader(
+        metric_exporter, export_interval_millis=interval)
+    return MeterProvider(resource=resource, metric_readers=[reader])
+
+
 def setup_observability() -> None:
     """Initialize OTEL + structlog. Safe to call multiple times."""
     global _initialized
@@ -134,28 +183,7 @@ def setup_observability() -> None:
         # span exporter but no metric exporter — avoids the "404 Not Found"
         # log spam every 60 seconds against tempo.
         otlp_endpoint = settings.otel_exporter_otlp_endpoint
-        traces_attached = False
-        metrics_attached = False
-        if otlp_endpoint:
-            if _otlp_endpoint_reachable(otlp_endpoint):
-                traces_attached = _otlp_path_accepts(otlp_endpoint, "v1/traces")
-                metrics_attached = _otlp_path_accepts(otlp_endpoint, "v1/metrics")
-                if not traces_attached and not metrics_attached:
-                    import sys
-                    print(
-                        f"[observability] OTLP endpoint {otlp_endpoint} reachable but "
-                        f"neither /v1/traces nor /v1/metrics accepted POSTs. "
-                        f"Span + metric export disabled.",
-                        file=sys.stderr,
-                    )
-            else:
-                import sys
-                print(
-                    f"[observability] OTLP endpoint {otlp_endpoint} not reachable at "
-                    f"startup; span + metric export disabled to avoid retry-storm. "
-                    f"Spans are still emitted in-memory.",
-                    file=sys.stderr,
-                )
+        traces_attached, metrics_attached = _probe_otlp(otlp_endpoint)
 
         if traces_attached:
             exporter = OTLPSpanExporter(
@@ -166,26 +194,8 @@ def setup_observability() -> None:
         trace.set_tracer_provider(provider)
 
         # ── OTEL meter provider ─────────────────────────────────────
-        if metrics_attached:
-            metric_exporter = OTLPMetricExporter(
-                endpoint=f"{otlp_endpoint.rstrip('/')}/v1/metrics"
-            )
-            # Export interval is env-tunable. Default 60s for production
-            # (low overhead); a demo / dashboard can drop it to ~5s via
-            # OTEL_METRIC_EXPORT_INTERVAL_MS so metrics surface quickly.
-            _interval = 60_000
-            _raw_iv = os.getenv("OTEL_METRIC_EXPORT_INTERVAL_MS")
-            if _raw_iv:
-                with contextlib.suppress(ValueError):
-                    _interval = max(1_000, int(_raw_iv))
-            reader = PeriodicExportingMetricReader(
-                metric_exporter, export_interval_millis=_interval
-            )
-            meter_provider = MeterProvider(resource=resource, metric_readers=[reader])
-        else:
-            # No metric exporter — counters/histograms still update in-memory
-            # for in-process readers (e.g. tests, dev assertions).
-            meter_provider = MeterProvider(resource=resource)
+        meter_provider = _build_meter_provider(
+            resource, metrics_attached, otlp_endpoint)
         otel_metrics.set_meter_provider(meter_provider)
 
         # ── asyncpg auto-instrumentation ────────────────────────────

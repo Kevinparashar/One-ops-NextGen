@@ -1,6 +1,6 @@
 """PolicyEngine — the embedded data-driven policy evaluator (P10, ADR-0003).
 
-Policy is structured data (`registries/v2/policy_rules.json`). The engine
+Policy is structured data (`registries/v2/platform/policy_rules.json`). The engine
 loads it, and `evaluate` answers a `PolicyQuery` deterministically: the
 highest-priority matching rule wins; no match means ALLOW (open by default —
 a rule must exist to restrict).
@@ -31,7 +31,7 @@ from oneops.policy_engine.models import (
 _log = get_logger("oneops.policy_engine")
 _tracer = get_tracer("oneops.policy_engine")
 
-_DEFAULT_POLICY_FILE = "registries/v2/policy_rules.json"
+_DEFAULT_POLICY_FILE = "registries/v2/platform/policy_rules.json"
 
 
 def _parse_rules(doc: dict) -> list[PolicyRule]:

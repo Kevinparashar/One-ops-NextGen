@@ -1,4 +1,4 @@
-.PHONY: setup install up down test test-unit test-integration lint fmt typecheck clean proto proto-check ci ci-fast pmg-verify
+.PHONY: setup install up down test test-unit test-integration eval lint fmt typecheck clean proto proto-check ci ci-fast pmg-verify
 
 PYTHON ?= python3.12
 VENV ?= .venv
@@ -33,6 +33,11 @@ test-unit:
 test-integration:
 	$(PYTEST) -v -m integration tests
 
+# Routing-quality gates (recall / held-out / counter-example). Needs live
+# Postgres + LLM gateway; costs LLM calls. Skipped unless RUN_ROUTING_EVAL=1.
+eval:
+	RUN_ROUTING_EVAL=1 $(PYTEST) -v -m routing_eval tests/integration/test_routing_gates.py
+
 test-cov:
 	$(PYTEST) --cov --cov-report=term-missing -v
 
@@ -66,7 +71,7 @@ pmg-verify:
 
 # Regenerate protobuf bindings from proto/ (ADR-0001).
 proto:
-	PYTHON=$(PY) bash tools/gen_proto.sh
+	PYTHON=$(PY) bash dev/gen_proto.sh
 
 # CI gate: regenerate and fail if the checked-in bindings are stale.
 proto-check: proto

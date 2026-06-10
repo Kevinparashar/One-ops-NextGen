@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -40,7 +40,18 @@ from oneops.use_cases.uc05_triage.queue import (
 from oneops.use_cases.uc05_triage.stores.base import TicketStore
 from oneops.use_cases.uc05_triage.stores.json_store import JsonFixtureStore
 
-router = APIRouter(prefix="/api/uc05", tags=["uc05-triage"])
+# Telemetry/HTTP literals → constants (sonar S1192).
+_AI_AGENT_RUNS_TOTAL = "ai.agent.runs.total"
+_AI_REQUEST = "ai.request"
+_ONEOPS_ENDPOINT = "oneops.endpoint"
+_ONEOPS_ROLE = "oneops.role"
+_ONEOPS_TENANT_ID = "oneops.tenant_id"
+_ONEOPS_USER_ID = "oneops.user_id"
+
+router = APIRouter(
+    prefix="/api/uc05", tags=["uc05-triage"],
+    responses={401: {"description": "Missing or invalid identity headers"},
+               403: {"description": "Role not permitted for this endpoint"}})
 
 # Default store path — JSON fixture inside the UC-5 folder
 _DEFAULT_FIXTURE_PATH = (
@@ -148,18 +159,18 @@ _proposal_cache: dict[str, Proposal] = {}
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
-@router.get("/queue-summary", response_model=QueueSummaryResponse)
+@router.get("/queue-summary")
 async def queue_summary(
     request: Request,
-    store: TicketStore = Depends(get_ticket_store),
+    store: Annotated[TicketStore, Depends(get_ticket_store)],
 ) -> QueueSummaryResponse:
     tenant, user, role = _principal(request)
     _require_triage_role(role)
 
-    with span("ai.request",
-              **{"oneops.endpoint": "uc05.queue_summary",
-                 "oneops.tenant_id": tenant, "oneops.user_id": user,
-                 "oneops.role": role}):
+    with span(_AI_REQUEST,
+              **{_ONEOPS_ENDPOINT: "uc05.queue_summary",
+                 _ONEOPS_TENANT_ID: tenant, _ONEOPS_USER_ID: user,
+                 _ONEOPS_ROLE: role}):
         inc_rows = await store.list_all(service_id="incident", tenant_id=tenant)  # type: ignore[attr-defined]
         req_rows = await store.list_all(service_id="request", tenant_id=tenant)  # type: ignore[attr-defined]
     return QueueSummaryResponse(
@@ -172,19 +183,19 @@ async def queue_summary(
     )
 
 
-@router.get("/queue", response_model=list[QueueItem])
+@router.get("/queue")
 async def queue(
     request: Request,
-    service_id: ServiceId = Query(...),
-    store: TicketStore = Depends(get_ticket_store),
+    service_id: Annotated[ServiceId, Query()],
+    store: Annotated[TicketStore, Depends(get_ticket_store)],
 ) -> list[QueueItem]:
     tenant, user, role = _principal(request)
     _require_triage_role(role)
 
-    with span("ai.request",
-              **{"oneops.endpoint": "uc05.queue",
-                 "oneops.tenant_id": tenant, "oneops.user_id": user,
-                 "oneops.role": role, "uc05.service_id": service_id}):
+    with span(_AI_REQUEST,
+              **{_ONEOPS_ENDPOINT: "uc05.queue",
+                 _ONEOPS_TENANT_ID: tenant, _ONEOPS_USER_ID: user,
+                 _ONEOPS_ROLE: role, "uc05.service_id": service_id}):
         rows = await store.list_all(service_id=service_id, tenant_id=tenant)  # type: ignore[attr-defined]
     out: list[QueueItem] = []
     id_field = f"{service_id}_id"
@@ -207,30 +218,17 @@ async def queue(
     return out
 
 
-# Pluggable tool runners — injected by tests; real wiring in app.py at startup.
-# Type: async fn(ticket_row, service_id, tenant_id) -> Proposal
-ToolsRunner = Callable[..., Awaitable[Proposal]]
-_tools_runner: ToolsRunner | None = None
-
-
-def set_tools_runner(fn: ToolsRunner | None) -> None:
-    """Wire the Tools 1+2+3 + assembly orchestration. Tests inject a stub."""
-    global _tools_runner
-    _tools_runner = fn
-
-
-# B-refactor Phase 2b-iii — the executor-backed propose runner (runs the triage
-# plan on the MAIN executor). PARALLEL to `_tools_runner`: when wired (flag-gated
-# at boot), `_propose_impl` uses it instead of the legacy bespoke runner. The
-# legacy seam above is left untouched. Signature carries the actor context the
-# executor's authz_recheck before-hook needs:
+# The executor-backed propose runner — UC-5's ONLY propose path (Phase 3b: the
+# bespoke runner/graph were retired). Runs the triage plan on the MAIN executor.
+# Real wiring in app.py at startup; tests inject a stub. Signature carries the
+# actor context the executor's authz_recheck before-hook needs:
 #     async fn(*, service_id, ticket_id, tenant_id, user_id, role) -> Proposal
 ExecutorProposeRunner = Callable[..., Awaitable[Proposal]]
 _executor_propose_runner: ExecutorProposeRunner | None = None
 
 
 def set_executor_propose_runner(fn: ExecutorProposeRunner | None) -> None:
-    """Wire (or clear) the executor-backed propose runner. None ⇒ legacy path."""
+    """Wire (or clear) the executor-backed propose runner."""
     global _executor_propose_runner
     _executor_propose_runner = fn
 
@@ -278,19 +276,22 @@ async def propose_stream(payload: ProposeRequest, request: Request):
         media_type="application/x-ndjson")
 
 
-@router.post("/propose", response_model=Proposal)
+@router.post("/propose", responses={
+    404: {"description": "Ticket not found in this tenant"},
+    409: {"description": "Ticket already fully triaged"},
+    503: {"description": "Executor propose runner not wired"}})
 async def propose(
     payload: ProposeRequest,
     request: Request,
-    store: TicketStore = Depends(get_ticket_store),
+    store: Annotated[TicketStore, Depends(get_ticket_store)],
 ) -> Proposal:
     tenant, user, role = _principal(request)
     _require_triage_role(role)
 
-    _sp_cm = span("ai.request",
-                   **{"oneops.endpoint": "uc05.propose",
-                      "oneops.tenant_id": tenant, "oneops.user_id": user,
-                      "oneops.role": role, "uc05.ticket_id": payload.ticket_id,
+    _sp_cm = span(_AI_REQUEST,
+                   **{_ONEOPS_ENDPOINT: "uc05.propose",
+                      _ONEOPS_TENANT_ID: tenant, _ONEOPS_USER_ID: user,
+                      _ONEOPS_ROLE: role, "uc05.ticket_id": payload.ticket_id,
                       "uc05.service_id": payload.service_id})
     _sp_cm.__enter__()
     import time as _time
@@ -313,7 +314,7 @@ async def propose(
 
 
 async def _propose_impl(*, payload, tenant, user, role, store):
-    _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+    _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                 tenant_id=tenant, operation="propose",
                 status="started")
     try:
@@ -334,27 +335,18 @@ async def _propose_impl(*, payload, tenant, user, role, store):
         if not missing_uc5_fields(row, payload.service_id):
             raise HTTPException(409, detail="ticket already fully triaged")
 
-        # B-refactor: when the executor runner is wired (flag-gated at boot),
-        # run the triage plan on the MAIN executor; else the legacy bespoke
-        # runner. Both return the same Proposal contract.
-        if _executor_propose_runner is not None:
-            proposal = await _executor_propose_runner(
-                service_id=payload.service_id,
-                ticket_id=payload.ticket_id,
-                tenant_id=tenant,
-                user_id=user,
-                role=role,
-            )
-        elif _tools_runner is not None:
-            proposal = await _tools_runner(
-                ticket_row=dict(row),
-                service_id=payload.service_id,
-                tenant_id=tenant,
-            )
-        else:
-            raise HTTPException(503, detail="tools runner not wired")
+        # Run the triage plan on the MAIN executor (the only propose path).
+        if _executor_propose_runner is None:
+            raise HTTPException(503, detail="executor propose runner not wired")
+        proposal = await _executor_propose_runner(
+            service_id=payload.service_id,
+            ticket_id=payload.ticket_id,
+            tenant_id=tenant,
+            user_id=user,
+            role=role,
+        )
         _proposal_cache[proposal.proposal_id] = proposal
-        _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+        _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="propose",
                     status="success")
         return proposal
@@ -362,30 +354,33 @@ async def _propose_impl(*, payload, tenant, user, role, store):
         # 4xx and similar are deliberate refusals (ticket not found,
         # already triaged, role denied). They are NOT worker failures
         # and must not pollute the success-ratio denominator.
-        _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+        _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="propose",
                     status="refused")
         raise
     except Exception:
-        _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+        _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="propose",
                     status="failed")
         raise
 
 
-@router.post("/decide", response_model=Outcome)
+@router.post("/decide", responses={
+    404: {"description": "Proposal or ticket not found / expired"},
+    409: {"description": "Conflict applying the decision"},
+    422: {"description": "Invalid decision payload"}})
 async def decide(
     payload: DecideRequest,
     request: Request,
-    store: TicketStore = Depends(get_ticket_store),
+    store: Annotated[TicketStore, Depends(get_ticket_store)],
 ) -> Outcome:
     tenant, user, role = _principal(request)
     _require_triage_role(role)
 
-    _sp_cm = span("ai.request",
-                   **{"oneops.endpoint": "uc05.decide",
-                      "oneops.tenant_id": tenant, "oneops.user_id": user,
-                      "oneops.role": role,
+    _sp_cm = span(_AI_REQUEST,
+                   **{_ONEOPS_ENDPOINT: "uc05.decide",
+                      _ONEOPS_TENANT_ID: tenant, _ONEOPS_USER_ID: user,
+                      _ONEOPS_ROLE: role,
                       "uc05.proposal_id": payload.proposal_id,
                       "uc05.choice": payload.choice})
     _sp_cm.__enter__()
@@ -406,7 +401,7 @@ async def decide(
 
 
 async def _decide_impl(*, payload, tenant, user, store):
-    _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+    _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                 tenant_id=tenant, operation="decide",
                 status="started")
     try:
@@ -414,12 +409,12 @@ async def _decide_impl(*, payload, tenant, user, store):
                                           user=user, store=store)
     except HTTPException:
         # Deliberate refusal — does not represent a worker failure.
-        _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+        _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="decide",
                     status="refused")
         raise
     except Exception:
-        _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+        _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                     tenant_id=tenant, operation="decide",
                     status="failed")
         raise
@@ -474,7 +469,7 @@ async def _decide_impl_inner(*, payload, tenant, user, store):
 
     # Evict the proposal — single-use
     _proposal_cache.pop(payload.proposal_id, None)
-    _metric_inc("ai.agent.runs.total", 1, agent_id="uc05_triage",
+    _metric_inc(_AI_AGENT_RUNS_TOTAL, 1, agent_id="uc05_triage",
                 tenant_id=tenant, operation="decide",
                 status="success")
     return outcome

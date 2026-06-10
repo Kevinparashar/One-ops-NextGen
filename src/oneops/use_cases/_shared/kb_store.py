@@ -29,12 +29,41 @@ from oneops.observability import get_logger, increment
 
 _log = get_logger("oneops.use_cases.kb_store")
 
+# Telemetry / DB literals (single source — sonar S1192).
+_TRACER_NAME = "oneops.kb_store.postgres"
+_ATTR_DB_SYSTEM = "db.system"
+_ATTR_DB_STMT = "db.statement.name"
+_ATTR_TENANT = "oneops.tenant_id"
+_METRIC_PG_ERRORS = "ai.postgres.errors.total"
+_ATTR_ROW_COUNT = "db.row_count"
+
 # A search token: a run of word characters, lower-cased. Deterministic.
 _WORD = re.compile(r"[0-9a-z]+")
 
 
 def _tokens(text: str) -> set[str]:
     return set(_WORD.findall((text or "").lower()))
+
+
+def _parse_pgvector_embedding(raw: Any) -> list[float] | None:
+    """Coerce a stored embedding cell to `list[float]`. pgvector returns a
+    string like '[0.1,0.2,...]' via asyncpg by default; a future asyncpg may
+    return a list/tuple already. Returns None when the value can't be parsed
+    (caller skips that id)."""
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s.startswith("[") and s.endswith("]"):
+            s = s[1:-1]
+        try:
+            return [float(x) for x in s.split(",")]
+        except ValueError:
+            return None
+    if isinstance(raw, (list, tuple)):
+        try:
+            return [float(x) for x in raw]
+        except (ValueError, TypeError):
+            return None
+    return None
 
 
 @runtime_checkable
@@ -134,7 +163,7 @@ class InMemoryKbStore:
     def _searchable(article: dict[str, Any]) -> set[str]:
         parts = [article.get("title", ""), article.get("summary", ""),
                  article.get("content", "")]
-        parts.extend(str(t) for t in article.get("tags", []) or [])
+        parts.extend(str(t) for t in article.get("tags") or [])
         return _tokens(" ".join(parts))
 
     async def search(
@@ -337,7 +366,7 @@ class PostgresKbStore:
         from opentelemetry.trace import get_tracer as _gt
 
         from oneops.errors import OneOpsError
-        tr = _gt("oneops.kb_store.postgres")
+        tr = _gt(_TRACER_NAME)
 
         pool = await self._ensure_pool()
         # Return `content` along with title/summary so the downstream
@@ -361,9 +390,9 @@ class PostgresKbStore:
         with tr.start_as_current_span(
             "kb_store.postgres.search",
             attributes={
-                "db.system": "postgresql",
-                "db.statement.name": "itsm.kb_knowledge.search",
-                "oneops.tenant_id": tenant_id,
+                _ATTR_DB_SYSTEM: "postgresql",
+                _ATTR_DB_STMT: "itsm.kb_knowledge.search",
+                _ATTR_TENANT: tenant_id,
                 "oneops.kb.query_terms": len(query.split()),
             },
         ) as span:
@@ -375,12 +404,12 @@ class PostgresKbStore:
                 span.set_attribute("error", True)
                 _log.warning("kb_store.postgres.search_failed",
                              error=str(exc)[:200])
-                increment("ai.postgres.errors.total",
+                increment(_METRIC_PG_ERRORS,
                           store="kb_store", op="search",
                           reason=type(exc).__name__)
                 raise OneOpsError(
                     "kb_store.postgres: search failed", cause=exc) from exc
-            span.set_attribute("db.row_count", len(rows))
+            span.set_attribute(_ATTR_ROW_COUNT, len(rows))
             results: list[dict[str, Any]] = []
             for row in rows:
                 d = self._row_to_dict(row)
@@ -399,71 +428,42 @@ class PostgresKbStore:
         from opentelemetry.trace import get_tracer as _gt
 
         from oneops.errors import OneOpsError
-        tr = _gt("oneops.kb_store.postgres")
+        tr = _gt(_TRACER_NAME)
 
         pool = await self._ensure_pool()
-        # Two SQL shapes, switched by env flag UC03_EMBEDDING_SOURCE.
-        #
-        #   legacy — read inline embedding column on itsm.kb_knowledge.
-        #     Pre-2026-05-30 path. One vector per article. Articles without
-        #     an embedding are unreachable here (still reachable via FTS).
-        #
-        #   new    — read ai.embeddings_kb_knowledge (chunked: 1 anchor +
-        #     N body chunks per article). For each article we pick its
-        #     best-scoring chunk via ROW_NUMBER() — UC-3's downstream
-        #     pipeline returns one row per article anyway, so this gives
-        #     better recall (a query about "Step 3" can match body chunk #3
-        #     even if the anchor doesn't mention it).
-        import os
-        use_new = os.getenv(
-            "UC03_EMBEDDING_SOURCE", "new").strip().lower() == "new"
-
-        # `1 - (embedding <=> $vec)` = cosine similarity (HNSW index uses the
-        # cosine *distance* operator `<=>`; smaller distance = more similar).
-        if use_new:
-            sql = """
-            WITH ranked AS (
-                SELECT
-                    e.entity_id AS kb_id,
-                    e.chunk_type,
-                    1 - (e.embedding <=> $2::vector) AS similarity,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY e.entity_id
-                        ORDER BY e.embedding <=> $2::vector
-                    ) AS rn
-                FROM ai.embeddings_kb_knowledge e
-                WHERE e.tenant_id = $1
-            )
+        # Semantic search reads ai.embeddings_kb_knowledge (chunked: 1 anchor +
+        # N body chunks per article). For each article we pick its best-scoring
+        # chunk via ROW_NUMBER() — UC-3 returns one row per article — so a query
+        # about "Step 3" can match body chunk #3 even if the anchor doesn't.
+        # `1 - (embedding <=> $vec)` = cosine similarity (HNSW uses distance `<=>`).
+        sql = """
+        WITH ranked AS (
             SELECT
-                k.kb_id, k.title, k.summary, k.content, k.category, k.tags,
-                k.audience, k.state, k.helpful_votes, k.views,
-                k.related_incidents, k.related_ci_ids,
-                k.created_at, k.updated_at,
-                r.similarity
-            FROM ranked r
-            JOIN itsm.kb_knowledge k
-              ON k.kb_id = r.kb_id AND k.tenant_id = $1
-            WHERE r.rn = 1
-              AND k.state = 'published'
-              AND k.audience = ANY($3)
-            ORDER BY r.similarity DESC
-            LIMIT $4
-            """
-        else:
-            sql = """
-                SELECT
-                    kb_id, title, summary, content, category, tags, audience,
-                    state, helpful_votes, views, related_incidents,
-                    related_ci_ids, created_at, updated_at,
-                    1 - (embedding <=> $2::vector) AS similarity
-                FROM itsm.kb_knowledge
-                WHERE tenant_id = $1
-                  AND state = 'published'
-                  AND audience = ANY($3)
-                  AND embedding IS NOT NULL
-                ORDER BY embedding <=> $2::vector
-                LIMIT $4
-            """
+                e.entity_id AS kb_id,
+                e.chunk_type,
+                1 - (e.embedding <=> $2::vector) AS similarity,
+                ROW_NUMBER() OVER (
+                    PARTITION BY e.entity_id
+                    ORDER BY e.embedding <=> $2::vector
+                ) AS rn
+            FROM ai.embeddings_kb_knowledge e
+            WHERE e.tenant_id = $1
+        )
+        SELECT
+            k.kb_id, k.title, k.summary, k.content, k.category, k.tags,
+            k.audience, k.state, k.helpful_votes, k.views,
+            k.related_incidents, k.related_ci_ids,
+            k.created_at, k.updated_at,
+            r.similarity
+        FROM ranked r
+        JOIN itsm.kb_knowledge k
+          ON k.kb_id = r.kb_id AND k.tenant_id = $1
+        WHERE r.rn = 1
+          AND k.state = 'published'
+          AND k.audience = ANY($3)
+        ORDER BY r.similarity DESC
+        LIMIT $4
+        """
         # asyncpg sends list[float] as a Postgres array; the explicit
         # ::vector cast (above) lets pgvector coerce it into its native
         # type so the HNSW index gets used.
@@ -471,9 +471,9 @@ class PostgresKbStore:
         with tr.start_as_current_span(
             "kb_store.postgres.search_semantic",
             attributes={
-                "db.system": "postgresql",
-                "db.statement.name": "itsm.kb_knowledge.search_semantic",
-                "oneops.tenant_id": tenant_id,
+                _ATTR_DB_SYSTEM: "postgresql",
+                _ATTR_DB_STMT: "itsm.kb_knowledge.search_semantic",
+                _ATTR_TENANT: tenant_id,
                 "oneops.kb.vec_dims": len(query_vec),
             },
         ) as span:
@@ -485,13 +485,13 @@ class PostgresKbStore:
                 span.set_attribute("error", True)
                 _log.warning("kb_store.postgres.search_semantic_failed",
                              error=str(exc)[:200])
-                increment("ai.postgres.errors.total",
+                increment(_METRIC_PG_ERRORS,
                           store="kb_store", op="search_semantic",
                           reason=type(exc).__name__)
                 raise OneOpsError(
                     "kb_store.postgres: search_semantic failed",
                     cause=exc) from exc
-            span.set_attribute("db.row_count", len(rows))
+            span.set_attribute(_ATTR_ROW_COUNT, len(rows))
             results: list[dict[str, Any]] = []
             for row in rows:
                 d = self._row_to_dict(row)
@@ -527,7 +527,7 @@ class PostgresKbStore:
         from opentelemetry.trace import get_tracer as _gt
 
         from oneops.errors import OneOpsError
-        tr = _gt("oneops.kb_store.postgres")
+        tr = _gt(_TRACER_NAME)
 
         pool = await self._ensure_pool()
         sql = """
@@ -540,9 +540,9 @@ class PostgresKbStore:
         with tr.start_as_current_span(
             "kb_store.postgres.fetch_embeddings_by_ids",
             attributes={
-                "db.system": "postgresql",
-                "db.statement.name": "itsm.kb_knowledge.embeddings_by_id",
-                "oneops.tenant_id": tenant_id,
+                _ATTR_DB_SYSTEM: "postgresql",
+                _ATTR_DB_STMT: "itsm.kb_knowledge.embeddings_by_id",
+                _ATTR_TENANT: tenant_id,
                 "oneops.kb.id_count": len(kb_ids),
             },
         ) as span:
@@ -555,36 +555,19 @@ class PostgresKbStore:
                 _log.warning(
                     "kb_store.postgres.fetch_embeddings_by_ids_failed",
                     error=str(exc)[:200])
-                increment("ai.postgres.errors.total",
+                increment(_METRIC_PG_ERRORS,
                           store="kb_store",
                           op="fetch_embeddings_by_ids",
                           reason=type(exc).__name__)
                 raise OneOpsError(
                     "kb_store.postgres: fetch_embeddings_by_ids failed",
                     cause=exc) from exc
-            span.set_attribute("db.row_count", len(rows))
+            span.set_attribute(_ATTR_ROW_COUNT, len(rows))
             out: dict[str, list[float]] = {}
             for row in rows:
-                kb_id = row["kb_id"]
-                raw = row["embedding"]
-                # pgvector returns embeddings as a string like
-                # "[0.1,0.2,...]" via asyncpg by default. Parse it
-                # into list[float]. If a future asyncpg version
-                # returns a list already, the isinstance branch picks
-                # that up.
-                if isinstance(raw, str):
-                    s = raw.strip()
-                    if s.startswith("[") and s.endswith("]"):
-                        s = s[1:-1]
-                    try:
-                        out[kb_id] = [float(x) for x in s.split(",")]
-                    except ValueError:
-                        continue
-                elif isinstance(raw, (list, tuple)):
-                    try:
-                        out[kb_id] = [float(x) for x in raw]
-                    except (ValueError, TypeError):
-                        continue
+                parsed = _parse_pgvector_embedding(row["embedding"])
+                if parsed is not None:
+                    out[row["kb_id"]] = parsed
             return out
 
     async def exists(
@@ -600,7 +583,7 @@ class PostgresKbStore:
         from opentelemetry.trace import get_tracer as _gt
 
         from oneops.errors import OneOpsError
-        tr = _gt("oneops.kb_store.postgres")
+        tr = _gt(_TRACER_NAME)
 
         pool = await self._ensure_pool()
         sql = ("SELECT kb_id, state, audience FROM itsm.kb_knowledge "
@@ -608,9 +591,9 @@ class PostgresKbStore:
         with tr.start_as_current_span(
             "kb_store.postgres.exists",
             attributes={
-                "db.system": "postgresql",
-                "db.statement.name": "itsm.kb_knowledge.exists",
-                "oneops.tenant_id": tenant_id,
+                _ATTR_DB_SYSTEM: "postgresql",
+                _ATTR_DB_STMT: "itsm.kb_knowledge.exists",
+                _ATTR_TENANT: tenant_id,
                 "oneops.kb_id": kb_id,
             },
         ) as span:
@@ -621,7 +604,7 @@ class PostgresKbStore:
                 span.set_attribute("error", True)
                 _log.warning("kb_store.postgres.exists_failed",
                              error=str(exc)[:200])
-                increment("ai.postgres.errors.total",
+                increment(_METRIC_PG_ERRORS,
                           store="kb_store", op="exists",
                           reason=type(exc).__name__)
                 raise OneOpsError(
@@ -641,7 +624,7 @@ class PostgresKbStore:
         from opentelemetry.trace import get_tracer as _gt
 
         from oneops.errors import OneOpsError
-        tr = _gt("oneops.kb_store.postgres")
+        tr = _gt(_TRACER_NAME)
 
         pool = await self._ensure_pool()
         sql = """
@@ -658,9 +641,9 @@ class PostgresKbStore:
         with tr.start_as_current_span(
             "kb_store.postgres.get",
             attributes={
-                "db.system": "postgresql",
-                "db.statement.name": "itsm.kb_knowledge.get_by_id",
-                "oneops.tenant_id": tenant_id,
+                _ATTR_DB_SYSTEM: "postgresql",
+                _ATTR_DB_STMT: "itsm.kb_knowledge.get_by_id",
+                _ATTR_TENANT: tenant_id,
                 "oneops.kb_id": kb_id,
             },
         ) as span:
@@ -672,7 +655,7 @@ class PostgresKbStore:
                 span.set_attribute("error", True)
                 _log.warning("kb_store.postgres.get_failed",
                              error=str(exc)[:200])
-                increment("ai.postgres.errors.total",
+                increment(_METRIC_PG_ERRORS,
                           store="kb_store", op="get",
                           reason=type(exc).__name__)
                 raise OneOpsError(
@@ -689,7 +672,7 @@ class PostgresKbStore:
         from opentelemetry.trace import get_tracer as _gt
 
         from oneops.errors import OneOpsError
-        tr = _gt("oneops.kb_store.postgres")
+        tr = _gt(_TRACER_NAME)
 
         pool = await self._ensure_pool()
         # `content` is REQUIRED in the SELECT — the LlmAnswerComposer renders
@@ -714,9 +697,9 @@ class PostgresKbStore:
         with tr.start_as_current_span(
             "kb_store.postgres.linked_to",
             attributes={
-                "db.system": "postgresql",
-                "db.statement.name": "itsm.kb_knowledge.linked_to",
-                "oneops.tenant_id": tenant_id,
+                _ATTR_DB_SYSTEM: "postgresql",
+                _ATTR_DB_STMT: "itsm.kb_knowledge.linked_to",
+                _ATTR_TENANT: tenant_id,
                 "oneops.entity_id": entity_id,
             },
         ) as span:
@@ -728,12 +711,12 @@ class PostgresKbStore:
                 span.set_attribute("error", True)
                 _log.warning("kb_store.postgres.linked_to_failed",
                              error=str(exc)[:200])
-                increment("ai.postgres.errors.total",
+                increment(_METRIC_PG_ERRORS,
                           store="kb_store", op="linked_to",
                           reason=type(exc).__name__)
                 raise OneOpsError(
                     "kb_store.postgres: linked_to failed", cause=exc) from exc
-            span.set_attribute("db.row_count", len(rows))
+            span.set_attribute(_ATTR_ROW_COUNT, len(rows))
             return [self._row_to_dict(r) for r in rows]
 
 _store: KbStore | None = None

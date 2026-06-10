@@ -3,6 +3,7 @@
   "id": "uc01_summarization",
   "versions": {
     "1": {
+      "domain": "itsm",
       "abac_tags": {
         "audience": [
           "viewer",
@@ -38,12 +39,14 @@
       "compound_of": [],
       "created_at": "2026-05-20T10:49:43.471534+00:00",
       "depends_on": [],
-      "description": "Retrieves and renders facts about an ITSM/ITOM work record itself (INC, REQ, PBM, CHG, AST, CI). Returns the record's own attributes: summary, status, priority, severity, owner, assignee, SLA, work notes, comments, linked-record ids (related problem, related changes, affected CI), and current known state. Use this agent when the user wants to UNDERSTAND THE ENTITY \u2014 its facts, its history, what it is, what is going on with it. Capability is bounded to the record's own stored fields; this agent does NOT retrieve external knowledge content (articles, runbooks, troubleshooting guides).",
+      "description": "Retrieves and renders facts about an ITSM/ITOM work record itself (INC, REQ, PBM, CHG, AST, CI). Returns the record's own attributes: summary, status, priority, severity, owner, assignee, SLA, work notes, comments, linked-record ids (related problem, related changes, affected CI), and current known state. Use this agent when the user wants to UNDERSTAND THE ENTITY — its facts, its history, what it is, what is going on with it. Capability is bounded to the record's own stored fields; this agent does NOT retrieve external knowledge content (articles, runbooks, troubleshooting guides).",
       "determinism_level": "low",
       "excludes": [],
       "hooks": {
         "after_invocation": [],
-        "before_invocation": ["builtin:authz_recheck"]
+        "before_invocation": [
+          "builtin:authz_recheck"
+        ]
       },
       "id": "uc01_summarization",
       "intent_family": "entity_summary",
@@ -57,15 +60,23 @@
         {
           "id": "summarize_ticket",
           "name": "Summarize a ticket",
-          "description": "Produce a natural-language summary of an incident/request/problem/change's OWN fields, status, and timeline. Use when the user wants facts ABOUT the record itself.",
+          "description": "Retrieves and renders facts about an ITSM/ITOM work record itself (INC, REQ, PBM, CHG, AST, CI). Returns the record's own attributes: summary, status, priority, severity, owner, assignee, SLA, work notes, comments, linked-record ids (related problem, related changes, affected CI), and current known state. Use this agent when the user wants to UNDERSTAND THE ENTITY — its facts, its history, what it is, what is going on with it. Capability is bounded to the record's own stored fields; this agent does NOT retrieve external knowledge content (articles, runbooks, troubleshooting guides).",
           "use_when": [
-            "summarize / describe / explain a ticket",
-            "what do we know about / what happened in / current state of a record",
-            "a bare entity id (INC..., CI...) with no other intent"
+            "the user gives a record id (INC/REQ/PRB/CHG/AST/CI) and asks what it is, what happened, or its current state",
+            "the user asks for a summary, explanation, walkthrough, or timeline of a specific record",
+            "a field-level follow-up on the active record (priority, status, owner, assignee, severity, SLA, requester, affected CI, linked problem or change, comments, work notes)",
+            "a bare canonical record id with no other intent",
+            "a contextual follow-up about the active focus record (e.g. 'this ticket', 'its priority', 'who owns it', 'any update')"
           ],
           "not_when": [
-            "user wants external KB / how-to / docs (that is the knowledge agent)",
-            "user wants to change the record (that is an action agent)"
+            "the user wants external knowledge, documentation, how-to, troubleshooting, runbooks, or KB articles (route to uc03_kb_lookup)",
+            "the user wants other tickets similar to this one, duplicates, or related incidents (route to uc02_similar_tickets)",
+            "the user wants to create, update, assign, approve, close, reopen, or escalate a record (route to an action/fulfilment agent)",
+            "the user wants to search, filter, count, compare, or report across multiple records",
+            "the user wants root-cause analysis or remediation guidance beyond the record's stored fields",
+            "the user asks a general IT question with no specific record or active focus record",
+            "the user wants to find past incidents or requests that are similar to the focused ticket (route to uc02_similar_tickets)",
+            "the user seeks external knowledge or guidance on resolving the issue related to the record (route to uc03_kb_lookup)"
           ],
           "tags": [
             "summarization",
@@ -73,12 +84,18 @@
             "incident",
             "request",
             "problem",
-            "change"
+            "change",
+            "asset",
+            "cmdb_ci"
           ],
           "examples": [
             "summarize INC0001001",
-            "what's going on with this ticket",
-            "walk me through PRB0002"
+            "INC0001001",
+            "what's going on with this ticket?",
+            "walk me through PRB0002",
+            "what is the priority of this incident?",
+            "who is assigned to it?",
+            "show the timeline for this problem"
           ]
         }
       ],

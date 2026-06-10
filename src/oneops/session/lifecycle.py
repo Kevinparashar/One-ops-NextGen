@@ -174,7 +174,7 @@ class DragonflyLifecycle:
             return None
         # bytes-keyed dict from Dragonfly
         def g(k):
-            return self._decode(h.get(k.encode()) if isinstance(list(h.keys())[0], bytes) else h.get(k))
+            return self._decode(h.get(k.encode()) if isinstance(next(iter(h)), bytes) else h.get(k))
         try:
             return SessionMeta(
                 session_id=session_id,

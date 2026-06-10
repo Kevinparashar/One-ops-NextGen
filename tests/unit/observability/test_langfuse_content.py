@@ -101,9 +101,11 @@ def test_generation_emits_structure_without_content_when_flag_off(content_off):
     assert sp.attrs["gen_ai.request.model"] == "gpt-4o"
     assert sp.attrs["gen_ai.usage.input_tokens"] == 10
     assert sp.attrs["gen_ai.usage.cost"] == 0.01
-    # content NOT emitted when flag off
+    # content NOT emitted when flag off (neither gen_ai.* nor native keys)
     assert "gen_ai.prompt" not in sp.attrs
     assert "gen_ai.completion" not in sp.attrs
+    assert "langfuse.observation.input" not in sp.attrs
+    assert "langfuse.observation.output" not in sp.attrs
 
 
 def test_generation_emits_redacted_content_when_flag_on(content_on, policy):
@@ -116,6 +118,11 @@ def test_generation_emits_redacted_content_when_flag_on(content_on, policy):
     assert "gen_ai.prompt" in sp.attrs
     assert "bob@corp.io" not in sp.attrs["gen_ai.prompt"]
     assert "REDACTED" in sp.attrs["gen_ai.prompt"]
+    # Native Langfuse keys are set too (these are what render the generation's
+    # input/output in the UI) — same redacted content as gen_ai.*.
+    assert sp.attrs["langfuse.observation.input"] == sp.attrs["gen_ai.prompt"]
+    assert sp.attrs["langfuse.observation.output"] == sp.attrs["gen_ai.completion"]
+    assert "bob@corp.io" not in sp.attrs["langfuse.observation.input"]
 
 
 def test_io_content_gated_and_redacted(content_off):

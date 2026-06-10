@@ -1,6 +1,6 @@
 # `ops/pmg-evidence/` — PMG validation evidence
 
-Every PMG-validatable claim in the Day-1 cut writes a log file here. The PMG demo runbook (`docs/pmg-demo-runbook.md`) links every claim to a file under this directory. `make pmg-verify` runs `verify-all.sh`, which iterates the phases and writes the master report to `REPORT.md`.
+Every PMG-validatable claim in the Day-1 cut writes a log file here. The PMG demo runbook (`docs/runbooks/pmg-demo-runbook.md`) links every claim to a file under this directory. `make pmg-verify` runs `verify-all.sh`, which iterates the phases and writes the master report to `REPORT.md`.
 
 ## Convention
 

@@ -25,6 +25,9 @@ from typing import Any, Protocol
 from oneops.observability import get_tracer, set_langfuse_io
 from oneops.router.retrieval import Candidate
 
+# Telemetry literals → constants (sonar S1192).
+_ONEOPS_ROUTER_SELECTED = "oneops.router.selected"
+
 _tracer = get_tracer("oneops.router.disambiguation")
 
 # Deterministic preroute vocabulary. Narrowed to ONLY the two patterns
@@ -155,6 +158,27 @@ Ask yourself: **what is the user trying to achieve with this query?**
   service, or operational task at all (jokes, weather, chit-chat).
   Return no agents.
 
+## Card-first selection (AUTHORITATIVE — read this before the axes)
+
+The axes above are a COARSE guide for the single most common confusion
+(understand a record vs. find knowledge). They are NOT the full set of things
+a user can ask for, and a query is NOT off-domain just because it fits none of
+A/B/C/D. The AUTHORITATIVE scope of each candidate is its CARD — its
+description + "Use when" + "Do NOT use" — provided with the query below.
+
+Decide from the cards:
+  • Select the candidate whose "Use when" covers the ask AND whose "Do NOT
+    use" does not exclude it.
+  • A query can match a candidate's "Use when" even when it fits NONE of axes
+    A/B/C/D. Example: a request to OBTAIN, PROVISION, ORDER, REQUEST, or SET UP
+    something new (software, a license, hardware, access, an account,
+    onboarding) matches the fulfilment/catalog agent's card — though it is
+    neither "understand a record" (A) nor "find knowledge" (B). Select it.
+  • When the cards and the axes disagree, THE CARDS WIN. The axes never
+    override a candidate whose "Use when" plainly covers the ask.
+This is how new capabilities are routed without new axes: the card carries the
+per-agent truth; you reason over the cards in the candidate list.
+
 ## The hard distinction (the one users get wrong)
 
 The trap: "what do we know about INC0001001" and "what info is available
@@ -279,9 +303,18 @@ on X", "is there a procedure documented for X", "what do we have on X",
 user needs authored content, regardless of how they asked for it.
 
 Route by matching (OBJECT × ANSWER-SOURCE) to the candidate whose
-capability description fits that pair. The agent catalog above the
-routing block describes each candidate's capability. Select the candidate
-whose description aligns; do not invent agents not listed.
+capability description fits that pair. Each candidate agent's card is
+provided with the query (its description, Use when, and Do NOT use). Select
+the candidate whose card fits; do not invent agents not listed.
+
+Each candidate card also lists "Use when" (the agent's positive scope) and
+"Do NOT use" (out-of-scope cases, each naming the agent to pick instead).
+Treat these as DECISIVE: if the query matches a candidate's "Do NOT use"
+clause, do NOT select that candidate — select the agent named in that clause
+when it is in the candidate list. These boundaries are how same-entity
+look-alikes are told apart — e.g. "how do I resolve INC0001001" carries a
+record id but asks for authored guidance, so the summary/similar agents'
+"Do NOT use" clauses send it to the KB agent.
 
 When the query contains BOTH a stored-attribute ask AND an
 authored-material ask, return both agents, ordered with the stored-
@@ -311,6 +344,27 @@ recoverable; a router-level refusal is not.
 
 The `intents` field uses tokens from: summary, field_read, kb_search, \
 kb_article_fetch, similar_search, action, off_domain."""
+
+# Appended ONLY in strict_fit mode (team member-selection). Overrides the
+# always-route dispatch discipline above: the candidates are a fixed set, so a
+# query whose intent matches none of them must be refused, not force-routed.
+_STRICT_FIT_PROMPT = """## Fixed candidate set — fit test (overrides dispatch discipline)
+
+The candidate agents above are a FIXED, externally-chosen set (a team's
+members) — NOT a relevance-ranked shortlist. So you must judge FIT, not just
+pick the closest:
+
+- Select an agent ONLY if its capability genuinely matches the query's intent
+  (its "Use when" covers this ask, and the ask is not in its "Do NOT use").
+- If NONE of these specific candidates fit the query's intent, return an EMPTY
+  selected_agent_ids — even when the query is a perfectly valid in-domain
+  request. "This team has no member for this" is a correct, expected outcome;
+  do NOT force-pick the least-bad candidate.
+- This supersedes any earlier instruction to always route an in-domain query.
+
+Example: a "summarize this incident" query offered only a triage agent and a
+fulfilment agent → no fit → return []. Refusing lets the caller route it to the
+right team instead of mis-handling it."""
 
 
 def _deterministic_preroute(
@@ -355,6 +409,83 @@ def _deterministic_preroute(
     return None
 
 
+def _build_focus_block(focus_id: str, focus_service: str) -> str:
+    """The ACTIVE-FOCUS prompt section (the axis-A/B routing prior for
+    follow-up queries). Empty string when the conversation has no focus
+    entity, so the caller can concatenate it unconditionally."""
+    if not focus_id:
+        return ""
+    return (
+        f"\n\nACTIVE FOCUS (the user is mid-conversation about):\n"
+        f"  entity_id: {focus_id}\n"
+        f"  service:   {focus_service or 'unknown'}\n"
+        f"How to use the focus — apply rigorously:\n"
+        f"\n"
+        f"  The focus is ONLY a way to fill in a missing subject for a bare "
+        f"follow-up. It is NOT a sticky route and carries NO routing meaning of "
+        f"its own. The candidate CARDS below (each agent's 'Use when' / 'Do NOT "
+        f"use') always decide which agent — with or without a focus. A user can "
+        f"start a completely new, unrelated request mid-conversation without "
+        f"restating context, and you MUST honour that.\n"
+        f"\n"
+        f"  1. Does the query carry its OWN intent — a new request or action, a "
+        f"     different service/topic, or anything that does not depend on the "
+        f"     focused record's own stored data to be understood? Then the "
+        f"     focus is IRRELEVANT: choose the agent whose card matches the "
+        f"     query's intent, exactly as if there were no focus. Do NOT route "
+        f"     it to the agent that handled the focused record just because a "
+        f"     focus exists.\n"
+        f"\n"
+        f"  2. Only if the query is a BARE reference with no intent of its own "
+        f"     — a pronoun ('it', 'this', 'that'), a bare attribute name "
+        f"     ('priority', 'owner', 'status'), or a linked-record phrase ('the "
+        f"     related problem') — treat it as a query ABOUT entity {focus_id}: "
+        f"     substitute that id as the subject, then STILL choose the agent "
+        f"     whose card matches what is being asked of that record. The focus "
+        f"     supplies the missing id; the cards decide the agent.\n"
+        f"\n"
+        f"  The focused record's topical keywords appearing inside an "
+        f"  independent-intent query do not make it a follow-up. When unsure "
+        f"  whether a query is independent or a bare follow-up, prefer routing "
+        f"  by the cards on the query's own words.\n"
+    )
+
+
+def _floor_dispatch(
+    candidates: list[Candidate], doc: dict, span,
+) -> Disambiguation | None:
+    """Retriever-as-floor + LLM-as-refiner (canonical production router
+    pattern; cf. Aurelio Semantic Router, LangGraph Supervisor). The stage-3
+    retriever is authoritative: when it produced a non-empty survivor set, the
+    stage-4 LLM may refine/re-rank it — never empty it. An LLM hedge on
+    telegraphic / under-specified queries is exactly the failure mode this
+    mitigates: the user asked an in-domain question, retrieval surfaced a
+    relevant agent, the LLM only failed to commit — let the agent run and
+    report its own no-result rather than refusing at the supervisor.
+
+    Returns the dispatch decision, or None when no survivor clears the signal
+    floor (the caller then emits no_match — off-domain queries land here).
+    """
+    if not candidates:
+        return None
+    top = max(candidates, key=lambda c: c.score)
+    if top.score < 0.10:        # narrow floor, matches MIN_FUSED_SCORE on retriever side
+        return None
+    span.set_attribute(_ONEOPS_ROUTER_SELECTED, top.agent_id)
+    span.set_attribute("oneops.router.dispatch_reason", "retriever_floor_llm_hedge")
+    span.set_attribute("oneops.router.llm_hedge_rationale",
+                       str(doc.get("rationale") or "")[:160])
+    return Disambiguation.select(
+        [top.agent_id], confidence=float(top.score),
+        rationale=(
+            "supervisor dispatch-by-default: stage-3 "
+            "retriever surfaced this agent above the "
+            "signal floor; stage-4 LLM hedged "
+            "(no_match). The agent reports its own "
+            "no-result if its lookup yields nothing."),
+        intents=["kb_search"] if top.agent_id.endswith("_kb_lookup") else [])
+
+
 class LlmDisambiguator:
     """Production disambiguator — one gateway call over the surviving
     candidates only. Returns schema-validated structured output. A call/parse
@@ -370,18 +501,79 @@ class LlmDisambiguator:
     """
 
     def __init__(self, gateway, *, model: str = "gpt-4o-mini",
-                 registry: Any = None) -> None:
+                 registry: Any = None,
+                 abstain_min_score: float | None = None,
+                 abstain_min_margin: float = 0.0,
+                 strict_fit: bool = False) -> None:
         self._gateway = gateway
         self._model = model
+        # strict_fit: the candidate set is FIXED and externally constrained
+        # (e.g. a team's members), NOT a relevance-ranked shortlist from
+        # retrieval. In that mode the reranker must judge whether any candidate's
+        # capability genuinely FITS the query and refuse (empty selection) when
+        # none do — instead of the default global bias toward always routing an
+        # in-domain query to the closest agent. Off by default (the global router
+        # keeps its always-route discipline). Used by the team member-selector.
+        self._strict_fit = strict_fit
         # Optional; when None the disambiguator falls back to id-only listings
         # (preserves the pre-2026-05-28 behaviour for callers that haven't
         # been wired through yet).
         self._registry = registry
+        # Abstain = a JUNK-SKIP floor, NOT a decision threshold (2026-06-07 v2).
+        # A retrieval SCORE must never *refuse* a query — only the reranker may
+        # (it reads the full card and judges intent + axis-D). So this floor is
+        # set LOW (~0.25): below it, retrieval is clearly junk → skip the LLM to
+        # save cost; ABOVE it, the borderline band falls THROUGH to the reranker,
+        # which is the refuse authority. This is the canonical "retrieve → if
+        # confident route, else hand to the LLM" pattern — setting it high (a
+        # decision threshold) over-refused weak-but-valid queries (e.g. KB topic
+        # queries ~0.31) before the corrector could run. None = gate OFF.
+        # AMBIGUOUS (top-two within abstain_min_margin) likewise only fires as a
+        # junk-skip, not a verdict. Preroute is exempt. Tuned per-domain at scale.
+        self._abstain_min_score = abstain_min_score
+        self._abstain_min_margin = abstain_min_margin
         # Catalog block — built lazily once and embedded in the cached system
         # prompt so Anthropic's prompt cache reuses descriptions across every
         # routing call. Dragonfly FLUSHALL never touches it; only a process
         # restart (which is also when the registry would reload) rebuilds it.
         self._catalog_block: str | None = None
+
+    def _active_agent_ids(self) -> set[str]:
+        """All active agent ids from the registry (empty set on any failure).
+        Used as the preroute pool so the routing contract applies even when the
+        lexical retriever drops a target agent for a short query."""
+        if self._registry is None:
+            return set()
+        try:
+            return set(self._registry.agents.list_ids())
+        except Exception:                                   # noqa: BLE001
+            return set()
+
+    def _abstain_check(self, candidates: list[Candidate], span) -> Disambiguation | None:
+        """Wrong-agent guard. Returns a refuse-and-clarify Disambiguation when
+        retrieval is too weak or too ambiguous to commit; None to proceed to
+        the LLM. OFF when abstain_min_score is None (no regression)."""
+        if self._abstain_min_score is None or not candidates:
+            return None
+        ranked = sorted(candidates, key=lambda c: -c.score)
+        top = ranked[0]
+        if top.score < self._abstain_min_score:
+            span.set_attribute("oneops.router.abstain", "weak")
+            span.set_attribute("oneops.router.abstain.top_score", top.score)
+            return Disambiguation.no_match(
+                f"abstain (weak match): top candidate '{top.agent_id}' score "
+                f"{top.score:.2f} < floor {self._abstain_min_score:.2f} — "
+                f"ask the user to clarify rather than route")
+        if len(ranked) >= 2 and self._abstain_min_margin > 0.0:
+            margin = top.score - ranked[1].score
+            if margin < self._abstain_min_margin:
+                span.set_attribute("oneops.router.abstain", "ambiguous")
+                span.set_attribute("oneops.router.abstain.margin", margin)
+                return Disambiguation.no_match(
+                    f"abstain (ambiguous): top two ('{ranked[0].agent_id}', "
+                    f"'{ranked[1].agent_id}') within {margin:.2f} < margin "
+                    f"{self._abstain_min_margin:.2f} — ask the user to clarify")
+        return None
 
     def _describe(self, agent_id: str) -> str:
         """Look up the agent's registry description. Returns '' on miss so
@@ -394,10 +586,34 @@ class LlmDisambiguator:
             return ""
         return (agent.description or "").strip() if agent is not None else ""
 
+    def _scope(self, agent_id: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Return (use_when, not_when) for an agent, flattened+deduped across its
+        skills. These are the reranker's POSITIVE scope and CONTRASTIVE
+        boundaries (the latter carry 'route to <id>' hints). Empty on miss —
+        never raises into the router."""
+        if self._registry is None:
+            return (), ()
+        try:
+            agent = self._registry.agents.get_optional(agent_id)
+        except Exception:                                       # noqa: BLE001
+            return (), ()
+        if agent is None or not getattr(agent, "skills", None):
+            return (), ()
+        uw: list[str] = []
+        nw: list[str] = []
+        for s in agent.skills:
+            uw.extend(s.use_when or ())
+            nw.extend(s.not_when or ())
+        return tuple(dict.fromkeys(uw)), tuple(dict.fromkeys(nw))
+
     def _build_catalog(self) -> str:
-        """One-time build of the full agent catalog: every active agent's
-        id + description, formatted for inclusion in the cached system
-        prompt. None when registry is unwired (legacy callers)."""
+        """One-time build of the full agent catalog for the cached system prompt:
+        every active agent's id + description + use_when (positive scope) +
+        not_when (contrastive boundaries with 'route to <id>' hints). The
+        not_when lines are what let the reranker tell same-entity look-alikes
+        apart (summarize vs similar vs how-to); they are NOT embedded, so this
+        catalog is the ONLY place they reach the routing decision. Stable across
+        calls → benefits from prompt-cache. None when registry is unwired."""
         if self._registry is None:
             return ""
         try:
@@ -409,8 +625,37 @@ class LlmDisambiguator:
             desc = self._describe(aid)
             if not desc:
                 continue
-            lines.append(f"\n### {aid}\n{desc}")
+            block = [f"\n### {aid}\n{desc}"]
+            use_when, not_when = self._scope(aid)
+            if use_when:
+                block.append("Use when:\n" + "\n".join(f"  - {x}" for x in use_when))
+            if not_when:
+                block.append(
+                    "Do NOT use — out of scope (pick the agent named in the clause):\n"
+                    + "\n".join(f"  - {x}" for x in not_when))
+            lines.append("\n".join(block))
         return "\n".join(lines)
+
+    def _candidate_catalog(self, candidates: list[Candidate]) -> str:
+        """Shortlist catalog: the cards (description + use_when + not_when) for
+        ONLY the retrieved candidates, each with its retrieval score. Built per
+        request and carried in the user block — so the reranker sees the top-K,
+        never the full registry, and the prompt stays bounded as the agent count
+        grows. This is the inject-all fix: the all-agents `_build_catalog` is no
+        longer stitched into every prompt."""
+        blocks: list[str] = []
+        for c in candidates:
+            desc = self._describe(c.agent_id) or "(no description)"
+            block = [f"\n### {c.agent_id} (retrieval score {c.score:.2f})\n{desc}"]
+            use_when, not_when = self._scope(c.agent_id)
+            if use_when:
+                block.append("Use when:\n" + "\n".join(f"  - {x}" for x in use_when))
+            if not_when:
+                block.append(
+                    "Do NOT use — out of scope (pick the agent named in the clause):\n"
+                    + "\n".join(f"  - {x}" for x in not_when))
+            blocks.append("\n".join(block))
+        return "\n".join(blocks)
 
     async def disambiguate(
         self, query_text: str, candidates: list[Candidate], *, request_ctx: dict
@@ -450,11 +695,6 @@ class LlmDisambiguator:
         self, query_text: str, candidates: list[Candidate], *,
         request_ctx: dict, _span,
     ) -> Disambiguation:
-        import json
-
-        from oneops.errors import LLMGatewayError
-        from oneops.llm import LlmMessage, LlmRequest, ResponseFormat
-        from oneops.observability import get_logger
         from oneops.policy import Profile, compose
 
         if not candidates:
@@ -468,30 +708,31 @@ class LlmDisambiguator:
         # contract for these cases; the lexical retriever can drop a target
         # agent for short queries (e.g. bare CI id), but the contract still
         # applies. We never invent an agent — registry must list it active.
-        all_active_ids: set[str] = set()
-        if self._registry is not None:
-            try:
-                all_active_ids = set(self._registry.agents.list_ids())
-            except Exception:                                   # noqa: BLE001
-                all_active_ids = set()
-        preroute_pool = all_active_ids or valid_ids
+        preroute_pool = self._active_agent_ids() or valid_ids
         preroute = _deterministic_preroute(query_text, preroute_pool)
         if preroute is not None:
             agent_id, intent, rationale = preroute
             _span.set_attribute("oneops.router.preroute.fired", True)
             _span.set_attribute("oneops.router.preroute.target", agent_id)
             _span.set_attribute("oneops.router.preroute.rationale", rationale)
-            _span.set_attribute("oneops.router.selected", agent_id)
+            _span.set_attribute(_ONEOPS_ROUTER_SELECTED, agent_id)
             return Disambiguation.select(
                 [agent_id], confidence=0.95,
                 rationale=rationale, intents=[intent])
         _span.set_attribute("oneops.router.preroute.fired", False)
-        # User block carries only what changes per call: the query and the
-        # surviving candidate ids. Descriptions live in the cached system
-        # prompt (catalog block) — they are stable across every call and
-        # benefit from Anthropic prompt-cache reuse.
-        listing = "\n".join(
-            f"- {c.agent_id} (retrieval score {c.score:.2f})" for c in candidates)
+        # Abstain gate — refuse-and-clarify before spending an LLM call when
+        # retrieval is too weak/ambiguous to commit (wrong-agent guard, off by
+        # default). Preroute above is exempt (deterministic high-confidence).
+        abstain = self._abstain_check(candidates, _span)
+        if abstain is not None:
+            return abstain
+        # Shortlist-only catalog (this is what scales to 100s of agents): the
+        # per-call user block carries the cards (description + use_when +
+        # not_when) of ONLY the retrieved top-K candidates — never the full
+        # registry. The stable rules stay in the cached system prompt; this small
+        # top-K catalog varies per call. Avoids the inject-all collapse past ~50
+        # agents (a full-registry catalog in every prompt).
+        listing = self._candidate_catalog(candidates)
         # Stage 2 (2026-05-28): when the conversation has an active focus
         # entity (carried in the LangGraph state via request_ctx), surface
         # it to the disambiguator so it has the correct prior. A
@@ -499,68 +740,41 @@ class LlmDisambiguator:
         # record is overwhelmingly a record-field read (axis A), not a KB
         # search — without this signal the LLM looks at the words alone
         # and can probabilistically drift to UC-3.
-        focus_id = (request_ctx.get("focus_entity_id") or "").strip()
-        focus_service = (request_ctx.get("focus_service_id") or "").strip()
-        focus_block = ""
-        if focus_id:
-            focus_block = (
-                f"\n\nACTIVE FOCUS (the user is mid-conversation about):\n"
-                f"  entity_id: {focus_id}\n"
-                f"  service:   {focus_service or 'unknown'}\n"
-                f"Routing principle with active focus — apply rigorously:\n"
-                f"\n"
-                f"  The focus is a PRIOR for ambiguous follow-ups, NOT a "
-                f"sticky override of explicit intent. A user can switch "
-                f"intent mid-conversation without restating context.\n"
-                f"\n"
-                f"  Test the query in this order:\n"
-                f"\n"
-                f"  1. Does the query ask for the VALUE of a field, "
-                f"     attribute, or linked-record-id that is STORED on "
-                f"     the focused entity itself? The answer must come "
-                f"     from the focused record's own data.\n"
-                f"     YES → axis A. The focused record supplies the value.\n"
-                f"\n"
-                f"  2. Does the query ask for external knowledge material — "
-                f"     content authored as a separate written-up resource "
-                f"     about a topic, technology, service, or problem area? "
-                f"     The answer must come from documents written outside "
-                f"     the focused record. The query references a topic "
-                f"     scope, not a stored attribute of the focused record, "
-                f"     even when that topic overlaps with what the focused "
-                f"     record concerns.\n"
-                f"     YES → axis B. Explicit knowledge intent overrides "
-                f"     the focus prior. Do not re-render the focused record "
-                f"     when the user is asking for documented knowledge.\n"
-                f"\n"
-                f"  3. If neither applies — the query is genuinely "
-                f"     ambiguous and has no explicit knowledge cue — fall "
-                f"     back to the focused record's type (axis A).\n"
-                f"\n"
-                f"  Apply the principle. The focused entity's topical "
-                f"  keywords appearing inside a knowledge-content query "
-                f"  do NOT convert it to axis A.\n"
-            )
+        focus_block = _build_focus_block(
+            (request_ctx.get("focus_entity_id") or "").strip(),
+            (request_ctx.get("focus_service_id") or "").strip())
         user_block = (
             f"Query:\n{query_text}{focus_block}\n\n"
-            f"Candidate agents (look up each id in the Agent catalog "
-            f"section of the system prompt for its description):\n{listing}"
+            f"Candidate agents — choose ONLY from these. Each card has the "
+            f"agent's description, Use when, and Do NOT use:\n{listing}"
         )
-        # Lazy-build the catalog once (process lifetime) and stitch it into the
-        # cached system prompt. Order: policy prefix → routing rules →
-        # full agent catalog.
-        if self._catalog_block is None:
-            self._catalog_block = self._build_catalog()
+        # System prompt = the STABLE rules only (prompt-cache friendly). The
+        # agent cards are NOT here — they ride per-request in the user block,
+        # scoped to the retrieved candidates (shortlist-only catalog).
         extra_sections = [_DISAMBIGUATE_PROMPT]
-        if self._catalog_block:
-            extra_sections.append(self._catalog_block)
+        if self._strict_fit:
+            extra_sections.append(_STRICT_FIT_PROMPT)
         system_prompt = compose(Profile.INTERNAL_AGENT,
                                 extra_sections=extra_sections)
+        return await self._call_and_select(
+            system_prompt, user_block, valid_ids, candidates, request_ctx, _span)
+
+    async def _call_and_select(
+        self, system_prompt: str, user_block: str, valid_ids: set[str],
+        candidates: list[Candidate], request_ctx: dict, _span,
+    ) -> Disambiguation:
+        """Stage-4 LLM call + closed-class parse. The system block is the stable
+        policy+rules prefix (prompt-cached for ~50-90% input-token savings); the
+        per-call user block carries the shortlist catalog. On an LLM hedge (no
+        valid selection) defer to the retriever floor; on call/parse error
+        return no_match — never a guessed route."""
+        import json
+
+        from oneops.errors import LLMGatewayError
+        from oneops.llm import LlmMessage, LlmRequest, ResponseFormat
+        from oneops.observability import get_logger
         try:
             response = await self._gateway.call(LlmRequest(
-                # System block is the policy-composed prefix + disambiguation
-                # rules — large + stable across every routing decision.
-                # Prompt-cache for ~50-90% input-token savings per turn.
                 messages=(LlmMessage("system", system_prompt,
                                      cache_control=True),
                           LlmMessage("user", user_block)),
@@ -575,42 +789,13 @@ class LlmDisambiguator:
             selected = [a for a in (doc.get("selected_agent_ids") or [])
                         if a in valid_ids]
             if not selected:
-                # Retriever-as-floor + LLM-as-refiner (canonical production
-                # router pattern; cf. Aurelio Semantic Router, LangGraph
-                # Supervisor). The stage-3 retriever is authoritative: when
-                # it produced a non-empty survivor set, the stage-4 LLM is
-                # allowed to refine that set or re-rank it — never to empty
-                # it. An LLM hedge on telegraphic / under-specified queries
-                # is exactly the failure mode this rule mitigates: the user
-                # asked an in-domain question, the retrieval already
-                # surfaced a relevant agent, the LLM only failed to commit
-                # — let the agent run and report its own no-result, do not
-                # silently refuse at the supervisor.
-                #
-                # Fires only when survivors exist and the top has signal
-                # above floor; for genuinely off-domain queries the
-                # retriever returns no survivors → boundary handles them.
-                if candidates:
-                    top = max(candidates, key=lambda c: c.score)
-                    if top.score >= 0.10:        # narrow floor, matches MIN_FUSED_SCORE on retriever side
-                        _span.set_attribute("oneops.router.selected", top.agent_id)
-                        _span.set_attribute("oneops.router.dispatch_reason",
-                                            "retriever_floor_llm_hedge")
-                        _span.set_attribute("oneops.router.llm_hedge_rationale",
-                                            str(doc.get("rationale") or "")[:160])
-                        return Disambiguation.select(
-                            [top.agent_id], confidence=float(top.score),
-                            rationale=(
-                                "supervisor dispatch-by-default: stage-3 "
-                                "retriever surfaced this agent above the "
-                                "signal floor; stage-4 LLM hedged "
-                                "(no_match). The agent reports its own "
-                                "no-result if its lookup yields nothing."),
-                            intents=["kb_search"] if top.agent_id.endswith("_kb_lookup") else [])
-                _span.set_attribute("oneops.router.selected", "")
+                floor = _floor_dispatch(candidates, doc, _span)
+                if floor is not None:
+                    return floor
+                _span.set_attribute(_ONEOPS_ROUTER_SELECTED, "")
                 return Disambiguation.no_match(
                     str(doc.get("rationale") or "no candidate matched the intent"))
-            _span.set_attribute("oneops.router.selected", ",".join(selected))
+            _span.set_attribute(_ONEOPS_ROUTER_SELECTED, ",".join(selected))
             _span.set_attribute("oneops.router.confidence",
                                 float(doc.get("confidence") or 0.0))
             return Disambiguation.select(

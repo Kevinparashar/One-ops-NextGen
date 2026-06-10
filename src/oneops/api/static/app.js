@@ -26,7 +26,6 @@
   //   * Server slides a 30-min idle TTL on every chat turn.
   const LS_KEY = "oneops.session_id";
   let sessionId = "";                       // resolved in bootstrap()
-  let fastPathSpecs = [];                   // populated by loadFastPathActions
   let counters = { turns: 0, cacheHits: 0 };
   bootstrap();
 
@@ -36,15 +35,15 @@
 
   function loadStoredSessionId() {
     try {
-      const v = window.localStorage.getItem(LS_KEY);
+      const v = globalThis.localStorage.getItem(LS_KEY);
       return (typeof v === "string" && v.startsWith("sess_")) ? v : null;
-    } catch (_e) { return null; }
+    } catch { return null; }
   }
   function saveSessionId(id) {
-    try { window.localStorage.setItem(LS_KEY, id); } catch (_e) { /* ignore */ }
+    try { globalThis.localStorage.setItem(LS_KEY, id); } catch { /* ignore */ }
   }
   function clearStoredSessionId() {
-    try { window.localStorage.removeItem(LS_KEY); } catch (_e) { /* ignore */ }
+    try { globalThis.localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
   }
 
   // POST /api/sessions — mint a fresh server-side session.
@@ -55,8 +54,8 @@
       });
       if (!res.ok) return null;
       const payload = await res.json();
-      return (payload && payload.session_id) || null;
-    } catch (_e) { return null; }
+      return payload?.session_id || null;
+    } catch { return null; }
   }
 
   // GET /api/session/{id}/history — true iff Postgres has any durable
@@ -71,7 +70,7 @@
       if (!res.ok) return false;
       const payload = await res.json();
       return Array.isArray(payload.events) && payload.events.length > 0;
-    } catch (_e) { return false; }
+    } catch { return false; }
   }
 
   // GET /api/sessions/{id} — true iff server still has this session active.
@@ -81,7 +80,7 @@
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`,
                               { headers: envelopeHeaders() });
       return res.ok;
-    } catch (_e) { return false; }
+    } catch { return false; }
   }
 
   // Boot resolution: validate cached id; otherwise mint a new one.
@@ -120,10 +119,10 @@
 
   function _lsAvailable() {
     try {
-      window.localStorage.setItem("_oneops_probe", "1");
-      window.localStorage.removeItem("_oneops_probe");
+      globalThis.localStorage.setItem("_oneops_probe", "1");
+      globalThis.localStorage.removeItem("_oneops_probe");
       return true;
-    } catch (_e) { return false; }
+    } catch { return false; }
   }
 
   // Rehydrate the conversation panel from the server's session log when
@@ -179,12 +178,12 @@
 
   $("#new-session").addEventListener("click", async () => {
     const fresh = await mintServerSession();
-    if (!fresh) {
+    if (fresh) {
+      sessionId = fresh;
+    } else {
       // Lifecycle endpoint unreachable — fall back to a transient client id
       // so the user is never stuck. The chat path also tolerates this.
       sessionId = "sess_" + Math.random().toString(36).slice(2, 14);
-    } else {
-      sessionId = fresh;
     }
     saveSessionId(sessionId);
     renderSession();
@@ -214,7 +213,7 @@
         const payload = await res.json();
         rows = payload.sessions || [];
       }
-    } catch (_e) { /* fall through with empty rows */ }
+    } catch { /* fall through with empty rows */ }
     list.innerHTML = "";
     if (!rows.length) {
       const empty = document.createElement("div");
@@ -284,7 +283,7 @@
       await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
         method: "DELETE", headers: envelopeHeaders(),
       });
-    } catch (_e) { /* ignore — refresh will reflect server reality */ }
+    } catch { /* ignore — refresh will reflect server reality */ }
     if (id === sessionId) {
       // Deleted the active one — mint a fresh and clear the panel.
       const fresh = await mintServerSession();
@@ -334,57 +333,62 @@
     }
   }
 
+  // Per-chip descriptor builders — each returns {label, state, value}. Split
+  // out of loadStatusStrip so each chip's state/value logic stays small (S3776).
+  function cacheChip(cfg) {
+    return {
+      label: "Cache",
+      state: cfg.cache.enabled ? "on" : "off",
+      value: cfg.cache.backend.replace(/^In/, "").replace(/SummaryCacheStore$/, ""),
+    };
+  }
+  function otelChip(cfg) {
+    let state = "off";
+    if (cfg.otel.in_memory_spans) state = cfg.otel.enabled ? "on" : "warn";
+    let value = cfg.otel.in_memory_spans ? "in-memory only" : "off";
+    if (cfg.otel.endpoint) value = "exporter live";
+    return { label: "OTel", state, value };
+  }
+  function llmChip(cfg) {
+    let state = "off";
+    if (cfg.llm_gateway.summarizer_wired) state = "on";
+    else if (cfg.llm_gateway.configured) state = "warn";
+    let value = "not configured";
+    if (cfg.llm_gateway.summarizer_wired) value = "wired";
+    else if (cfg.llm_gateway.configured) value = "gateway up · summarizer pending";
+    return { label: "LLM", state, value };
+  }
+  function dbChip(cfg) {
+    let state = "off";
+    if (cfg.postgres.configured) {
+      state = cfg.postgres.backend_in_use.startsWith("Postgres") ? "on" : "warn";
+    }
+    return { label: "DB", state, value: cfg.postgres.backend_in_use };
+  }
+  function natsChip(cfg) {
+    let state = "off";
+    if (cfg.nats.configured) state = cfg.nats.wired_into_ingress ? "on" : "warn";
+    let value = "not configured";
+    if (cfg.nats.wired_into_ingress) value = "wired";
+    else if (cfg.nats.configured) value = "configured · ingress in-process";
+    return { label: "NATS", state, value };
+  }
+  function sessionChip(cfg) {
+    let value = "not wired";
+    if (cfg.session?.wired) {
+      value = cfg.session.durable_across_reload
+        ? "durable · " + cfg.session.backend.replace(/^In/, "")
+        : cfg.session.backend;
+    }
+    return { label: "Session", state: cfg.session?.wired ? "on" : "off", value };
+  }
+
   async function loadStatusStrip() {
     try {
       const cfg = await fetch("/api/config").then((r) => r.json());
       statusStrip.innerHTML = "";
-      addChip({
-        label: "Cache",
-        state: cfg.cache.enabled ? "on" : "off",
-        value: cfg.cache.backend.replace(/^In/, "").replace(/SummaryCacheStore$/, ""),
-      });
-      addChip({
-        label: "OTel",
-        state: cfg.otel.in_memory_spans ? (cfg.otel.enabled ? "on" : "warn") : "off",
-        value: cfg.otel.endpoint
-                 ? "exporter live"
-                 : (cfg.otel.in_memory_spans ? "in-memory only" : "off"),
-      });
-      addChip({
-        label: "LLM",
-        state: cfg.llm_gateway.summarizer_wired
-                 ? "on"
-                 : (cfg.llm_gateway.configured ? "warn" : "off"),
-        value: cfg.llm_gateway.summarizer_wired
-                 ? "wired"
-                 : (cfg.llm_gateway.configured ? "gateway up · summarizer pending"
-                                              : "not configured"),
-      });
-      addChip({
-        label: "DB",
-        state: cfg.postgres.configured
-                 ? (cfg.postgres.backend_in_use.startsWith("Postgres") ? "on" : "warn")
-                 : "off",
-        value: cfg.postgres.backend_in_use,
-      });
-      addChip({
-        label: "NATS",
-        state: cfg.nats.configured
-                 ? (cfg.nats.wired_into_ingress ? "on" : "warn")
-                 : "off",
-        value: cfg.nats.wired_into_ingress ? "wired" : (cfg.nats.configured
-                 ? "configured · ingress in-process"
-                 : "not configured"),
-      });
-      addChip({
-        label: "Session",
-        state: cfg.session?.wired ? "on" : "off",
-        value: cfg.session?.wired
-                 ? (cfg.session.durable_across_reload
-                      ? "durable · " + cfg.session.backend.replace(/^In/, "")
-                      : cfg.session.backend)
-                 : "not wired",
-      });
+      [cacheChip, otelChip, llmChip, dbChip, natsChip, sessionChip]
+        .forEach((mk) => addChip(mk(cfg)));
     } catch (err) {
       statusStrip.innerHTML = `<span class="status-chip off">status load failed: ${err}</span>`;
     }
@@ -481,14 +485,9 @@
     try {
       marked.setOptions({ breaks: true, gfm: true });
       return marked.parse(String(src));
-    } catch (_e) {
+    } catch {
       return escapeHtml(src);
     }
-  }
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;",
-    }[c]));
   }
 
   function addPending({ door, text }) {
@@ -534,7 +533,7 @@
     // should see it once).
     const seenKeys = new Set();
     const steps = rawSteps.filter((s) => {
-      const msg = (s && s.output && s.output.message) || "";
+      const msg = s?.output?.message || "";
       const key = msg.replace(/\s+/g, " ").trim();
       if (!key) return true;            // keep empty-message steps (full summaries)
       if (seenKeys.has(key)) return false;
@@ -580,7 +579,7 @@
     if (!steps.length) return null;
 
     const agentLabel = (id) =>
-      String(id || "").replace(/^uc\d+_/, "").replace(/_/g, " ")
+      String(id || "").replace(/^uc\d+_/, "").replaceAll("_", " ")
         .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
 
     const agents = new Set();
@@ -594,8 +593,8 @@
     details.className = "exec-trace";
 
     const summary = document.createElement("summary");
-    const total = (payload.latency_ms != null)
-      ? " · " + (payload.latency_ms / 1000).toFixed(1) + "s" : "";
+    const total = (payload.latency_ms == null)
+      ? "" : " · " + (payload.latency_ms / 1000).toFixed(1) + "s";
     const plural = (n) => (n === 1 ? "" : "s");
     summary.textContent =
       `How this was answered — ${agents.size} agent${plural(agents.size)}` +
@@ -608,10 +607,13 @@
       const li = document.createElement("li");
       const ok = s.status === "success";
       const failed = s.status === "failed";
-      li.className = "exec-trace-row " + (ok ? "ok" : (failed ? "bad" : "neutral"));
-      const badge = ok ? "✓" : (failed ? "✗" : "•");
+      let cls = "neutral";
+      let badge = "•";
+      if (ok) { cls = "ok"; badge = "✓"; }
+      else if (failed) { cls = "bad"; badge = "✗"; }
+      li.className = "exec-trace-row " + cls;
       const tool = s.tool_id ? " → " + s.tool_id : "";
-      const lat = (s.latency_ms != null) ? "  ·  " + s.latency_ms + " ms" : "";
+      const lat = (s.latency_ms == null) ? "" : "  ·  " + s.latency_ms + " ms";
       li.textContent = `${badge}  ${agentLabel(s.agent_id)}${tool}  (${s.status})${lat}`;
       ul.appendChild(li);
     });
@@ -635,66 +637,35 @@
     return details;
   }
 
-  function renderSingleStep(payload, step) {
-    const wrapper = document.createElement("div");
-    wrapper.className = "response-card";
-    const out = step.output || {};
-
-    // ── error / denial / handler-outcome path ─────────────────────────
-    // When the step failed OR the handler returned a non-success outcome,
-    // the engine's `final_response` already carries the friendly message
-    // (built by `friendly_step_response` in the aggregator). Render it
-    // verbatim — no empty Summary / Key Details sections.
-    const stepStatus = (step.status || "").toLowerCase();
-    const handlerOutcome = (out && out.outcome) ? String(out.outcome).toLowerCase() : "";
-    const isSuccessfulSummary =
-      stepStatus === "success" &&
+  // A transparent markdown bubble — the canonical "rendered text" element
+  // used by every text path in renderSingleStep (error message, display_text,
+  // summary paragraph, plain message).
+  function appendMarkdownBubble(wrapper, md) {
+    const p = document.createElement("div");
+    p.className = "summary-text bubble md";
+    p.style.background = "transparent";
+    p.style.border = "0";
+    p.style.padding = "0";
+    p.innerHTML = renderMarkdown(md);
+    wrapper.appendChild(p);
+  }
+  function appendSectionTitle(wrapper, text) {
+    const h = document.createElement("div");
+    h.className = "section-title";
+    h.textContent = text;
+    wrapper.appendChild(h);
+  }
+  // A successful summary (vs an error/denial/handler-outcome that already
+  // carries a friendly final_response). When false, render the message
+  // verbatim — no empty Summary / Key Details sections.
+  function isSuccessfulSummary(stepStatus, handlerOutcome) {
+    return stepStatus === "success" &&
       handlerOutcome !== "not_found" &&
       handlerOutcome !== "invalid_request" &&
       handlerOutcome !== "llm_unavailable" &&
       handlerOutcome !== "denied";
-    if (!isSuccessfulSummary) {
-      // Prefer the per-step message so multi-step turns don't duplicate
-      // the entire aggregated final_response on every card.
-      const stepMessage = (out && out.message) || payload.final_response || "(no response)";
-      const p = document.createElement("div");
-      p.className = "summary-text bubble md";
-      p.style.background = "transparent";
-      p.style.border = "0";
-      p.style.padding = "0";
-      p.innerHTML = renderMarkdown(stepMessage);
-      wrapper.appendChild(p);
-      return wrapper;
-    }
-
-    // ── success path ── display_text first (canonical chat-ready string) ─
-    // Any UC tool whose response shape is opinionated (UC-2 ranked similar
-    // tickets, UC-3 KB answer composed verbatim, future UCs) emits
-    // `out.display_text`. The frontend renders it as markdown and stops —
-    // the tool already composed the user-facing text and we surface it
-    // verbatim. Matches the executor's `friendly_step_response` contract
-    // (see oneops.executor.nodes — display_text takes precedence over the
-    // UC-1-specific Summary/Key Details blocks).
-    if (typeof out.display_text === "string" && out.display_text.trim()) {
-      const p = document.createElement("div");
-      p.className = "summary-text bubble md";
-      p.style.background = "transparent";
-      p.style.border = "0";
-      p.style.padding = "0";
-      p.innerHTML = renderMarkdown(out.display_text);
-      wrapper.appendChild(p);
-      return wrapper;
-    }
-
-    // ── success path — render Summary + Key Details (UC-1 shape) ──────
-    const summaryBlock = out.summary || null;
-    const record = out.record || (summaryBlock && summaryBlock.record) || null;
-    const keyDetails =
-      (summaryBlock && summaryBlock.key_details) ||
-      out.key_details ||
-      null;
-
-    // ── entity header (if we have a record) ──────────────────────────
+  }
+  function appendEntityHeader(wrapper, record, step, out, summaryBlock) {
     const entityId = record?.incident_id || record?.request_id ||
                      record?.problem_id || record?.change_id ||
                      record?.asset_id || record?.ci_id || record?.kb_id;
@@ -702,108 +673,100 @@
                         record?.ci_name || record?.summary;
     const serviceId = step.parameters?.service_id || out.service_id ||
                       summaryBlock?.service_id;
-    if (entityId || entityTitle) {
-      const header = document.createElement("div");
-      header.className = "entity-header";
-      if (entityId) {
-        const e = document.createElement("span");
-        e.className = "entity-id";
-        e.textContent = entityId;
-        header.appendChild(e);
-      }
-      if (entityTitle) {
-        const t = document.createElement("span");
-        t.className = "entity-title";
-        t.textContent = entityTitle;
-        header.appendChild(t);
-      }
-      if (serviceId) {
-        const s = document.createElement("span");
-        s.className = "entity-service";
-        s.textContent = serviceId;
-        header.appendChild(s);
-      }
-      wrapper.appendChild(header);
+    if (!(entityId || entityTitle)) return;
+    const header = document.createElement("div");
+    header.className = "entity-header";
+    const part = (cls, val) => {
+      if (!val) return;
+      const span = document.createElement("span");
+      span.className = cls;
+      span.textContent = val;
+      header.appendChild(span);
+    };
+    part("entity-id", entityId);
+    part("entity-title", entityTitle);
+    part("entity-service", serviceId);
+    wrapper.appendChild(header);
+  }
+  // Build the key/value map for the Key Details block. The full-summary
+  // outcome deliberately HIDES the raw list (the compact grounded summary
+  // already weaves in the fields); otherwise prefer the LLM's labelled
+  // key_details, falling back to a humanised projection of the raw record.
+  // A record field is shown in Key Details unless it's internal (_-prefixed),
+  // null, or an empty array / empty object.
+  function isDisplayableField(k, v) {
+    if (k.startsWith("_") || v == null) return false;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === "object") return Object.keys(v).length > 0;
+    return true;
+  }
+  function computeKeyDetails(record, keyDetails, handlerOutcome) {
+    if (handlerOutcome === "summarized") return null;
+    if (keyDetails) return keyDetails;
+    if (!record) return null;
+    const kv = {};
+    for (const [k, v] of Object.entries(record)) {
+      if (isDisplayableField(k, v)) kv[humanise(k)] = v;
+    }
+    return kv;
+  }
+  function appendKeyDetails(wrapper, kv) {
+    if (!(kv && Object.keys(kv).length)) return;
+    appendSectionTitle(wrapper, "Key Details");
+    const dl = document.createElement("dl");
+    dl.className = "key-details";
+    for (const [k, v] of Object.entries(kv)) {
+      const dt = document.createElement("dt");
+      dt.textContent = humanise(k);
+      dl.appendChild(dt);
+      const dd = document.createElement("dd");
+      dd.appendChild(renderValue(v));
+      dl.appendChild(dd);
+    }
+    wrapper.appendChild(dl);
+  }
+
+  function renderSingleStep(payload, step) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "response-card";
+    const out = step.output || {};
+    const stepStatus = (step.status || "").toLowerCase();
+    const handlerOutcome = out?.outcome ? String(out.outcome).toLowerCase() : "";
+
+    // Error / denial / non-success outcome → render the friendly message
+    // verbatim (preferring the per-step message over the aggregated one).
+    if (!isSuccessfulSummary(stepStatus, handlerOutcome)) {
+      appendMarkdownBubble(
+        wrapper, out?.message || payload.final_response || "(no response)");
+      return wrapper;
+    }
+    // Canonical chat-ready string (UC-2 ranked list, UC-3 composed answer, …)
+    // takes precedence over the UC-1 Summary/Key Details shape.
+    if (typeof out.display_text === "string" && out.display_text.trim()) {
+      appendMarkdownBubble(wrapper, out.display_text);
+      return wrapper;
     }
 
-    // ── summary paragraph (LLM-generated, rendered as markdown) ─────
+    // Success path — Summary + Key Details (UC-1 shape).
+    const summaryBlock = out.summary || null;
+    const record = out.record || summaryBlock?.record || null;
+    const keyDetails = summaryBlock?.key_details || out.key_details || null;
+
+    appendEntityHeader(wrapper, record, step, out, summaryBlock);
+
     const summaryText = (typeof summaryBlock === "string")
-      ? summaryBlock
-      : summaryBlock?.summary;
+      ? summaryBlock : summaryBlock?.summary;
     if (summaryText) {
-      // Field-read responses are one-line answers; the "Summary" header
-      // is misleading and the Key Details box below would just repeat
-      // the same value. Render as a plain answer line.
-      if (handlerOutcome !== "field_read") {
-        const h = document.createElement("div");
-        h.className = "section-title";
-        h.textContent = "Summary";
-        wrapper.appendChild(h);
-      }
-      const p = document.createElement("div");
-      p.className = "summary-text bubble md";
-      p.style.background = "transparent";
-      p.style.border = "0";
-      p.style.padding = "0";
-      p.innerHTML = renderMarkdown(summaryText);
-      wrapper.appendChild(p);
-    } else if (out && out.message) {
-      const h = document.createElement("div");
-      h.className = "section-title";
-      h.textContent = "Response";
-      wrapper.appendChild(h);
-      const p = document.createElement("div");
-      p.className = "summary-text bubble md";
-      p.style.background = "transparent";
-      p.style.border = "0";
-      p.style.padding = "0";
-      p.innerHTML = renderMarkdown(out.message);
-      wrapper.appendChild(p);
+      // Field-read answers are one-liners — the "Summary" header is
+      // misleading, so omit it for that outcome.
+      if (handlerOutcome !== "field_read") appendSectionTitle(wrapper, "Summary");
+      appendMarkdownBubble(wrapper, summaryText);
+    } else if (out?.message) {
+      appendSectionTitle(wrapper, "Response");
+      appendMarkdownBubble(wrapper, out.message);
     }
 
-    // ── key details (every field of the record, human-readable) ──────
-    // Preferred: the LLM summariser already produced `key_details` with
-    // service-aware labels (e.g. "Incident ID", "Assigned Group"). Fall
-    // back to raw record + naive humanisation when the LLM half hasn't
-    // populated yet (e.g. cache miss with gateway down).
-    //
-    // For the full-summary outcome we deliberately HIDE this raw key/value
-    // list: the user sees only the compact grounded summary (status line +
-    // narrative + dated bullets), which already weaves in the relevant
-    // fields. Other outcomes (field-read, other UCs) are unaffected — they
-    // either carry no key_details or rely on this block for their display.
-    let kv = (handlerOutcome === "summarized") ? null : keyDetails;
-    if (!kv && record && handlerOutcome !== "summarized") {
-      kv = {};
-      for (const [k, v] of Object.entries(record)) {
-        if (k.startsWith("_") || v == null) continue;
-        if (Array.isArray(v) && v.length === 0) continue;
-        if (typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0) continue;
-        kv[humanise(k)] = v;
-      }
-    }
-    if (kv && Object.keys(kv).length) {
-      const h = document.createElement("div");
-      h.className = "section-title";
-      h.textContent = "Key Details";
-      wrapper.appendChild(h);
-      const dl = document.createElement("dl");
-      dl.className = "key-details";
-      for (const [k, v] of Object.entries(kv)) {
-        const dt = document.createElement("dt");
-        dt.textContent = humanise(k);
-        dl.appendChild(dt);
-        const dd = document.createElement("dd");
-        dd.appendChild(renderValue(v));
-        dl.appendChild(dd);
-      }
-      wrapper.appendChild(dl);
-    }
-
-    // (No inline action chips — fast-path buttons live in the workspace
-    // header, not under every assistant message. Keeps the conversation
-    // readable.)
-
+    appendKeyDetails(wrapper, computeKeyDetails(record, keyDetails, handlerOutcome));
     return wrapper;
   }
 
@@ -842,7 +805,7 @@
   }
 
   function humanise(key) {
-    return String(key).replace(/_/g, " ").replace(/^(\w)/, (m) => m.toUpperCase());
+    return String(key).replaceAll("_", " ").replace(/^(\w)/, (m) => m.toUpperCase());
   }
   function humaniseUcId(ucId) {
     // uc01_summarization -> "Summarization"
@@ -854,7 +817,211 @@
   // returned by /api/fast/{uc_id}/spec (single source of truth); falls back to
   // deriving it from the uc_id. Never shows the raw `ucNN_` wire id to a user.
   function ucLabel(spec) {
-    return (spec && spec.display_name) || humaniseUcId(spec && spec.uc_id);
+    return spec?.display_name || humaniseUcId(spec?.uc_id);
+  }
+
+  // ── Conversational Interrupt Protocol — widgets ──────────────────────
+  // Each interrupt kind renders a self-contained interactive widget inside
+  // the conversation. When the user completes it, `resumeInterrupt` sends
+  // interrupt_resume=true + interrupt_answer to /api/chat and then renders
+  // the resumed turn's response normally.
+
+  async function resumeInterrupt(answer, widgetEl) {
+    widgetEl.innerHTML = '<span class="live-spin">⏳</span> Sending…';
+    setStatus("Working…", "busy");
+    await streamTurnInto({
+      url: "/api/chat/stream",
+      body: {
+        message: "continue",
+        session_id: sessionId,
+        interrupt_resume: true,
+        interrupt_answer: answer,
+      },
+      door: "chat",
+      statusLabel: "Working…",
+    });
+    setStatus("Ready.");
+  }
+
+  function renderInterruptWidget({ door, payload }) {
+    const intr = payload.interrupt || {};
+    const kind = intr.kind || "user_clarification";
+
+    const turn = document.createElement("div");
+    turn.className = "turn assistant interrupt-widget";
+    const chip = document.createElement("span");
+    chip.className = "door-chip chat";
+    chip.textContent = "input required";
+    const metaRow = document.createElement("div");
+    metaRow.className = "meta";
+    metaRow.appendChild(chip);
+    turn.appendChild(metaRow);
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble interrupt-bubble";
+
+    if (kind === "user_selection") {
+      const prompt = document.createElement("p");
+      prompt.className = "interrupt-prompt";
+      prompt.textContent = intr.prompt || "Please select one:";
+      bubble.appendChild(prompt);
+      const opts = intr.options || [];
+      opts.forEach((opt) => {
+        const btn = document.createElement("button");
+        btn.className = "interrupt-option";
+        btn.textContent = opt.label || opt.id || JSON.stringify(opt);
+        btn.addEventListener("click", () => {
+          turn.remove();
+          resumeInterrupt({ selected: opt }, bubble);
+        });
+        bubble.appendChild(btn);
+      });
+      if (intr.allow_none) {
+        const skip = document.createElement("button");
+        skip.className = "interrupt-option interrupt-skip";
+        skip.textContent = "None / Skip";
+        skip.addEventListener("click", () => {
+          turn.remove();
+          resumeInterrupt({ selected: null }, bubble);
+        });
+        bubble.appendChild(skip);
+      }
+
+    } else if (kind === "user_input") {
+      const prompt = document.createElement("p");
+      prompt.className = "interrupt-prompt";
+      prompt.textContent = intr.prompt || "Please fill in the fields:";
+      bubble.appendChild(prompt);
+      const fields = intr.fields || [];
+      const fieldEls = {};
+      fields.forEach((f) => {
+        const label = document.createElement("label");
+        label.className = "interrupt-field-label";
+        label.textContent = (f.label || f.name) + (f.required ? " *" : "");
+        let input;
+        const preset = (f.value != null) ? String(f.value) : "";
+        if (f.type === "select" && Array.isArray(f.options)) {
+          // option field → dropdown, pre-selected to the AI draft if any
+          input = document.createElement("select");
+          input.className = "interrupt-field-input";
+          f.options.forEach((opt) => {
+            const o = document.createElement("option");
+            o.value = String(opt); o.textContent = String(opt);
+            input.appendChild(o);
+          });
+          if (preset) input.value = preset;
+        } else if (f.type === "textarea") {
+          input = document.createElement("textarea");
+          input.className = "interrupt-field-input";
+          input.rows = 2;
+          input.placeholder = f.placeholder || "";
+          input.value = preset;                 // AI draft, editable
+        } else {
+          input = document.createElement("input");
+          // email / date / number / text all map to native input types
+          input.type = f.type || "text";
+          input.placeholder = f.placeholder || "";
+          input.className = "interrupt-field-input";
+          input.value = preset;                 // AI draft, editable
+        }
+        fieldEls[f.name] = input;
+        bubble.appendChild(label);
+        bubble.appendChild(input);
+      });
+      const btn = document.createElement("button");
+      btn.className = "interrupt-submit";
+      btn.textContent = "Submit";
+      btn.addEventListener("click", () => {
+        const values = {};
+        Object.entries(fieldEls).forEach(([name, el]) => {
+          values[name] = el.value;
+        });
+        turn.remove();
+        resumeInterrupt({ fields: values }, bubble);
+      });
+      bubble.appendChild(btn);
+
+    } else if (kind === "user_confirmation") {
+      const summary = intr.summary || {};
+      const action = intr.action || "confirm";
+      const heading = document.createElement("p");
+      heading.className = "interrupt-prompt";
+      heading.textContent = `Please confirm: ${action}`;
+      bubble.appendChild(heading);
+      const table = document.createElement("table");
+      table.className = "interrupt-summary-table";
+      Object.entries(summary).forEach(([k, v]) => {
+        const tr = document.createElement("tr");
+        const td1 = document.createElement("td");
+        td1.className = "interrupt-summary-key";
+        td1.textContent = k;
+        const td2 = document.createElement("td");
+        td2.textContent = String(v);
+        tr.appendChild(td1); tr.appendChild(td2);
+        table.appendChild(tr);
+      });
+      bubble.appendChild(table);
+      const row = document.createElement("div");
+      row.className = "interrupt-confirm-row";
+      const yes = document.createElement("button");
+      yes.className = "interrupt-submit";
+      yes.textContent = "Confirm";
+      yes.addEventListener("click", () => {
+        turn.remove();
+        resumeInterrupt({ confirmed: true }, bubble);
+      });
+      const no = document.createElement("button");
+      no.className = "interrupt-option interrupt-skip";
+      no.textContent = "Cancel";
+      no.addEventListener("click", () => {
+        turn.remove();
+        resumeInterrupt({ confirmed: false }, bubble);
+      });
+      row.appendChild(yes); row.appendChild(no);
+      bubble.appendChild(row);
+
+    } else {
+      // user_clarification (default)
+      const question = document.createElement("p");
+      question.className = "interrupt-prompt";
+      question.textContent = intr.question || intr.prompt || "Please clarify:";
+      bubble.appendChild(question);
+      const hints = intr.hints || [];
+      if (hints.length > 0) {
+        hints.forEach((h) => {
+          const chip2 = document.createElement("button");
+          chip2.className = "interrupt-hint-chip";
+          chip2.textContent = h;
+          chip2.addEventListener("click", () => {
+            input.value = h;
+          });
+          bubble.appendChild(chip2);
+        });
+      }
+      const row2 = document.createElement("div");
+      row2.className = "interrupt-clarify-row";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "interrupt-field-input";
+      input.placeholder = "Your answer…";
+      const btn2 = document.createElement("button");
+      btn2.className = "interrupt-submit";
+      btn2.textContent = "Send";
+      const submit2 = () => {
+        const ans = input.value.trim();
+        if (!ans) return;
+        turn.remove();
+        resumeInterrupt({ answer: ans }, bubble);
+      };
+      btn2.addEventListener("click", submit2);
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit2(); });
+      row2.appendChild(input); row2.appendChild(btn2);
+      bubble.appendChild(row2);
+    }
+
+    turn.appendChild(bubble);
+    conv.appendChild(turn);
+    conv.scrollTop = conv.scrollHeight;
   }
 
   // ── chat door ────────────────────────────────────────────────────────
@@ -862,6 +1029,58 @@
   // Shared live-streaming turn driver — used by BOTH the chat door and the
   // fast-path buttons. Renders a live "working" panel whose rows light up as
   // each agent/tool runs (Claude-style), then the final answer + trace panel.
+  // ── shared live-stream helpers (streamTurnInto + oneopsLiveStream) ──────
+  const liveAgentName = (id) => String(id || "")
+    .replace(/^uc\d+_/, "").replaceAll("_", " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
+  const liveKeyOf = (ev) => ev.step_id || (ev.agent_id + "::" + ev.tool_id);
+  function toolStartHtml(ev) {
+    return '<div class="live-line1"><span class="live-spin">⏳</span> <b>' +
+      liveAgentName(ev.agent_id) + " agent</b> is running " +
+      '<span class="live-tool">' + (ev.tool_id || "tool") + "</span></div>" +
+      (ev.action ? '<div class="live-action">↳ ' + ev.action + "…</div>" : "");
+  }
+  function toolDoneHtml(ev) {
+    const ok = ev.status === "success";
+    return '<div class="live-line1">' + (ok ? "✓" : "✗") + " <b>" +
+      liveAgentName(ev.agent_id) + " agent</b> · " +
+      '<span class="live-tool">' + ev.tool_id + "</span>" +
+      ' <span class="live-lat">' +
+      (ev.latency_ms == null ? "" : ev.latency_ms + " ms") +
+      "</span></div>";
+  }
+  // Read an NDJSON stream line-by-line; dispatch each non-final event to
+  // onEvent; return the `final` payload (or null).
+  // Drain every complete (newline-terminated) line from `buf`, dispatching each
+  // parsed event to onEvent. Returns [remainingBuf, finalPayload] — finalPayload
+  // is the `final` event's payload if seen this drain, else the passed-in value.
+  function drainNdjsonLines(buf, onEvent, finalPayload) {
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      let ev;
+      try { ev = JSON.parse(line); } catch { continue; }
+      if (ev.type === "final") finalPayload = ev.payload;
+      else onEvent(ev);
+    }
+    return [buf, finalPayload];
+  }
+  async function readNdjsonStream(res, onEvent) {
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    let finalPayload = null;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      [buf, finalPayload] = drainNdjsonLines(buf, onEvent, finalPayload);
+    }
+    return finalPayload;
+  }
+
   async function streamTurnInto({ url, body, door, statusLabel }) {
     const pending = addPending({ door, text: "Working on it…" });
     setStatus(statusLabel || "Working…", "busy");
@@ -891,39 +1110,41 @@
     const panelStart = performance.now();
     const MIN_PANEL_MS = 1100;
 
-    const agentName = (id) => String(id || "")
-      .replace(/^uc\d+_/, "").replace(/_/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
     const rows = {};
-    const keyOf = (ev) => ev.step_id || (ev.agent_id + "::" + ev.tool_id);
-
+    // Live-stream answer preview: token events accumulate here as the handler
+    // generates the answer. This is a PREVIEW — the authoritative answer
+    // arrives on the `final` event and replaces this whole panel (so a
+    // server-side validation fallback never leaves stale text on screen).
+    let streamEl = null;
+    let streamText = "";
     const onEvent = (ev) => {
       if (ev.type === "tool_start") {
         if (!routingCleared) { routingRow.remove(); routingCleared = true; }
         const li = document.createElement("li");
         li.className = "live-row running";
-        // Name the real agent AND the real tool that is executing now.
-        li.innerHTML =
-          '<div class="live-line1"><span class="live-spin">⏳</span> <b>' +
-          agentName(ev.agent_id) + " agent</b> is running " +
-          '<span class="live-tool">' + (ev.tool_id || "tool") + "</span></div>" +
-          (ev.action ? '<div class="live-action">↳ ' + ev.action + "…</div>" : "");
+        li.innerHTML = toolStartHtml(ev);
         list.appendChild(li);
-        rows[keyOf(ev)] = li;
+        rows[liveKeyOf(ev)] = li;
         conv.scrollTop = conv.scrollHeight;
       } else if (ev.type === "tool_done") {
-        const li = rows[keyOf(ev)];
-        const ok = ev.status === "success";
+        const li = rows[liveKeyOf(ev)];
         if (li) {
-          li.className = "live-row " + (ok ? "done" : "failed");
-          li.innerHTML =
-            '<div class="live-line1">' + (ok ? "✓" : "✗") + " <b>" +
-            agentName(ev.agent_id) + " agent</b> · " +
-            '<span class="live-tool">' + ev.tool_id + "</span>" +
-            ' <span class="live-lat">' +
-            (ev.latency_ms != null ? ev.latency_ms + " ms" : "") +
-            "</span></div>";
+          li.className = "live-row " + (ev.status === "success" ? "done" : "failed");
+          li.innerHTML = toolDoneHtml(ev);
         }
+      } else if (ev.type === "token") {
+        if (!routingCleared) { routingRow.remove(); routingCleared = true; }
+        if (!streamEl) {
+          streamEl = document.createElement("div");
+          streamEl.className = "live-stream-answer md";
+          bubble.appendChild(streamEl);
+        }
+        streamText += ev.text || "";
+        streamEl.innerHTML = (typeof marked !== "undefined")
+          ? renderMarkdown(streamText)
+          : streamText.replace(/[&<>]/g, (c) =>
+              ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+        conv.scrollTop = conv.scrollHeight;
       }
     };
 
@@ -940,26 +1161,8 @@
         setStatus("Turn failed.", "error");
         return null;
       }
-      // Read the NDJSON stream line-by-line, updating the live panel.
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "";
-      let finalPayload = null;
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let nl;
-        while ((nl = buf.indexOf("\n")) >= 0) {
-          const line = buf.slice(0, nl).trim();
-          buf = buf.slice(nl + 1);
-          if (!line) continue;
-          let ev;
-          try { ev = JSON.parse(line); } catch (_) { continue; }
-          if (ev.type === "final") finalPayload = ev.payload;
-          else onEvent(ev);
-        }
-      }
+      // Read the NDJSON stream, updating the live panel as events arrive.
+      const finalPayload = await readNdjsonStream(res, onEvent);
       // Hold the live panel briefly so the working phase is always seen.
       const shownFor = performance.now() - panelStart;
       if (shownFor < MIN_PANEL_MS) {
@@ -967,14 +1170,22 @@
       }
       pending.remove();
       if (finalPayload) {
+        sessionId = finalPayload.session_id || sessionId;
+        saveSessionId(sessionId);
+        renderSession();
+        // ── Conversational Interrupt Protocol ──────────────────────────
+        // When the executor paused mid-turn (interrupt_resume handshake),
+        // render an interactive widget instead of a normal text bubble.
+        if (finalPayload.final_status === "interrupted" && finalPayload.interrupt) {
+          renderInterruptWidget({ door, payload: finalPayload });
+          setStatus("Waiting for your input…", "busy");
+          return finalPayload;
+        }
         addAssistantBubble({
           door,
           meta: metaForPayload(finalPayload),
           content: renderResponseContent(finalPayload),
         });
-        sessionId = finalPayload.session_id || sessionId;
-        saveSessionId(sessionId);
-        renderSession();
         tallyTurn(finalPayload);
         setStatus("Ready.");
         refreshThreadList();
@@ -996,7 +1207,7 @@
   // the SAME live agent/tool panel. Renders the panel into `mount`, streams
   // NDJSON from `url`, and returns the final payload (the UC's own response)
   // for the caller to render its existing results view beneath the panel.
-  window.oneopsLiveStream = async function ({ url, body, headers, mount }) {
+  globalThis.oneopsLiveStream = async function ({ url, body, headers, mount }) {
     const head = document.createElement("div");
     head.className = "live-head";
     head.textContent = "Working on it…";
@@ -1013,34 +1224,20 @@
     list.appendChild(routingRow);
     let routingCleared = false;
 
-    const agentName = (id) => String(id || "")
-      .replace(/^uc\d+_/, "").replace(/_/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase()) || "agent";
     const rows = {};
-    const keyOf = (ev) => ev.step_id || (ev.agent_id + "::" + ev.tool_id);
     const onEvent = (ev) => {
       if (ev.type === "tool_start") {
         if (!routingCleared) { routingRow.remove(); routingCleared = true; }
         const li = document.createElement("li");
         li.className = "live-row running";
-        li.innerHTML =
-          '<div class="live-line1"><span class="live-spin">⏳</span> <b>' +
-          agentName(ev.agent_id) + " agent</b> is running " +
-          '<span class="live-tool">' + (ev.tool_id || "tool") + "</span></div>" +
-          (ev.action ? '<div class="live-action">↳ ' + ev.action + "…</div>" : "");
+        li.innerHTML = toolStartHtml(ev);
         list.appendChild(li);
-        rows[keyOf(ev)] = li;
+        rows[liveKeyOf(ev)] = li;
       } else if (ev.type === "tool_done") {
-        const li = rows[keyOf(ev)];
-        const ok = ev.status === "success";
+        const li = rows[liveKeyOf(ev)];
         if (li) {
-          li.className = "live-row " + (ok ? "done" : "failed");
-          li.innerHTML =
-            '<div class="live-line1">' + (ok ? "✓" : "✗") + " <b>" +
-            agentName(ev.agent_id) + " agent</b> · " +
-            '<span class="live-tool">' + ev.tool_id + "</span>" +
-            ' <span class="live-lat">' +
-            (ev.latency_ms != null ? ev.latency_ms + " ms" : "") + "</span></div>";
+          li.className = "live-row " + (ev.status === "success" ? "done" : "failed");
+          li.innerHTML = toolDoneHtml(ev);
         }
       }
     };
@@ -1054,24 +1251,7 @@
         head.textContent = "Request failed (" + res.status + ")";
         return null;
       }
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let nl;
-        while ((nl = buf.indexOf("\n")) >= 0) {
-          const ln = buf.slice(0, nl).trim();
-          buf = buf.slice(nl + 1);
-          if (!ln) continue;
-          let ev;
-          try { ev = JSON.parse(ln); } catch (_) { continue; }
-          if (ev.type === "final") finalPayload = ev.payload;
-          else onEvent(ev);
-        }
-      }
+      finalPayload = await readNdjsonStream(res, onEvent);
     } catch (err) {
       head.textContent = "Error: " + err;
       return null;
@@ -1134,7 +1314,7 @@
     for (const r of p.step_results || []) {
       const o = r.output || {};
       if (o.cache_hit === true) {
-        const age = (o.cache_age_s != null) ? o.cache_age_s : "?";
+        const age = (o.cache_age_s == null) ? "?" : o.cache_age_s;
         return `cache hit · age ${age}s`;
       }
       if (o.cache_hit === false) return "cache miss";
@@ -1148,7 +1328,7 @@
   function tallyTurn(p) {
     counters.turns += 1;
     if (detectCacheStatus(p)?.startsWith("cache hit")) counters.cacheHits += 1;
-    lastLatencyEl.textContent = (p.latency_ms != null ? p.latency_ms + " ms" : "—");
+    lastLatencyEl.textContent = (p.latency_ms == null ? "—" : p.latency_ms + " ms");
     renderCounters();
   }
 
@@ -1161,7 +1341,6 @@
       const specs = await Promise.all(
         ucs.map((id) => fetch(`/api/fast/${encodeURIComponent(id)}/spec`)
                          .then((r) => r.json())));
-      fastPathSpecs = specs;
       fastPathActions.innerHTML = "";
       specs.forEach((spec) => {
         const btn = document.createElement("button");
@@ -1197,7 +1376,7 @@
       inp.name = f.name;
       inp.required = f.required;
       inp.placeholder = f.description.slice(0, 80);
-      if (prefill && prefill[f.name]) inp.value = prefill[f.name];
+      if (prefill?.[f.name]) inp.value = prefill[f.name];
       lab.appendChild(inp);
       form.appendChild(lab);
       inputs[f.name] = inp;

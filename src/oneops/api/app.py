@@ -24,7 +24,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
-from typing import Any
+from typing import Annotated, Any, cast
 
 from fastapi import FastAPI, HTTPException, Path, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from oneops.config import get_settings
 from oneops.errors import NATSUnavailableError, OneOpsError
-from oneops.executor.graph import build_executor_graph, run_turn
+from oneops.executor.graph import build_executor_graph, resume_turn, run_turn
 from oneops.executor.memory import NoopTrimmer, TokenBudgetTrimmer
 from oneops.executor.step_runner import HandlerStepExecutor
 from oneops.observability import (
@@ -56,6 +56,9 @@ from oneops.router.router import Router
 from oneops.session import InMemoryEventLog, InMemoryHotWindow, SessionEventStore
 from oneops.session.profile_store import get_user_profile_store  # noqa: F401 - eager-load
 from oneops.toolrunner.resolver import HandlerResolver
+
+# Telemetry/HTTP literals → constants (sonar S1192).
+_APPLICATION_X_NDJSON = "application/x-ndjson"
 
 _log = get_logger("oneops.api")
 _tracer = get_tracer("oneops.api")
@@ -115,8 +118,7 @@ def _build_llm_gateway():
     base_url = os.getenv("LLM_GATEWAY_URL", "").strip()
     if not base_url:
         return None
-    # Canonical env var names (match `.env.example` — see docs/runbooks/
-    # configuration.md when it lands). Production deployments configure
+    # Canonical env var names (match `.env`). Production deployments configure
     # these via the secret manager; no per-application aliases.
     api_key = os.getenv("LLM_GATEWAY_API_KEY", "").strip()
     try:
@@ -321,6 +323,17 @@ def _summarizer_is_wired() -> bool:
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4_000)
     session_id: str | None = None
+    # Pre-routed dispatch: when a caller (e.g. a team manager's member-selector)
+    # has already chosen the agent(s), the executor SKIPS the LLM router and runs
+    # them directly. Bounded to cap the surface; ids with no active record are
+    # dropped downstream (never invent). None/empty → normal routing.
+    forced_agent_ids: list[str] | None = Field(default=None, max_length=16)
+    # Conversational Interrupt Protocol: set by the frontend when the user
+    # responds to a paused interrupt. interrupt_resume=True signals that
+    # interrupt_answer should be forwarded to the waiting LangGraph node via
+    # Command(resume=answer). Both fields are None on ordinary turns.
+    interrupt_resume: bool | None = None
+    interrupt_answer: dict[str, Any] | None = None
 
 
 # Bounds on the free-form fast-path `inputs` dict. Real fast-path inputs are a
@@ -331,6 +344,22 @@ class ChatRequest(BaseModel):
 _MAX_FAST_PATH_INPUT_KEYS = 50
 _MAX_FAST_PATH_INPUT_DEPTH = 6
 _MAX_FAST_PATH_INPUT_BYTES = 64 * 1024
+
+
+def _extract_interrupt_payload(out: Any) -> dict[str, Any] | None:
+    """A turn paused by the Conversational Interrupt Protocol. With a
+    checkpointer configured, LangGraph does NOT raise GraphInterrupt — it
+    RETURNS the state with `__interrupt__` populated (a sequence of Interrupt
+    objects, each carrying `.value`). Normalise that into the typed payload
+    dict the frontend renders, or None when the turn did not pause."""
+    pending = out.get("__interrupt__") if isinstance(out, dict) else None
+    if not pending:
+        return None
+    val = pending[0] if isinstance(pending, (list, tuple)) else pending
+    if hasattr(val, "value"):
+        inner = val.value
+        return inner if isinstance(inner, dict) else {"value": inner}
+    return val if isinstance(val, dict) else {"value": val}
 
 
 def _nesting_depth(value: Any, _depth: int = 1) -> int:
@@ -384,6 +413,10 @@ class TurnResponse(BaseModel):
     request_id: str
     trace_id: str | None = None
     latency_ms: int
+    # Conversational Interrupt Protocol: non-None when the executor paused
+    # mid-turn waiting for user input. Frontend renders the appropriate widget
+    # and sends interrupt_resume=True + interrupt_answer on the next turn.
+    interrupt: dict[str, Any] | None = None
 
 
 # ── envelope construction ───────────────────────────────────────────────
@@ -463,11 +496,60 @@ async def _lifespan(app: FastAPI):
     from oneops.router.glossary import Glossary
     from oneops.router.retrieval import LexicalRetriever
     retriever = LexicalRetriever(registry)
+    # Stage-2 retriever selection. Default = lexical (reads the file registry,
+    # zero infra). Flag ONEOPS_ROUTER_RETRIEVER=pgvector switches to DB-backed
+    # kNN over ai.embeddings_agent (retrieve-then-decide). Additive + reversible:
+    # any setup failure logs the reason and falls back to lexical, never blocking
+    # startup (§2.7). Query is embedded through the gateway (§2.5).
+    app.state.router_retriever_pool = None
+    # Default = pgvector (DB-backed agent embeddings) — proven non-regressive vs
+    # lexical and ~2.4x better on unseen/paraphrased queries; required for ITOM
+    # scale. Falls back to lexical automatically if the DB/gateway is absent
+    # (set ONEOPS_ROUTER_RETRIEVER=lexical to force the in-process retriever).
+    if os.getenv("ONEOPS_ROUTER_RETRIEVER", "pgvector").strip().lower() in ("pgvector", "db"):
+        try:
+            if gateway is None:
+                raise RuntimeError("ONEOPS_ROUTER_RETRIEVER=pgvector requires the LLM gateway")
+            import asyncpg as _asyncpg
+
+            from oneops.router.retrieval import (
+                GatewayEmbedder,
+                PgVectorRetriever,
+                configure_hnsw_connection,
+            )
+            # init= tunes pgvector HNSW (iterative_scan + ef_search) on every
+            # pooled connection so the filtered ANN query is correct at scale.
+            _emb_pool = await _asyncpg.create_pool(
+                os.environ["POSTGRES_URL"], min_size=1, max_size=4,
+                init=configure_hnsw_connection)
+            app.state.router_retriever_pool = _emb_pool
+            from oneops.router.route_cache import build_query_embedding_cache
+            _emb_cache = build_query_embedding_cache()
+            retriever = PgVectorRetriever(
+                registry,
+                embedder=GatewayEmbedder(gateway, cache=_emb_cache),
+                pool=_emb_pool)
+            _log.info("oneops.api.router_retriever", kind="pgvector",
+                      table="ai.embeddings_agent")
+        except Exception as exc:                                   # noqa: BLE001
+            _log.warning("oneops.api.router_retriever_fallback",
+                         error=str(exc)[:160], note="falling back to lexical retriever")
+            retriever = LexicalRetriever(registry)
+    else:
+        _log.info("oneops.api.router_retriever", kind="lexical")
     glossary = Glossary.from_file()
     authz = AuthzService.create()
     if gateway is not None:
-        disambiguator = LlmDisambiguator(gateway, model=chosen_model,
-                                         registry=registry)
+        # Abstain gate config (wrong-agent guard, ITOM-scale). Unset = OFF
+        # (no ITSM regression). Set ONEOPS_ROUTER_ABSTAIN_MIN_SCORE (e.g. 0.45
+        # for pgvector cosine) + optionally _MIN_MARGIN to refuse-and-clarify
+        # on weak/ambiguous matches instead of guessing among look-alikes.
+        _abstain_score = os.getenv("ONEOPS_ROUTER_ABSTAIN_MIN_SCORE", "").strip()
+        disambiguator = LlmDisambiguator(
+            gateway, model=chosen_model, registry=registry,
+            abstain_min_score=(float(_abstain_score) if _abstain_score else None),
+            abstain_min_margin=float(
+                os.getenv("ONEOPS_ROUTER_ABSTAIN_MIN_MARGIN", "0.0") or "0.0"))
         # Rewriter selection — when the LLM gateway is up, use the LLM
         # rewriter (resolves pronouns / back-references against
         # conversation_history). Without it, multi-turn "what is the
@@ -482,16 +564,35 @@ async def _lifespan(app: FastAPI):
         # sub-query and only the first entity gets served.
         from oneops.router.decompose import LlmDecomposer
         decomposer = LlmDecomposer(gateway, model=chosen_model)
+        # Latency (RCA 2026-06-09): when ONEOPS_ROUTER_MERGE_DECOMPOSE_REWRITE
+        # is on, inject an LlmUnifiedSplitter — ONE LLM call that does
+        # reference-resolution + splitting, replacing the decompose call + the
+        # speculative rewrite. Default off ⇒ unchanged two-call path.
+        from oneops.router.decompose import (
+            LlmUnifiedSplitter,
+            merge_decompose_rewrite_enabled,
+        )
+        unified_splitter = (
+            LlmUnifiedSplitter(gateway, model=chosen_model)
+            if merge_decompose_rewrite_enabled() else None)
     else:
         from oneops.router.decompose import PassthroughDecomposer
         from oneops.router.rewrite import PassthroughRewriter
         disambiguator = ThresholdDisambiguator()
         rewriter = PassthroughRewriter()
         decomposer = PassthroughDecomposer()
+        unified_splitter = None
+    from oneops.router.route_cache import build_route_decision_cache
+    _route_cache = build_route_decision_cache()
     router = Router(
         registry=registry, glossary=glossary, retriever=retriever,
         disambiguator=disambiguator, authz=authz,
-        rewriter=rewriter, decomposer=decomposer)
+        rewriter=rewriter, decomposer=decomposer,
+        unified_splitter=unified_splitter,
+        route_cache=_route_cache)
+    _log.info("oneops.api.route_cache_wired",
+              backend=(type(_route_cache).__name__ if _route_cache else "off"),
+              unified_split=(unified_splitter is not None))
     dispatcher = FastPathDispatcher(registry)
 
     # ── HandlerResolver — registry of tool handlers ────────────────────
@@ -619,8 +720,17 @@ async def _lifespan(app: FastAPI):
             LlmControlClassifier,
             set_control_classifier,
         )
+        # Control gate runs on a STRONGER model than the reranker default: it's
+        # a nuanced classification (enterprise IT how-to vs off-domain), and
+        # gpt-4o-mini over-refused how-to (wifi/macbook/teams/slack) as
+        # out_of_scope — gpt-4o scored 100/100 on the control-gate eval vs
+        # mini's 89/100. Tiny call (max 8 tokens), 7-day Dragonfly-cached, so
+        # the cost/latency impact is minimal. Override via env.
+        _control_gate_model = (
+            os.getenv("ONEOPS_CONTROL_GATE_MODEL", "gpt-4o").strip()
+            or chosen_model)
         set_control_classifier(
-            LlmControlClassifier(gateway, model=chosen_model))
+            LlmControlClassifier(gateway, model=_control_gate_model))
         _log.info("oneops.api.llm_gateway_wired",
                   model=chosen_model, embed_model=embed_model,
                   cache_aside=True,
@@ -797,26 +907,22 @@ async def _lifespan(app: FastAPI):
     else:
         _log.info("oneops.api.agent_transport_selected", transport="local")
 
-    # ── UC-5 Triage runner + agent wiring (Phase 6) ─────────────────────
-    # Wires the production runner (LangGraph + adapters + gateway) into the
-    # Section J FastAPI endpoints. Starts the NATS agent if a NATS client
-    # is available so the propose/decide hops travel via NATS in production.
+    # ── UC-5 Triage wiring (Phase 3b — executor-only propose) ───────────
+    # Propose runs on the MAIN executor (registry tools, like every other UC);
+    # the bespoke runner/graph were retired. The NATS triage worker now serves
+    # the DECIDE (apply) hop only.
     app.state.uc05_agent = None
     try:
         if gateway is not None:
             from oneops.api.uc05_routes import (
                 get_ticket_store as _uc05_get_store,
             )
-            from oneops.api.uc05_routes import (
-                set_tools_runner as _uc05_set_runner,
-            )
-            from oneops.use_cases.uc05_triage.runner import build_runner
 
             # Store selection: default JsonFixtureStore (demo data); opt into the
             # real Postgres-backed store (itsm.incident / itsm.request reads +
-            # triage-apply writes) with UC05_TICKET_STORE=postgres. Set BEFORE
-            # any _uc05_get_store() call so the runner, executor handlers, and the
-            # NATS agent all share the same backend.
+            # triage-apply writes) with UC05_TICKET_STORE=postgres. Set BEFORE any
+            # _uc05_get_store() call so the executor handlers + the NATS decide
+            # worker share the same backend.
             if os.getenv("UC05_TICKET_STORE", "").strip().lower() == "postgres":
                 from oneops.api.uc05_routes import (
                     set_ticket_store as _uc05_set_ticket_store,
@@ -830,20 +936,11 @@ async def _lifespan(app: FastAPI):
                 pg_url = os.getenv("POSTGRES_URL")
                 if not pg_url:
                     raise RuntimeError(
-                        "POSTGRES_URL not set for Triage (UC-5) runner")
+                        "POSTGRES_URL not set for Triage (UC-5) handlers")
                 return await asyncpg.connect(pg_url)
 
-            uc05_runner = build_runner(
-                gateway=gateway, connection_provider=_uc05_conn_provider,
-            )
-            _uc05_set_runner(uc05_runner)
-            _log.info("oneops.api.uc05_runner_attached")
-
-            # B-refactor: wire the standard registry-dispatched UC-5 handlers
-            # (uc05_triage.handlers) with the same deps as the bespoke runner.
-            # Additive — the executor path uses these; the runner above still
-            # serves /api/uc05/propose until Phase 3 retires it. No behavior
-            # change today; this makes the registry tools dispatchable.
+            # Wire the registry-dispatched UC-5 tool handlers — the executor
+            # dispatches these for propose (check → assign ∥ prio → assemble).
             from oneops.use_cases.uc05_triage.handlers import (
                 set_uc05_connection_provider as _uc05_set_cp,
             )
@@ -858,57 +955,35 @@ async def _lifespan(app: FastAPI):
             _uc05_set_store(_uc05_get_store())
             _log.info("oneops.api.uc05_handlers_wired")
 
-            # B-refactor Phase 3: /api/uc05/propose runs on the MAIN executor by
-            # DEFAULT — UC-5 dispatches its registry tools through the one executor
-            # (with AuthzService + per-tool action gate + data-flow binding), like
-            # every other UC. Validated live end-to-end (49-span trace, propose →
-            # decide → apply) before this flip. The legacy bespoke runner remains
-            # wired below as an unused fallback until Phase 3b deletes it; an
-            # operator can still force it off with ONEOPS_UC05_EXECUTOR_PROPOSE=0
-            # (escape hatch during soak).
-            if os.getenv("ONEOPS_UC05_EXECUTOR_PROPOSE", "1").lower() not in (
-                    "0", "false", "no", "off"):
-                from oneops.api.uc05_routes import (
-                    set_executor_propose_runner as _uc05_set_exec_runner,
-                )
-                from oneops.use_cases.uc05_triage.executor_runner import (
-                    make_executor_propose_runner,
-                )
-                _uc05_set_exec_runner(make_executor_propose_runner(graph))
-                _log.info("oneops.api.uc05_executor_propose_enabled",
-                          default=True)
+            # /api/uc05/propose → MAIN executor (the only propose path).
+            from oneops.api.uc05_routes import (
+                set_executor_propose_runner as _uc05_set_exec_runner,
+            )
+            from oneops.use_cases.uc05_triage.executor_runner import (
+                make_executor_propose_runner,
+            )
+            _uc05_set_exec_runner(make_executor_propose_runner(graph))
+            _log.info("oneops.api.uc05_executor_propose_enabled")
 
-            # Start NATS triage agent — listens on oneops.uc05.triage.{propose,decide}
+            # Start the NATS triage DECIDE worker (apply path) — propose does NOT
+            # go over NATS; it runs on the executor above. If NATS is down the
+            # route falls back to in-process apply (graceful).
             if invoker_mode == "nats":
                 try:
                     from oneops.adapters.nats_client import get_nats_client
                     from oneops.api.uc05_routes import (
                         set_decide_dispatcher as _uc05_set_decide_dispatcher,
                     )
-                    from oneops.api.uc05_routes import (
-                        set_tools_runner as _uc05_set_runner_inner,
-                    )
                     from oneops.use_cases.uc05_triage.agent import TriageAgent
                     from oneops.use_cases.uc05_triage.nats_dispatcher import (
                         dispatch_decide as _uc05_dispatch_decide,
                     )
-                    from oneops.use_cases.uc05_triage.nats_dispatcher import (
-                        dispatch_propose as _uc05_dispatch_propose,
-                    )
                     nats_client = await get_nats_client()
                     agent = TriageAgent(
-                        nats=nats_client, runner=uc05_runner,
-                        store=_uc05_get_store(),
+                        nats=nats_client, store=_uc05_get_store(),
                     )
                     await agent.start()
                     app.state.uc05_agent = agent
-
-                    # Re-route the API surface through NATS instead of local.
-                    async def _propose_over_nats(*, ticket_row, service_id, tenant_id):
-                        return await _uc05_dispatch_propose(
-                            nats=nats_client, tenant_id=tenant_id,
-                            service_id=service_id, ticket_row=ticket_row,
-                        )
 
                     async def _decide_over_nats(*, proposal, proposal_id, choice,
                                                 actor_user_id, final_values):
@@ -919,10 +994,8 @@ async def _lifespan(app: FastAPI):
                             final_values=final_values,
                         )
 
-                    _uc05_set_runner_inner(_propose_over_nats)
                     _uc05_set_decide_dispatcher(_decide_over_nats)
-                    _log.info("oneops.api.uc05_agent_started",
-                              dispatch="nats")
+                    _log.info("oneops.api.uc05_agent_started", dispatch="nats")
                 except Exception as exc:                          # noqa: BLE001
                     _log.warning("oneops.api.uc05_agent_failed",
                                   error=str(exc)[:160])
@@ -931,15 +1004,16 @@ async def _lifespan(app: FastAPI):
                       error=str(exc)[:160])
 
     # ── UC-8 Fulfillment NATS agent wiring ──────────────────────────────
-    # When NATS is available, the /api/uc08/fulfill route publishes the
-    # executor-kick over NATS instead of running it in-process. Symmetric
-    # with UC-5. Graceful fallback to asyncio task if NATS is down.
+    # Starts the fulfilment-engine worker (runs the task DAG over NATS).
+    # UC-8 is chat-only; the worker is triggered by the chat
+    # create_service_request tool (Step 2). Graceful skip if NATS is down.
     try:
         import os as _os
 
         import asyncpg as _asyncpg
 
         from oneops.adapters.nats_client import get_nats_client
+        from oneops.use_cases.uc08_fulfillment import tools as _uc08_tools
         from oneops.use_cases.uc08_fulfillment.adapters.inprocess import (
             InProcessIntegrationAdapter,
         )
@@ -961,10 +1035,16 @@ async def _lifespan(app: FastAPI):
         )
         await uc08_agent.start()
         app.state.uc08_agent = uc08_agent
-
-        from oneops.api import uc08_routes as _uc08_routes
-        _uc08_routes.set_nats_dispatcher(nats_client_uc08)
-        _log.info("oneops.api.uc08_agent_started", dispatch="nats")
+        # The fulfilment engine worker (runs the task DAG). Its trigger is the
+        # chat create_service_request tool (Step 2), not the removed REST route.
+        app.state.uc08_nats = nats_client_uc08
+        # Wire the 4 chat catalog tools: the embedding gateway powers
+        # get_service_request_list (single egress, §2.5); the NATS client lets
+        # create_service_request dispatch fulfilment to the worker above.
+        _uc08_tools.set_gateway(gateway)
+        _uc08_tools.set_nats_client(nats_client_uc08)
+        _log.info("oneops.api.uc08_agent_started", dispatch="nats",
+                  chat_tools="wired")
     except Exception as exc:                                      # noqa: BLE001
         _log.warning("oneops.api.uc08_wiring_failed",
                       error=str(exc)[:160])
@@ -1083,31 +1163,16 @@ async def _lifespan(app: FastAPI):
                       error=str(exc)[:160])
         app.state.chat_turn_cache = None
 
-    # Embedding refresh worker — drains pgmq.embedding_refresh.
-    # Default ON as of 2026-05-30 (after UC-5 + UC-3 verified on new substrate).
-    # Set EMBEDDING_WORKER_ENABLED=false to disable; default keeps the new
-    # substrate fresh on every ticket UPDATE without per-deploy env knobs.
+    # Embedding refresh workers are now SEPARATE per-service processes (one queue
+    # + one worker per service, no shared lane / no head-of-line blocking). They
+    # live in database/<service>/worker.py and run on their own:
+    #     python database/incident/worker.py
+    #     python database/agent/worker.py    ... etc.
+    # The API process therefore does NOT start an in-process worker. The
+    # attribute is kept (None) so the shutdown path stays a no-op.
     app.state.embedding_worker = None
-    if os.getenv("EMBEDDING_WORKER_ENABLED", "true").strip().lower() != "false":
-        try:
-            import asyncpg as _asyncpg
-
-            from oneops.embeddings.worker import EmbeddingRefreshWorker
-
-            async def _emb_conn():
-                return await _asyncpg.connect(os.environ["POSTGRES_URL"])
-
-            if gateway is None:
-                raise RuntimeError("EMBEDDING_WORKER_ENABLED but no LlmGateway")
-            worker = EmbeddingRefreshWorker(
-                gateway=gateway, connection_provider=_emb_conn,
-            )
-            await worker.start()
-            app.state.embedding_worker = worker
-            _log.info("oneops.api.embedding_worker_started")
-        except Exception as exc:                                  # noqa: BLE001
-            _log.warning("oneops.api.embedding_worker_failed",
-                          error=str(exc)[:160])
+    _log.info("oneops.api.embedding_worker_external",
+              note="per-service workers run as database/<service>/worker.py processes")
 
     # Dashboard priming: emit one `ai.agent.runs.total{agent_id=<id>}` sample
     # per registered agent at boot so the Grafana "Active agents" counter
@@ -1161,6 +1226,14 @@ async def _lifespan(app: FastAPI):
             if getattr(app.state, "embedding_worker", None) is not None:
                 await app.state.embedding_worker.stop()
                 _log.info("oneops.api.embedding_worker_stopped")
+        except Exception:
+            pass
+
+        # Close the router retriever pool if the pgvector retriever opened one.
+        try:
+            if getattr(app.state, "router_retriever_pool", None) is not None:
+                await app.state.router_retriever_pool.close()
+                _log.info("oneops.api.router_retriever_pool_closed")
         except Exception:
             pass
 
@@ -1254,22 +1327,10 @@ def build_app() -> FastAPI:
     from oneops.api.uc02_routes import router as _uc02_router
     app.include_router(_uc02_router)
 
-    # ── UC-8 Catalog Fulfillment — /api/uc08/match + fulfill + status ──────
-    from oneops.api import uc08_routes
-    from oneops.api.uc08_routes import router as _uc08_router
-    app.include_router(_uc08_router)
-    # Inject the LiteLLM gateway + cache so the routes can call them.
-    try:
-        uc08_routes.set_gateway(gateway)
-    except Exception as exc:                                  # noqa: BLE001
-        _log.warning("oneops.api.uc08_routes.gateway_wire_failed",
-                     error=str(exc)[:160])
-    try:
-        if getattr(app.state, "edge_cache", None) is not None:
-            uc08_routes.set_cache(app.state.edge_cache)
-    except Exception:                                          # noqa: BLE001
-        pass
-    _log.info("oneops.api.uc08_routes_registered")
+    # UC-8 Catalog Fulfillment is CHAT-ONLY (2026-06-09): the bespoke REST/
+    # button routes (uc08_routes.py) + button frontend were removed. UC-8 is
+    # reached via the conversational router (card-driven routing) and runs
+    # through its 4 chat tools + the fulfilment engine; there is no button path.
 
     # ── frontend ──────────────────────────────────────────────────────
     static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -1304,8 +1365,13 @@ def build_app() -> FastAPI:
         import re as _re
 
         index_path = os.path.join(static_dir, "index.html")
-        with open(index_path, encoding="utf-8") as f:
-            html = f.read()
+
+        def _read_index() -> str:
+            with open(index_path, encoding="utf-8") as f:
+                return f.read()
+
+        # Read off the event loop (sonar S7493 — no sync open() in async path).
+        html = await asyncio.to_thread(_read_index)
 
         def _stamp(match: _re.Match[str]) -> str:
             attr, url = match.group(1), match.group(2)
@@ -1436,7 +1502,7 @@ def build_app() -> FastAPI:
     # ── session history (frontend rehydrates on reload) ───────────────
     @app.get("/api/session/{session_id}/history")
     async def _session_history(
-        session_id: str = Path(..., min_length=1, max_length=64),
+        session_id: Annotated[str, Path(min_length=1, max_length=64)],
         request: Request = None,             # type: ignore[assignment]
     ) -> dict[str, Any]:
         store = getattr(app.state, "session_store", None)
@@ -1463,8 +1529,8 @@ def build_app() -> FastAPI:
         }
 
     # ── fast-path spec discovery (frontend renders forms from this) ───
-    @app.get("/api/fast/{uc_id}/spec")
-    async def _fast_path_spec(uc_id: str = Path(..., min_length=1)) -> dict[str, Any]:
+    @app.get("/api/fast/{uc_id}/spec", responses={404: {"description": "Not found"}})
+    async def _fast_path_spec(uc_id: Annotated[str, Path(min_length=1)]) -> dict[str, Any]:
         spec = app.state.dispatcher.describe(uc_id)
         if spec is None:
             raise HTTPException(
@@ -1512,9 +1578,9 @@ def build_app() -> FastAPI:
             tenant_id=tenant_id, user_id=user_id, limit=max(1, min(50, limit)))
         return {"sessions": [m.to_dict() for m in rows]}
 
-    @app.get("/api/sessions/{session_id}")
+    @app.get("/api/sessions/{session_id}", responses={404: {"description": "Not found"}})
     async def _session_get(
-        session_id: str = Path(..., min_length=1, max_length=64),
+        session_id: Annotated[str, Path(min_length=1, max_length=64)],
         request: Request = None,                    # type: ignore[assignment]
     ) -> dict[str, Any]:
         from oneops.session.lifecycle import get_lifecycle
@@ -1528,7 +1594,7 @@ def build_app() -> FastAPI:
 
     @app.delete("/api/sessions/{session_id}")
     async def _session_delete(
-        session_id: str = Path(..., min_length=1, max_length=64),
+        session_id: Annotated[str, Path(min_length=1, max_length=64)],
         request: Request = None,                    # type: ignore[assignment]
     ) -> dict[str, Any]:
         from oneops.session.lifecycle import get_lifecycle
@@ -1551,7 +1617,7 @@ def build_app() -> FastAPI:
         return {"deleted": ok, "session_id": session_id}
 
     # ── chat door (natural language) ─────────────────────────────────
-    @app.post("/api/chat", response_model=TurnResponse)
+    @app.post("/api/chat")
     async def _chat(req: ChatRequest, request: Request) -> TurnResponse:
         from oneops.api.chat_turn_cache import (
             cache_key as _chat_cache_key,
@@ -1637,6 +1703,78 @@ def build_app() -> FastAPI:
                     message=req.message or "", cached=cached)
                 return TurnResponse(**cached)
 
+        # ── Conversational Interrupt Protocol — resume path ───────────────
+        # When the frontend sends interrupt_resume=True, the user is answering
+        # a paused interrupt. Resume the checkpointed LangGraph state instead
+        # of starting a fresh turn. The pending interrupt record stored in the
+        # turn cache (key __interrupt__:{session_id}) is cleared on resume so
+        # subsequent turns start fresh.
+        if req.interrupt_resume and req.interrupt_answer is not None:
+            _ikey = f"__interrupt__{session_id}"
+            _pending: dict[str, Any] | None = None
+            if cache is not None:
+                with suppress(Exception):
+                    _pending = await cache.get(
+                        tenant_id=tenant_id, key=_ikey)
+            if _pending is not None:
+                # Resume on the EXACT thread the paused turn ran on (stored when
+                # it interrupted) — not session_id, so independent turns keep
+                # their own per-request threads and don't cross-contaminate.
+                _paused_thread = (str(_pending.get("thread"))
+                                  if isinstance(_pending, dict)
+                                  and _pending.get("thread") else session_id)
+                # Clear the pending-interrupt marker before resuming — a resume
+                # that fails mid-flight must not leave a stale marker that
+                # causes the next turn to also be treated as a resume.
+                with suppress(Exception):
+                    if hasattr(cache, "delete"):
+                        await cache.delete(tenant_id=tenant_id, key=_ikey)
+                    else:
+                        # Overwrite with empty sentinel (TTL=1s); works on any
+                        # ChatTurnCache impl including InMemory.
+                        await cache.put(
+                            tenant_id=tenant_id, key=_ikey, value={})
+                graph = request.app.state.graph
+                import asyncio as _aio
+                _s = get_settings()
+                try:
+                    out = await _aio.wait_for(
+                        resume_turn(
+                            graph, req.interrupt_answer,
+                            config={"configurable": {"thread_id": _paused_thread}}),
+                        timeout=_s.turn_timeout_seconds)
+                except Exception:                             # noqa: BLE001
+                    out = {}
+                # The resumed turn may pause AGAIN (a multi-step flow: pick →
+                # fields → confirm). Detect the next interrupt from the returned
+                # state and re-arm the marker so the following turn resumes too.
+                _intr2 = _extract_interrupt_payload(out)
+                if _intr2 is not None and cache is not None:
+                    with suppress(Exception):
+                        await cache.put(
+                            tenant_id=tenant_id, key=_ikey,
+                            value={"interrupt": _intr2,
+                                   "thread": _paused_thread})
+                with suppress(Exception):
+                    await lifecycle.touch(
+                        tenant_id=tenant_id, session_id=session_id,
+                        user_id=user_id,
+                        title=(req.message or "")[:120], bump_turn_count=True)
+                _resp = (_intr2.get("prompt", _intr2.get("question", ""))
+                         if _intr2 else str(out.get("final_response") or ""))
+                return TurnResponse(
+                    door="chat",
+                    final_status=("interrupted" if _intr2
+                                  else str(out.get("final_status") or "executed")),
+                    final_response=_resp,
+                    step_results=list(out.get("step_results") or []),
+                    session_id=session_id,
+                    request_id=request_id,
+                    trace_id=None,
+                    latency_ms=0,
+                    interrupt=_intr2,
+                )
+
         envelope: dict[str, Any] = {
             "request_id": request_id,
             "tenant_id": tenant_id,
@@ -1645,8 +1783,10 @@ def build_app() -> FastAPI:
             "role": role,
             "message": req.message,
         }
+        if req.forced_agent_ids:
+            envelope["forced_agent_ids"] = list(req.forced_agent_ids)
         response = await _run(request, envelope, door="chat",
-                              thread_id=request_id, session_id=session_id)
+                              thread_id=session_id, session_id=session_id)
         # Slide the idle TTL and bump turn_count + title on every
         # successful turn. Failures are non-fatal — the chat reply is
         # already produced.
@@ -1706,7 +1846,12 @@ def build_app() -> FastAPI:
         from oneops.api.chat_turn_cache import should_cache as _should_cache
         from oneops.api.semantic_turn_cache import is_standalone as _is_standalone
         sem = getattr(request.app.state, "semantic_cache", None)
+        # A resume turn (mid-interrupt-flow) must NEVER hit the semantic cache —
+        # it has to run resume_turn against the live checkpoint, not return a
+        # cached standalone answer. Excluding it keeps the UC-8 flow on the
+        # resume path instead of falling back through the control gate.
         sem_eligible = (door == "chat" and sem is not None
+                        and not envelope.get("interrupt_resume")
                         and _is_standalone(message))
         if sem_eligible:
             cached = await sem.get(tenant_id=tenant_id, role=role, query=message)
@@ -1721,7 +1866,7 @@ def build_app() -> FastAPI:
 
         q = open_sink(rid)
         task = _asyncio.ensure_future(
-            _run(request, envelope, door=door, thread_id=rid, session_id=sid))
+            _run(request, envelope, door=door, thread_id=sid, session_id=sid))
         try:
             yield _line({"type": "turn_start", "request_id": rid,
                          "session_id": sid})
@@ -1818,9 +1963,15 @@ def build_app() -> FastAPI:
             "session_id": session_id, "user_id": user_id, "role": role,
             "message": req.message,
         }
+        # Forward an interrupt reply so the browser's widget answer RESUMES the
+        # paused flow (pick → fields → confirm → create) instead of starting a
+        # new turn. `_run` routes these to resume_turn.
+        if req.interrupt_resume and req.interrupt_answer is not None:
+            envelope["interrupt_resume"] = True
+            envelope["interrupt_answer"] = req.interrupt_answer
         return StreamingResponse(
             _stream_turn(request, envelope, door="chat"),
-            media_type="application/x-ndjson")
+            media_type=_APPLICATION_X_NDJSON)
 
     # ── chat door (WebSocket) ─────────────────────────────────────────
     # Production topology (per architecture plan):
@@ -1903,8 +2054,10 @@ def build_app() -> FastAPI:
                         # OTel context; the WS connection's scope provides
                         # the same. We pass a small shim that exposes
                         # `app.state` so the helper stays unchanged.
-                        _RequestShim(ws.app), envelope, door="chat",
-                        thread_id=request_id, session_id=session_id)
+                        # _RequestShim duck-types the bits _run reads (.app);
+                        # cast keeps the type-checker honest (sonar S5655).
+                        cast(Request, _RequestShim(ws.app)), envelope, door="chat",
+                        thread_id=session_id, session_id=session_id)
                 except Exception as exc:                  # noqa: BLE001
                     _log.warning("oneops.ws.turn_failed", error=str(exc)[:200])
                     reply = TurnResponse(
@@ -1930,9 +2083,9 @@ def build_app() -> FastAPI:
                 pass
 
     # ── fast-path door (button-shaped, UC-declared) ──────────────────
-    @app.post("/api/fast/{uc_id}", response_model=TurnResponse)
+    @app.post("/api/fast/{uc_id}")
     async def _fast_path(
-        uc_id: str = Path(..., min_length=1),
+        uc_id: Annotated[str, Path(min_length=1)],
         req: FastPathPostRequest | None = None,
         request: Request = None,                # type: ignore[assignment]
     ) -> TurnResponse:
@@ -2061,7 +2214,7 @@ def build_app() -> FastAPI:
 
     @app.post("/api/fast/{uc_id}/stream")
     async def _fast_path_stream(
-        uc_id: str = Path(..., min_length=1),
+        uc_id: Annotated[str, Path(min_length=1)],
         req: FastPathPostRequest | None = None,
         request: Request = None,                # type: ignore[assignment]
     ):
@@ -2109,7 +2262,7 @@ def build_app() -> FastAPI:
                                   default=str) + "\n"
 
             return StreamingResponse(_clarify(),
-                                     media_type="application/x-ndjson")
+                                     media_type=_APPLICATION_X_NDJSON)
 
         plan_state = [
             {"step_id": s.step_id, "agent_id": s.agent_id,
@@ -2126,7 +2279,7 @@ def build_app() -> FastAPI:
         }
         return StreamingResponse(
             _stream_turn(request, envelope, door="fast_path"),
-            media_type="application/x-ndjson")
+            media_type=_APPLICATION_X_NDJSON)
 
     return app
 
@@ -2172,6 +2325,9 @@ async def _run(
     only the transport differs."""
     t0 = time.monotonic()
     mode = getattr(request.app.state, "invoker_mode", "local")
+    # The checkpoint thread this turn runs on (request-scoped by default; a
+    # resume reuses the paused turn's thread — set in the in-process path).
+    graph_thread = str(envelope.get("request_id") or "")
     try:
         with _tracer.start_as_current_span(
             "oneops.api.turn",
@@ -2210,11 +2366,37 @@ async def _run(
 
             # in-process path (default)
             graph = request.app.state.graph
-            out = await asyncio.wait_for(
-                run_turn(graph, envelope,
-                         config={"configurable": {"thread_id": thread_id}}),
-                timeout=_s.turn_timeout_seconds,
-            )
+            # Each INDEPENDENT turn runs on its OWN checkpoint thread (the
+            # request id) so it never resumes the previous turn's plan/results
+            # — cross-turn memory comes from the session store, not the
+            # checkpointer (ADR-0004). Using session_id as the thread made every
+            # turn-2+ continue turn-1's completed graph state, so the new
+            # message inherited the prior turn's agent. A turn that PAUSED
+            # stored its thread under the session; a resume reuses EXACTLY that
+            # thread to continue the same paused flow.
+            _is_resume = bool(envelope.get("interrupt_resume")
+                              and envelope.get("interrupt_answer") is not None)
+            graph_thread = str(envelope["request_id"])
+            _cache0 = getattr(request.app.state, "chat_turn_cache", None)
+            if _is_resume and _cache0 is not None:
+                with suppress(Exception):
+                    _pend = await _cache0.get(
+                        tenant_id=envelope.get("tenant_id", ""),
+                        key=f"__interrupt__{session_id}")
+                    if isinstance(_pend, dict) and _pend.get("thread"):
+                        graph_thread = str(_pend["thread"])
+            _cfg = {"configurable": {"thread_id": graph_thread}}
+            if _is_resume:
+                out = await asyncio.wait_for(
+                    resume_turn(graph, envelope["interrupt_answer"],
+                                config=_cfg),
+                    timeout=_s.turn_timeout_seconds,
+                )
+            else:
+                out = await asyncio.wait_for(
+                    run_turn(graph, envelope, config=_cfg),
+                    timeout=_s.turn_timeout_seconds,
+                )
             set_langfuse_io(span, output=out.get("final_response"))
             trace_id = format(span.get_span_context().trace_id, "032x") \
                 if span.get_span_context().trace_id else None
@@ -2266,12 +2448,78 @@ async def _run(
             status_code=500,
             detail=f"engine failure (request_id={req_id})") from exc
     except Exception as exc:                  # noqa: BLE001 — boundary
+        # ── Conversational Interrupt Protocol — interrupt capture ─────────
+        # LangGraph raises GraphInterrupt (subclass of Exception) when a
+        # node calls interrupt(). Intercept here, persist in the turn
+        # cache keyed by session_id, and return a typed TurnResponse with
+        # final_status="interrupted" so the frontend can render the
+        # appropriate widget. All other exceptions fall through to the
+        # HTTP 500 path below.
+        from langgraph.errors import GraphInterrupt as _GraphInterrupt
+        if isinstance(exc, _GraphInterrupt):
+            _interrupts = exc.args[0] if exc.args else ()
+            _payload: dict[str, Any] = {}
+            if _interrupts:
+                _val = _interrupts[0]
+                _payload = (_val.value
+                            if hasattr(_val, "value") else dict(_val)
+                            if isinstance(_val, dict) else {"value": _val})
+            _log.info(
+                "oneops.api.interrupt_captured",
+                door=door, session_id=session_id,
+                kind=_payload.get("kind", "unknown"))
+            _cache = getattr(request.app.state, "chat_turn_cache", None)
+            if _cache is not None:
+                with suppress(Exception):
+                    await _cache.put(
+                        tenant_id=envelope.get("tenant_id", ""),
+                        key=f"__interrupt__{session_id}",
+                        value={"interrupt": _payload, "thread": graph_thread})
+            return TurnResponse(
+                door=door,
+                final_status="interrupted",
+                final_response=_payload.get(
+                    "prompt",
+                    _payload.get("question", "Input required.")),
+                step_results=[],
+                session_id=session_id,
+                request_id=envelope["request_id"],
+                trace_id=None,
+                latency_ms=int((time.monotonic() - t0) * 1000),
+                interrupt=_payload,
+            )
         req_id = envelope.get("request_id", "")
         _log.warning("oneops.api.turn_failed",
                      door=door, request_id=req_id, error=str(exc)[:200])
         raise HTTPException(
             status_code=500,
             detail=f"engine failure (request_id={req_id})") from exc
+    # Interrupt protocol (checkpointer path): ainvoke RETURNED a paused state
+    # rather than raising — surface the interrupt the same way as the raised
+    # path above so the frontend renders the widget and can resume.
+    _intr = _extract_interrupt_payload(out)
+    if _intr is not None:
+        _log.info("oneops.api.interrupt_captured", door=door,
+                  session_id=session_id, kind=_intr.get("kind", "unknown"))
+        _cache = getattr(request.app.state, "chat_turn_cache", None)
+        if _cache is not None:
+            with suppress(Exception):
+                await _cache.put(
+                    tenant_id=envelope.get("tenant_id", ""),
+                    key=f"__interrupt__{session_id}",
+                    value={"interrupt": _intr, "thread": graph_thread})
+        return TurnResponse(
+            door=door,
+            final_status="interrupted",
+            final_response=_intr.get(
+                "prompt", _intr.get("question", "Input required.")),
+            step_results=[],
+            session_id=session_id,
+            request_id=envelope["request_id"],
+            trace_id=trace_id,
+            latency_ms=int((time.monotonic() - t0) * 1000),
+            interrupt=_intr,
+        )
     return TurnResponse(
         door=door,
         final_status=out.get("final_status") or "",

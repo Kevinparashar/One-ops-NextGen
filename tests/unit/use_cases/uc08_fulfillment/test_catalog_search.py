@@ -97,7 +97,54 @@ async def test_onboarding_query_returns_onboarding_top1(conn, gateway):
         gateway=gateway, conn=conn,
     )
     assert len(r.matches) >= 1
-    assert "ONBOARDING" in r.matches[0].catalog_item_id.upper()
+    # The requestable onboarding item is the FORMED one (CAT_HR_ONBOARD
+    # "New Employee Onboarding"); the unformed CAT_ONBOARDING duplicate is
+    # hidden by the has-form filter (require_form defaults True). Assert on
+    # the human name so it's robust to which onboarding id wins.
+    assert "ONBOARD" in r.matches[0].name.upper()
+
+
+@pytest.mark.asyncio
+async def test_require_form_filter_hides_unformed_duplicates(conn, gateway):
+    """The has-form rule (2026-06-09): find returns only requestable items
+    (non-empty request_fields). The unformed legacy duplicate ids
+    (CAT_LAPTOP_STD, CAT_ONBOARDING, CAT_T001_VPN_ACCESS_29) must NEVER
+    surface; their formed twins may."""
+    unformed = {"CAT_LAPTOP_STD", "CAT_ONBOARDING", "CAT_T001_VPN_ACCESS_29"}
+    for q in ("I need a standard laptop", "onboard a new employee",
+              "I need VPN access"):
+        r = await find_closest_catalog_items(
+            tenant_id=TEST_TENANT, sr_title=q, sr_description=q,
+            gateway=gateway, conn=conn,
+        )
+        returned = {m.catalog_item_id for m in r.matches}
+        assert not (returned & unformed), (
+            f"unformed duplicate leaked for {q!r}: {returned & unformed}")
+        # And every returned item genuinely has a non-empty form.
+        for m in r.matches:
+            n = await conn.fetchval(
+                "SELECT jsonb_array_length(request_fields) "
+                "FROM itsm.catalog_item WHERE tenant_id=$1 "
+                "AND catalog_item_id=$2", TEST_TENANT, m.catalog_item_id)
+            assert n and n > 0, f"{m.catalog_item_id} returned with no form"
+
+
+@pytest.mark.asyncio
+async def test_require_form_false_includes_unformed(conn, gateway):
+    """The classification path (require_form=False) still matches against the
+    FULL catalog — it doesn't collect a form. Proves the flag is honoured."""
+    r_all = await find_closest_catalog_items(
+        tenant_id=TEST_TENANT, sr_title="I need a standard laptop",
+        sr_description="standard business laptop",
+        gateway=gateway, conn=conn, require_form=False,
+    )
+    r_form = await find_closest_catalog_items(
+        tenant_id=TEST_TENANT, sr_title="I need a standard laptop",
+        sr_description="standard business laptop",
+        gateway=gateway, conn=conn, require_form=True,
+    )
+    # The unfiltered search sees a superset of the requestable catalog.
+    assert len(r_all.matches) >= len(r_form.matches)
 
 
 @pytest.mark.asyncio
@@ -242,31 +289,26 @@ async def test_gateway_failure_wrapped_in_typed_error(conn):
 
 
 @pytest.mark.asyncio
-async def test_gateway_hang_caught_by_timeout(conn):
+async def test_gateway_hang_caught_by_timeout(conn, monkeypatch):
     """A hanging gateway must surface CatalogSearchError via the timeout,
     not block the caller indefinitely."""
-    # Use a tiny override so the test doesn't actually wait
-    os.environ["UC08_CATALOG_EMBED_TIMEOUT_S"] = "0.5"
-    try:
-        # Force module re-read of timeout
-        import importlib
-
-        from oneops.use_cases.uc08_fulfillment import catalog_search as cs
-        importlib.reload(cs)
-        with pytest.raises(cs.CatalogSearchError) as exc_info:
-            await cs.find_closest_catalog_items(
-                tenant_id=TEST_TENANT,
-                sr_title="VPN", sr_description="VPN",
-                gateway=_HangingGateway(), conn=conn,
-            )
-        assert "timeout" in str(exc_info.value).lower()
-    finally:
-        os.environ.pop("UC08_CATALOG_EMBED_TIMEOUT_S", None)
-        # Restore module
-        import importlib
-
-        from oneops.use_cases.uc08_fulfillment import catalog_search
-        importlib.reload(catalog_search)
+    from oneops.use_cases.uc08_fulfillment import catalog_search as cs
+    # Shrink the embed timeout for THIS test only. We patch the module
+    # attribute rather than `importlib.reload(cs)` — reload re-executes the
+    # module in place, rebinding cs.CatalogSearchResult / cs.CatalogSearchError
+    # to NEW class objects while every other test/module still holds the OLD
+    # ones; that identity split makes their isinstance()/pytest.raises() fail
+    # for the rest of the suite (cross-test pollution). EMBED_TIMEOUT_S is read
+    # from module globals at call time, so this takes effect immediately and
+    # monkeypatch auto-restores it afterwards.
+    monkeypatch.setattr(cs, "EMBED_TIMEOUT_S", 0.5)
+    with pytest.raises(cs.CatalogSearchError) as exc_info:
+        await cs.find_closest_catalog_items(
+            tenant_id=TEST_TENANT,
+            sr_title="VPN", sr_description="VPN",
+            gateway=_HangingGateway(), conn=conn,
+        )
+    assert "timeout" in str(exc_info.value).lower()
 
 
 # ── Edge case: deterministic ordering for tied scores ─────────────────────

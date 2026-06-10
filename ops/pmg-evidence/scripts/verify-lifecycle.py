@@ -28,7 +28,6 @@ Exit code:
 """
 from __future__ import annotations
 
-import json
 import shutil
 import sys
 import tempfile
@@ -62,7 +61,6 @@ def main() -> int:
         shutil.copytree(src, dst)
 
         # Lazy imports so structlog config above takes effect
-        from oneops.registry.service import RegistryService
         from oneops.registry.models import (
             AbacTags,
             ActivationCondition,
@@ -74,6 +72,7 @@ def main() -> int:
             RecordStatus,
             RoutingShape,
         )
+        from oneops.registry.service import RegistryService
 
         svc = RegistryService.from_path(str(dst))
         print("═══ PMG EVIDENCE — Lifecycle State Machine ═══")
@@ -108,9 +107,9 @@ def main() -> int:
             f"draft must NOT be in list_active; got: {actives}"
         summary = svc.lifecycle_summary()["agents"]
         assert summary["draft"] == 1, summary
-        print(f"  list_active excludes draft: ✓")
+        print("  list_active excludes draft: ✓")
         print(f"  lifecycle_summary: {summary}")
-        print(f"  ✅ STEP 2 — DRAFT correctly invisible to router")
+        print("  ✅ STEP 2 — DRAFT correctly invisible to router")
         print()
 
         # STEP 3 — Activate, verify audit emit + list_active inclusion
@@ -124,7 +123,7 @@ def main() -> int:
         for line in audit_lines: print(f"  {line}")
         actives = [a.id for a in svc.agents.list_active()]
         assert "uc99_demo_lifecycle" in actives, f"expected in active; got: {actives}"
-        print(f"  ✅ STEP 3 — activated + audit emit + in list_active")
+        print("  ✅ STEP 3 — activated + audit emit + in list_active")
         print()
 
         # STEP 4 — Deprecate, verify list_active removes BUT get() still works + warning
@@ -147,7 +146,7 @@ def main() -> int:
                       if "deprecation_used" in line]
         assert used_lines, f"expected deprecation_used on get(); got: {log_buffer.getvalue()}"
         for line in used_lines: print(f"  {line}")
-        print(f"  ✅ STEP 4 — deprecated + invisible to router + still callable + warning emitted")
+        print("  ✅ STEP 4 — deprecated + invisible to router + still callable + warning emitted")
         print()
 
         # STEP 5 — Retire, verify get_optional returns None + list_active stays clean
@@ -163,7 +162,7 @@ def main() -> int:
         assert "uc99_demo_lifecycle" not in actives
         opt = svc.agents.get_optional("uc99_demo_lifecycle")
         assert opt is None, f"get_optional must return None for retired; got: {opt}"
-        print(f"  ✅ STEP 5 — retired + get_optional returns None")
+        print("  ✅ STEP 5 — retired + get_optional returns None")
         print()
 
         # STEP 6 — Final inventory
@@ -173,7 +172,7 @@ def main() -> int:
         print(f"  after:   {final}")
         assert final["active"] == before["active"], "live UCs must remain active"
         assert final["retired"] == 1, f"expected 1 retired (the demo); got: {final}"
-        print(f"  ✅ STEP 6 — counts match expected end-state")
+        print("  ✅ STEP 6 — counts match expected end-state")
         print()
         print("═══ ALL 6 STEPS VERIFIED — lifecycle state machine is production-grade ═══")
     return 0

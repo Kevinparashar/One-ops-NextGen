@@ -120,10 +120,45 @@ class LlmResponse:
         return min(1.0, self.cache_read_input_tokens / self.prompt_tokens)
 
 
+@dataclass(frozen=True)
+class StreamDelta:
+    """One piece of a STREAMING transport response (before cost accounting).
+
+    Intermediate deltas carry `text` (the incremental token text) with
+    `final=False`. The terminal delta sets `final=True` and carries the usage
+    counters the provider reports at stream end (`stream_options.include_usage`
+    on OpenAI/LiteLLM). The gateway accumulates `text` and finalises cost from
+    the terminal delta — exactly the same accounting as the non-streaming path,
+    only deferred to stream completion."""
+
+    text: str = ""
+    final: bool = False
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    finish_reason: str = ""
+    actual_model: str = ""
+    cache_read_input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+
+
+@dataclass(frozen=True)
+class LlmStreamChunk:
+    """One piece of a STREAMING gateway response. `delta` is the incremental
+    text to show the user as it arrives. The terminal chunk sets `done=True`
+    and carries the finalised `response` (tokens, cost, finish_reason) — the
+    same `LlmResponse` the non-streaming `call()` would have returned."""
+
+    delta: str = ""
+    done: bool = False
+    response: LlmResponse | None = None
+
+
 __all__ = [
     "ResponseFormat",
     "LlmMessage",
     "LlmRequest",
     "TransportResult",
     "LlmResponse",
+    "StreamDelta",
+    "LlmStreamChunk",
 ]

@@ -4,12 +4,12 @@
 #
 # Drives a single end-to-end UC-8 button-mode turn and captures the state
 # of every infrastructure component the turn touched, into one file per
-# component under ops/pmg-evidence/Tracing logs/.
+# component under ops/pmg-evidence/tracing-logs/.
 #
 # Read-only against the application code, dashboards, and containers.
 # The only writes are:
 #   - one new SR row in itsm.request (the demo turn)
-#   - the eight evidence files in ops/pmg-evidence/Tracing logs/
+#   - the eight evidence files in ops/pmg-evidence/tracing-logs/
 #
 # Run from the project root:
 #   bash ops/pmg-evidence/capture-tracing-logs.sh
@@ -19,7 +19,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && cd .. && pwd)"
 cd "$ROOT"
 
-EVIDIR="ops/pmg-evidence/Tracing logs"
+EVIDIR="ops/pmg-evidence/tracing-logs"
 mkdir -p "$EVIDIR"
 
 TS="$(date -u +%FT%TZ)"

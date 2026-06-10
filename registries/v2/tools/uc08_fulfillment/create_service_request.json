@@ -1,0 +1,67 @@
+{
+  "active_version": 1,
+  "id": "create_service_request",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "fulfillment_execute",
+          "fulfillment_orchestrate",
+          "action"
+        ]
+      },
+      "created_at": "2026-06-09T00:00:00.000000+00:00",
+      "description": "Submit a new service request for a catalog item and start fulfilment. Takes the catalog_id and the collected form fields (keys MUST match the schema from get_service_request_fields; every required field present). Opens the Service Request, decomposes it into the fulfilment task DAG, and dispatches execution. Action-tier: only call after the user has confirmed the collected values.",
+      "execution_type": "action",
+      "handler_ref": "oneops.use_cases.uc08_fulfillment.tools:create_service_request",
+      "id": "create_service_request",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "name": "catalog_id",
+          "type": "str",
+          "required": true,
+          "description": "The catalog item id being requested.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "fields",
+          "type": "object",
+          "required": true,
+          "description": "Collected form values keyed by field_name; keys must match the schema exactly.",
+          "data_classification": "confidential"
+        },
+        {
+          "name": "requested_for",
+          "type": "str",
+          "required": false,
+          "description": "User the request is for (default: the caller).",
+          "data_classification": "internal"
+        },
+        {
+          "name": "quantity",
+          "type": "int",
+          "required": false,
+          "description": "How many (default 1).",
+          "data_classification": "internal"
+        }
+      ],
+      "policy_refs": [
+        "policy_pii_redact",
+        "policy_tenant_scope"
+      ],
+      "requires_scopes": [
+        "create:request"
+      ],
+      "status": "active",
+      "timeout_ms": 60000,
+      "updated_at": "2026-06-09T00:00:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

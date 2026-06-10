@@ -25,7 +25,7 @@ from oneops.use_cases.uc05_triage.stores.base import TicketStore
 
 _DEFAULT_SCHEMA_PATH = (
     Path(__file__).resolve().parents[4]
-    / "registries" / "service-schema.json"
+    / "registries" / "v2" / "platform" / "service-schema.json"
 )
 
 

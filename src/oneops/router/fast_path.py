@@ -29,13 +29,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from oneops.errors import OneOpsError
-from oneops.observability import get_logger, get_tracer
+from oneops.observability import get_logger
 from oneops.registry.models import FastPathInputField, FastPathSpec
 from oneops.registry.service import RegistryService
 from oneops.router.plan import PlanStep, RoutePlan
 
 _log = get_logger("oneops.router.fast_path")
-_tracer = get_tracer("oneops.router.fast_path")
 
 
 class FastPathError(OneOpsError):
@@ -78,36 +77,45 @@ def _coerce(value: Any, *, field: FastPathInputField) -> Any:
     if declared == "str":
         return str(value)
     if declared == "int":
-        try:
-            return int(value)
-        except (TypeError, ValueError) as exc:
-            raise FastPathError(
-                f"field {field.name!r} expects an int, got {type(value).__name__}",
-                cause=exc) from exc
+        return _coerce_numeric(value, field=field, caster=int, type_name="int")
     if declared == "float":
-        try:
-            return float(value)
-        except (TypeError, ValueError) as exc:
-            raise FastPathError(
-                f"field {field.name!r} expects a float, got {type(value).__name__}",
-                cause=exc) from exc
+        return _coerce_numeric(value, field=field, caster=float, type_name="float")
     if declared == "bool":
-        if isinstance(value, bool):
-            return value
-        # Accept truthy/falsy textual forms commonly arriving from URL params.
-        if isinstance(value, str):
-            v = value.strip().lower()
-            if v in {"true", "1", "yes"}:
-                return True
-            if v in {"false", "0", "no"}:
-                return False
-        raise FastPathError(
-            f"field {field.name!r} expects a bool, got {value!r}")
+        return _coerce_bool(value, field=field)
     # An unknown declared type is a registry bug (caught at integrity check
     # in production); fail loud rather than pass-through a free-form value.
     raise FastPathError(
         f"field {field.name!r} declares unsupported type {declared!r}; "
         f"supported: str|int|bool|float")
+
+
+def _coerce_numeric(
+    value: Any, *, field: FastPathInputField, caster: Any, type_name: str,
+) -> Any:
+    """Coerce to int/float via `caster`, raising a typed FastPathError that
+    names the field and the offending value type."""
+    try:
+        return caster(value)
+    except (TypeError, ValueError) as exc:
+        raise FastPathError(
+            f"field {field.name!r} expects a{'n' if type_name == 'int' else ''} "
+            f"{type_name}, got {type(value).__name__}",
+            cause=exc) from exc
+
+
+def _coerce_bool(value: Any, *, field: FastPathInputField) -> bool:
+    """Coerce to bool, accepting truthy/falsy textual forms commonly arriving
+    from URL params (true/1/yes, false/0/no)."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in {"true", "1", "yes"}:
+            return True
+        if v in {"false", "0", "no"}:
+            return False
+    raise FastPathError(
+        f"field {field.name!r} expects a bool, got {value!r}")
 
 
 # ── Field derivation (registry-data-driven) ─────────────────────────────
@@ -155,6 +163,28 @@ def _derive_field(*, target: str, source_field: str, source_value: Any) -> Any:
     return fn(source_value)
 
 
+def _resolve_field_value(
+    field: FastPathInputField, request: FastPathRequest,
+) -> tuple[str, Any]:
+    """Resolve one declared input field against the request. Returns
+    `(outcome, value)` where outcome is:
+      * "set"     — supplied (or auto-derived); `value` is the coerced result
+      * "missing" — required but not supplied and not derivable
+      * "skip"    — optional and not supplied
+    Empty-string and None both mean 'not supplied'."""
+    value = request.inputs.get(field.name)
+    if value is not None and not (isinstance(value, str) and not value.strip()):
+        return "set", _coerce(value, field=field)
+    if field.auto_derive_from:
+        derived = _derive_field(
+            target=field.name,
+            source_field=field.auto_derive_from,
+            source_value=request.inputs.get(field.auto_derive_from))
+        if derived is not None:
+            return "set", _coerce(derived, field=field)
+    return ("missing", None) if field.required else ("skip", None)
+
+
 # ── Dispatcher ──────────────────────────────────────────────────────────
 
 
@@ -181,6 +211,27 @@ class FastPathDispatcher:
             return None
         return agent.fast_path
 
+    def _coerce_inputs(
+        self, spec: Any, request: FastPathRequest, uc_id: str,
+    ) -> dict[str, Any]:
+        """Coerce supplied inputs to their declared types, auto-deriving a
+        missing field when the registry declares a derivation (e.g. service_id
+        ⇐ ticket-id prefix). Raises FastPathError if a required field is unmet.
+        Empty-string and None both mean 'not supplied'."""
+        params: dict[str, Any] = {}
+        missing: list[str] = []
+        for field in spec.input_fields:
+            outcome, value = _resolve_field_value(field, request)
+            if outcome == "set":
+                params[field.name] = value
+            elif outcome == "missing":
+                missing.append(field.name)
+        if missing:
+            raise FastPathError(
+                f"use case {uc_id!r} fast-path requires fields: "
+                f"{sorted(missing)}")
+        return params
+
     def dispatch(self, request: FastPathRequest) -> FastPathDispatchResult:
         """Validate `request` against the UC's declared fast-path spec and
         return a single-step plan + the coerced parameters.
@@ -196,80 +247,57 @@ class FastPathDispatcher:
         if not uc_id:
             raise FastPathError("uc_id is required")
 
-        with _tracer.start_as_current_span(
-            "router.fast_path.dispatch",
-            attributes={"oneops.uc_id": uc_id},
-        ) as span:
-            agent = self._registry.agents.get_optional(uc_id)
-            if agent is None:
-                raise FastPathError(f"unknown use case {uc_id!r}")
-            if agent.status.value != "active":
-                raise FastPathError(
-                    f"use case {uc_id!r} is not active "
-                    f"(status={agent.status.value})")
-            spec = agent.fast_path
-            if spec is None or not spec.enabled:
-                raise FastPathError(
-                    f"use case {uc_id!r} does not expose a fast-path entry")
+        # No OTel span here. Dispatch is sub-millisecond plan-building that runs
+        # at the HTTP edge BEFORE the turn's trace exists — a span would emit as
+        # its own empty root trace (trace fragmentation: one button press → two
+        # Langfuse traces, one blank). The dispatch facts are captured in the
+        # `fast_path.dispatched` log and the executor's turn span
+        # (entry_mode=fast_path + the plan). One turn = one trace, like chat.
+        agent = self._registry.agents.get_optional(uc_id)
+        if agent is None:
+            raise FastPathError(f"unknown use case {uc_id!r}")
+        if agent.status.value != "active":
+            raise FastPathError(
+                f"use case {uc_id!r} is not active "
+                f"(status={agent.status.value})")
+        spec = agent.fast_path
+        if spec is None or not spec.enabled:
+            raise FastPathError(
+                f"use case {uc_id!r} does not expose a fast-path entry")
 
-            # Validate input field set: every required field is present, no
-            # unknown fields are passed through.
-            declared_names = {f.name for f in spec.input_fields}
-            supplied_names = set(request.inputs.keys())
-            unknown = supplied_names - declared_names
-            if unknown:
-                raise FastPathError(
-                    f"use case {uc_id!r} received unknown fast-path "
-                    f"fields: {sorted(unknown)}")
+        # Validate input field set: every required field is present, no
+        # unknown fields are passed through.
+        declared_names = {f.name for f in spec.input_fields}
+        supplied_names = set(request.inputs.keys())
+        unknown = supplied_names - declared_names
+        if unknown:
+            raise FastPathError(
+                f"use case {uc_id!r} received unknown fast-path "
+                f"fields: {sorted(unknown)}")
 
-            params: dict[str, Any] = {}
-            missing: list[str] = []
-            for field in spec.input_fields:
-                value = request.inputs.get(field.name)
-                # Empty-string and None both mean "caller did not supply it".
-                # Before declaring it missing, attempt registry-data-declared
-                # derivation (e.g. service_id ⇐ ticket-id prefix).
-                if value is None or (isinstance(value, str) and not value.strip()):
-                    if field.auto_derive_from:
-                        derived = _derive_field(
-                            target=field.name,
-                            source_field=field.auto_derive_from,
-                            source_value=request.inputs.get(field.auto_derive_from))
-                        if derived is not None:
-                            params[field.name] = _coerce(derived, field=field)
-                            continue
-                    if field.required:
-                        missing.append(field.name)
-                    continue
-                params[field.name] = _coerce(value, field=field)
-            if missing:
-                raise FastPathError(
-                    f"use case {uc_id!r} fast-path requires fields: "
-                    f"{sorted(missing)}")
+        params = self._coerce_inputs(spec, request, uc_id)
 
-            # Build the one-step plan. The executor's direct-plan entry will
-            # run load_session → policy → authz_recheck → handler → persist
-            # exactly as if a router had produced the same plan.
-            step = PlanStep(
-                step_id="step_1",
-                agent_id=uc_id,
-                # PlanStep carries (str, str) pairs — coerce ints/bools back
-                # to their canonical string repr for the wire (the handler
-                # re-parses against its own tool schema).
-                parameters=tuple(
-                    (k, str(v)) for k, v in params.items()
-                ),
-                depends_on=(),
-            )
-            plan = RoutePlan(steps=(step,))
-            span.set_attribute("fast_path.fields", ",".join(sorted(params)))
-            span.set_attribute("fast_path.primary_tool_id", spec.primary_tool_id)
-            _log.info(
-                "fast_path.dispatched",
-                uc_id=uc_id, fields=sorted(params),
-                primary_tool_id=spec.primary_tool_id,
-            )
-            return FastPathDispatchResult(plan=plan, parameters=params)
+        # Build the one-step plan. The executor's direct-plan entry will
+        # run load_session → policy → authz_recheck → handler → persist
+        # exactly as if a router had produced the same plan.
+        step = PlanStep(
+            step_id="step_1",
+            agent_id=uc_id,
+            # PlanStep carries (str, str) pairs — coerce ints/bools back
+            # to their canonical string repr for the wire (the handler
+            # re-parses against its own tool schema).
+            parameters=tuple(
+                (k, str(v)) for k, v in params.items()
+            ),
+            depends_on=(),
+        )
+        plan = RoutePlan(steps=(step,))
+        _log.info(
+            "fast_path.dispatched",
+            uc_id=uc_id, fields=sorted(params),
+            primary_tool_id=spec.primary_tool_id,
+        )
+        return FastPathDispatchResult(plan=plan, parameters=params)
 
 
 __all__ = [

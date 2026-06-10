@@ -78,6 +78,15 @@ def resolve(
         return ResolvedTicket(entity_id=prefix + body, service_id=hint)
 
     # Normalised path — let the router's normalizer handle separators/case/etc.
+    return _resolve_normalised(s, hint, normalizer)
+
+
+def _resolve_normalised(
+    s: str, hint: str | None, normalizer: EntityIdNormalizer | None,
+) -> ResolvedTicket:
+    """Normalise a prefixed id via EntityIdNormalizer and enforce UC-2 scope:
+    the resolved service must be supported, and must agree with `hint` when one
+    was supplied. Raises ResolveError on any violation."""
     norm = (normalizer or EntityIdNormalizer.from_registry_file()).normalize(s)
     if not norm.ok or norm.entity is None:
         raise ResolveError(norm.reason or "could not parse ticket_id")

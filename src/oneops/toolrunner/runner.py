@@ -33,6 +33,9 @@ from oneops.toolrunner.variables import InMemoryVariableStore
 _log = get_logger("oneops.toolrunner")
 _tracer = get_tracer("oneops.toolrunner")
 
+# Repeated literals → constants (sonar S1192).
+_TOOL_STATUS = "tool.status"
+
 
 class ToolRunner:
     """Executes tools safely. One instance is shared; the variable store may
@@ -102,13 +105,13 @@ class ToolRunner:
                     handler(arguments, context), timeout=timeout_s)
             except TimeoutError:
                 latency = int((time.monotonic() - t0) * 1000)
-                span.set_attribute("tool.status", "timeout")
+                span.set_attribute(_TOOL_STATUS, "timeout")
                 _log.warning("toolrunner.timeout",
                              tool_id=tool.id, timeout_ms=tool.timeout_ms)
                 return ToolResult.timed_out(tool.id, tool.timeout_ms, latency_ms=latency)
             except Exception as exc:  # noqa: BLE001 — contained into a typed result
                 latency = int((time.monotonic() - t0) * 1000)
-                span.set_attribute("tool.status", "failed")
+                span.set_attribute(_TOOL_STATUS, "failed")
                 _log.warning("toolrunner.handler_raised",
                              tool_id=tool.id, error=str(exc))
                 return ToolResult.failed(
@@ -120,7 +123,7 @@ class ToolRunner:
             # 5. Cap a large output — moved to the variable store as a preview.
             output = self._variables.capture(raw, hint=tool.id)
             result = ToolResult.success(tool.id, output, latency_ms=latency)
-            span.set_attribute("tool.status", "success")
+            span.set_attribute(_TOOL_STATUS, "success")
             span.set_attribute("tool.latency_ms", latency)
 
             # Store the completed result for idempotent re-delivery.

@@ -53,22 +53,34 @@ _log = get_logger("oneops.use_cases.uc01.field_read")
 #     "level" rules.
 
 # (regex, candidate canonical labels in priority order)
+# Canonical Key-Detail labels (single source — sonar S1192).
+_LBL_RISK_LEVEL = "Risk Level"
+_LBL_ASSIGNED_TO = "Assigned To"
+_LBL_ASSIGNMENT_GROUP = "Assignment Group"
+_LBL_SLA_DUE = "SLA Due"
+_LBL_SLA_BREACHED = "SLA Breached"
+_LBL_REQUESTED_BY = "Requested By"
+_LBL_REPORTED_BY = "Reported By"
+_LBL_CREATED_AT = "Created At"
+_LBL_UPDATED_AT = "Updated At"
+_LBL_RESOLVED_AT = "Resolved At"
+
 _SYNONYMS: list[tuple[re.Pattern[str], tuple[str, ...]]] = [
     # — multi-word phrases (specific) — must come before single tokens —
-    (re.compile(r"\brisk\s+level\b", re.I),         ("Risk Level",)),
+    (re.compile(r"\brisk\s+level\b", re.I),         (_LBL_RISK_LEVEL,)),
     (re.compile(r"\broot\s+cause\b", re.I),         ("Root Cause",)),
     (re.compile(r"\bassign(?:ed|ment)\s+(?:to|group)\b", re.I),
-                                                    ("Assigned To", "Assignment Group")),
-    (re.compile(r"\bassignment\s+group\b", re.I),   ("Assignment Group",)),
-    (re.compile(r"\bsla\s+(?:due|deadline)\b", re.I), ("SLA Due",)),
-    (re.compile(r"\bsla\s+breached\b", re.I),       ("SLA Breached",)),
+                                                    (_LBL_ASSIGNED_TO, _LBL_ASSIGNMENT_GROUP)),
+    (re.compile(r"\bassignment\s+group\b", re.I),   (_LBL_ASSIGNMENT_GROUP,)),
+    (re.compile(r"\bsla\s+(?:due|deadline)\b", re.I), (_LBL_SLA_DUE,)),
+    (re.compile(r"\bsla\s+breached\b", re.I),       (_LBL_SLA_BREACHED,)),
     (re.compile(r"\bapproval\s+status\b", re.I),    ("Approval Status",)),
     (re.compile(r"\bapproved\s+by\b", re.I),        ("Approved By",)),
-    (re.compile(r"\brequested\s+by\b", re.I),       ("Requested By",)),
-    (re.compile(r"\breported\s+by\b", re.I),        ("Reported By",)),
-    (re.compile(r"\bcreated\s+at\b", re.I),         ("Created At",)),
-    (re.compile(r"\bupdated\s+at\b", re.I),         ("Updated At",)),
-    (re.compile(r"\bresolved\s+at\b", re.I),        ("Resolved At",)),
+    (re.compile(r"\brequested\s+by\b", re.I),       (_LBL_REQUESTED_BY,)),
+    (re.compile(r"\breported\s+by\b", re.I),        (_LBL_REPORTED_BY,)),
+    (re.compile(r"\bcreated\s+at\b", re.I),         (_LBL_CREATED_AT,)),
+    (re.compile(r"\bupdated\s+at\b", re.I),         (_LBL_UPDATED_AT,)),
+    (re.compile(r"\bresolved\s+at\b", re.I),        (_LBL_RESOLVED_AT,)),
     (re.compile(r"\bplanned\s+(?:start|end)\b", re.I),
                                                     ("Planned Start", "Planned End")),
     (re.compile(r"\bconfiguration\s+item\b", re.I), ("Configuration Item",)),
@@ -80,20 +92,20 @@ _SYNONYMS: list[tuple[re.Pattern[str], tuple[str, ...]]] = [
     (re.compile(r"\bwhere\s+does\s+it\s+(?:currently\s+)?stand\b", re.I),
                                                     ("Status", "State")),
     (re.compile(r"\bwhen\s+was\s+it\s+(?:created|opened|raised)\b", re.I),
-                                                    ("Created At",)),
+                                                    (_LBL_CREATED_AT,)),
     (re.compile(r"\bwhen\s+was\s+it\s+(?:updated|modified|last\s+modified)\b", re.I),
-                                                    ("Updated At",)),
+                                                    (_LBL_UPDATED_AT,)),
     (re.compile(r"\bwhen\s+was\s+it\s+resolved\b", re.I),
-                                                    ("Resolved At",)),
+                                                    (_LBL_RESOLVED_AT,)),
     (re.compile(r"\bwho\s+(?:owns|owned|is\s+(?:assigned|handling|working\s+on)|handles)\b", re.I),
-                                                    ("Owner", "Assigned To")),
+                                                    ("Owner", _LBL_ASSIGNED_TO)),
     (re.compile(r"\bwho\s+(?:approved|signed\s+off)\b", re.I),
                                                     ("Approved By",)),
     (re.compile(r"\bwho\s+(?:reported|raised|opened|filed)\b", re.I),
-                                                    ("Reported By",)),
-    (re.compile(r"\bwho\s+requested\b", re.I),      ("Requested By", "Reported By")),
+                                                    (_LBL_REPORTED_BY,)),
+    (re.compile(r"\bwho\s+requested\b", re.I),      (_LBL_REQUESTED_BY, _LBL_REPORTED_BY)),
     # — single tokens (general) —
-    (re.compile(r"\bpriority\b", re.I),             ("Priority", "Risk Level")),
+    (re.compile(r"\bpriority\b", re.I),             ("Priority", _LBL_RISK_LEVEL)),
     (re.compile(r"\bseverity\b", re.I),             ("Severity",)),
     (re.compile(r"\bimpact\b", re.I),               ("Impact",)),
     (re.compile(r"\burgency\b", re.I),              ("Urgency",)),
@@ -102,27 +114,27 @@ _SYNONYMS: list[tuple[re.Pattern[str], tuple[str, ...]]] = [
     (re.compile(r"\bstatus\b", re.I),               ("Status", "State")),
     (re.compile(r"\bstate\b", re.I),                ("State", "Status")),
     (re.compile(r"\btype\b", re.I),                 ("Type",)),
-    (re.compile(r"\bowner\b", re.I),                ("Owner", "Assigned To")),
-    (re.compile(r"\bassignee\b", re.I),             ("Assigned To",)),
-    (re.compile(r"\brisk\b", re.I),                 ("Risk Level",)),
+    (re.compile(r"\bowner\b", re.I),                ("Owner", _LBL_ASSIGNED_TO)),
+    (re.compile(r"\bassignee\b", re.I),             (_LBL_ASSIGNED_TO,)),
+    (re.compile(r"\brisk\b", re.I),                 (_LBL_RISK_LEVEL,)),
     (re.compile(r"\bcriticality\b", re.I),          ("Criticality",)),
-    (re.compile(r"\bimportance\b", re.I),           ("Priority", "Risk Level", "Criticality")),
+    (re.compile(r"\bimportance\b", re.I),           ("Priority", _LBL_RISK_LEVEL, "Criticality")),
     (re.compile(r"\brca\b", re.I),                  ("Root Cause",)),
     (re.compile(r"\bworkaround\b", re.I),           ("Workaround",)),
     (re.compile(r"\bservice\b", re.I),              ("Service",)),
-    (re.compile(r"\bgroup\b", re.I),                ("Assignment Group",)),
-    (re.compile(r"\bteam\b", re.I),                 ("Assignment Group",)),
-    (re.compile(r"\bcaller\b", re.I),               ("Reported By",)),
-    (re.compile(r"\brequester\b", re.I),            ("Requested By", "Reported By")),
-    (re.compile(r"\breporter\b", re.I),             ("Reported By",)),
-    (re.compile(r"\bsla\b", re.I),                  ("SLA Due", "SLA")),
-    (re.compile(r"\bbreached\b", re.I),             ("SLA Breached",)),
-    (re.compile(r"\boverdue\b", re.I),              ("SLA Breached",)),
-    (re.compile(r"\bdue\b", re.I),                  ("SLA Due",)),
-    (re.compile(r"\bopened\b", re.I),               ("Created At",)),
-    (re.compile(r"\bcreated\b", re.I),              ("Created At",)),
-    (re.compile(r"\bupdated\b", re.I),              ("Updated At",)),
-    (re.compile(r"\bresolved\b", re.I),             ("Resolved At",)),
+    (re.compile(r"\bgroup\b", re.I),                (_LBL_ASSIGNMENT_GROUP,)),
+    (re.compile(r"\bteam\b", re.I),                 (_LBL_ASSIGNMENT_GROUP,)),
+    (re.compile(r"\bcaller\b", re.I),               (_LBL_REPORTED_BY,)),
+    (re.compile(r"\brequester\b", re.I),            (_LBL_REQUESTED_BY, _LBL_REPORTED_BY)),
+    (re.compile(r"\breporter\b", re.I),             (_LBL_REPORTED_BY,)),
+    (re.compile(r"\bsla\b", re.I),                  (_LBL_SLA_DUE, "SLA")),
+    (re.compile(r"\bbreached\b", re.I),             (_LBL_SLA_BREACHED,)),
+    (re.compile(r"\boverdue\b", re.I),              (_LBL_SLA_BREACHED,)),
+    (re.compile(r"\bdue\b", re.I),                  (_LBL_SLA_DUE,)),
+    (re.compile(r"\bopened\b", re.I),               (_LBL_CREATED_AT,)),
+    (re.compile(r"\bcreated\b", re.I),              (_LBL_CREATED_AT,)),
+    (re.compile(r"\bupdated\b", re.I),              (_LBL_UPDATED_AT,)),
+    (re.compile(r"\bresolved\b", re.I),             (_LBL_RESOLVED_AT,)),
     (re.compile(r"\bwarranty\b", re.I),             ("Warranty Expiry", "Warranty")),
     (re.compile(r"\bvendor\b", re.I),               ("Vendor",)),
     (re.compile(r"\bmodel\b", re.I),                ("Model",)),
@@ -154,6 +166,27 @@ _WHOLE_RECORD_BAIL = re.compile(
 )
 
 
+def _match_synonyms(
+    user_message: str, available_set: dict[str, str],
+) -> tuple[list[str], list[str]]:
+    """Walk the synonym patterns in declaration order. Returns
+    `(matched, asked_aliases)`: `matched` = canonical labels that exist on the
+    schema (first existing candidate per pattern, order-preserving, no dups);
+    `asked_aliases` = the synonym surface-forms the user actually typed."""
+    matched: list[str] = []
+    asked_aliases: list[str] = []
+    for pattern, candidates in _SYNONYMS:
+        m = pattern.search(user_message)
+        if not m:
+            continue
+        asked_aliases.append(m.group(0))
+        for cand in candidates:
+            if cand in available_set and cand not in matched:
+                matched.append(cand)
+                break
+    return matched, asked_aliases
+
+
 def _try_deterministic_extract(
     user_message: str, available_labels: list[str],
 ) -> FieldReadIntent | None:
@@ -177,17 +210,7 @@ def _try_deterministic_extract(
     if _WHOLE_RECORD_BAIL.search(user_message):
         return None
     available_set = {lbl: lbl for lbl in available_labels}
-    matched: list[str] = []
-    asked_aliases: list[str] = []           # synonym hits the user typed
-    for pattern, candidates in _SYNONYMS:
-        m = pattern.search(user_message)
-        if not m:
-            continue
-        asked_aliases.append(m.group(0))
-        for cand in candidates:
-            if cand in available_set and cand not in matched:
-                matched.append(cand)
-                break
+    matched, asked_aliases = _match_synonyms(user_message, available_set)
     if not matched:
         # The user clearly asked for a specific field (synonym hit) but
         # NO candidate label exists on the focus record's schema. Tell
@@ -478,75 +501,78 @@ class LlmFieldReadExtractor:
                 response_format=ResponseFormat.JSON,
                 request_id=""))
             doc = json.loads(response.content)
-            raw_labels = doc.get("labels") or []
-            raw_via = doc.get("via_link") or ""
             _log.info("uc01.field_read.llm_returned",
                       user_message=user_message[:100],
-                      raw_labels=raw_labels,
-                      via_link=raw_via)
-            if not isinstance(raw_labels, list):
-                raw_labels = []
-            # Carry the LLM's via_link choice through to the handler
-            # VERBATIM. We tag it with `via_link_known` so the handler
-            # can distinguish three cases:
-            #   1. via_link present + in available_labels → real link
-            #      on this focus → do 2-hop.
-            #   2. via_link present + NOT in available_labels → user
-            #      asked for a link this focus type doesn't have →
-            #      surface a clear mismatch message ("INC0001030 has
-            #      no Related Problem"). NEVER silently fall through
-            #      to single-hop or summary.
-            #   3. via_link absent → normal single-hop or summary.
-            via_link_raw = ""
-            via_link_known = False
-            if isinstance(raw_via, str) and raw_via.strip():
-                via_link_raw = raw_via.strip()
-                # Defence-in-depth: via_link must be a FIELD LABEL on the
-                # focus record, never a canonical record id. Reject ids
-                # the LLM may have leaked into this slot (e.g. "INC0001001"
-                # / "PBM0003001"). 2026-05-27: spotted the LLM returning
-                # the focus-id as via_link when the rewriter appended
-                # "of INC0001001" to a bare "priority" message.
-                import re as _re
-                if _re.fullmatch(r"[A-Z]{2,6}\d{4,}", via_link_raw):
-                    _log.info(
-                        "uc01.field_read.via_link_id_rejected",
-                        via_link=via_link_raw,
-                        reason="canonical-id-shape not a link label")
-                    via_link_raw = ""
-                via_link_known = (via_link_raw != "" and
-                                  via_link_raw in set(available_labels))
-                if not via_link_known:
-                    _log.info("uc01.field_read.via_link_unknown",
-                              via_link=via_link_raw,
-                              available=list(available_labels))
-            if via_link_raw:
-                # via_link set (known OR unknown): pass labels through
-                # verbatim — they target the LINKED record's label set,
-                # which we cannot validate here.
-                labels = tuple(
-                    str(x) for x in raw_labels
-                    if isinstance(x, str) and x.strip())
-            else:
-                allowed = set(available_labels)
-                seen: set[str] = set()
-                kept: list[str] = []
-                for item in raw_labels:
-                    if not isinstance(item, str):
-                        continue
-                    if item in allowed and item not in seen:
-                        seen.add(item)
-                        kept.append(item)
-                labels = tuple(kept)
-            return FieldReadIntent(
-                labels=labels,
-                via_link=via_link_raw,
-                via_link_known=via_link_known,
-            )
+                      raw_labels=doc.get("labels") or [],
+                      via_link=doc.get("via_link") or "")
+            return _parse_field_read_response(doc, available_labels)
         except (LLMGatewayError, ValueError, KeyError, TypeError) as exc:
             _log.warning("uc01.field_read.extract_failed",
                          error=str(exc)[:200])
             return FieldReadIntent()
+
+
+def _resolve_via_link(
+    raw_via: Any, available_labels: list[str],
+) -> tuple[str, bool]:
+    """Resolve the LLM's `via_link` choice to `(via_link, via_link_known)`.
+
+    Defence-in-depth: via_link must be a FIELD LABEL on the focus record,
+    never a canonical record id — reject id-shaped values the LLM may have
+    leaked into this slot (2026-05-27: focus-id returned as via_link after the
+    rewriter appended "of INC0001001" to a bare "priority"). `via_link_known`
+    flags whether the label exists on the focus, so the handler can tell a
+    real link from a not-on-this-record mismatch."""
+    if not (isinstance(raw_via, str) and raw_via.strip()):
+        return "", False
+    via_link_raw = raw_via.strip()
+    if re.fullmatch(r"[A-Z]{2,6}\d{4,}", via_link_raw):
+        _log.info("uc01.field_read.via_link_id_rejected",
+                  via_link=via_link_raw,
+                  reason="canonical-id-shape not a link label")
+        return "", False
+    via_link_known = via_link_raw in set(available_labels)
+    if not via_link_known:
+        _log.info("uc01.field_read.via_link_unknown",
+                  via_link=via_link_raw, available=list(available_labels))
+    return via_link_raw, via_link_known
+
+
+def _filter_known_labels(
+    raw_labels: list, available_labels: list[str],
+) -> tuple[str, ...]:
+    """Keep only string labels that exist on the focus record, deduped in
+    first-seen order (no via_link → labels target THIS record's label set)."""
+    allowed = set(available_labels)
+    seen: set[str] = set()
+    kept: list[str] = []
+    for item in raw_labels:
+        if isinstance(item, str) and item in allowed and item not in seen:
+            seen.add(item)
+            kept.append(item)
+    return tuple(kept)
+
+
+def _parse_field_read_response(
+    doc: dict[str, Any], available_labels: list[str],
+) -> FieldReadIntent:
+    """Turn the LLM's JSON into a `FieldReadIntent`. When a via_link is set,
+    labels target the LINKED record's label set (passed through verbatim —
+    we can't validate them here); otherwise they are filtered to the focus
+    record's known labels. The three via_link cases (real link / not-on-this-
+    record / absent) are distinguished by `via_link` + `via_link_known`."""
+    raw_labels = doc.get("labels") or []
+    raw_via = doc.get("via_link") or ""
+    if not isinstance(raw_labels, list):
+        raw_labels = []
+    via_link_raw, via_link_known = _resolve_via_link(raw_via, available_labels)
+    if via_link_raw:
+        labels = tuple(
+            str(x) for x in raw_labels if isinstance(x, str) and x.strip())
+    else:
+        labels = _filter_known_labels(raw_labels, available_labels)
+    return FieldReadIntent(
+        labels=labels, via_link=via_link_raw, via_link_known=via_link_known)
 
 
 async def extract_requested_fields(

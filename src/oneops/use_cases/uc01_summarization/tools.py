@@ -251,6 +251,21 @@ _RESERVED_SUMMARY_KEYS = frozenset({
     "cache_hit", "cache_age_s",
 })
 
+# Search/embedding substrate columns that travel ON the record but are NOT
+# business fields any downstream step binds to — the FTS vector, per-chunk
+# content hashes, and the (string-serialised) embedding array + its provenance.
+# They pass the scalar filter below as strings, so they must be name-excluded;
+# otherwise every summary's bindable surface carries a multi-thousand-element
+# embedding blob for no consumer. Same intent as field_labels._HIDDEN, but kept
+# separate because bindable INTENTIONALLY keeps title/description (chainable)
+# which _HIDDEN drops from the user-facing grid.
+_BINDABLE_NOISE_KEYS = frozenset({
+    "search_tsv", "content_tsv",
+    "content_hash", "content_hash_symptom", "content_hash_diagnosis",
+    "content_hash_kb",
+    "embedding", "embedding_model", "embedding_version", "embedded_at",
+})
+
 
 def _record_bindable_fields(record: dict[str, Any] | None) -> dict[str, Any]:
     """The record's OWN scalar fields, surfaced as the summary's bindable output
@@ -261,10 +276,16 @@ def _record_bindable_fields(record: dict[str, Any] | None) -> dict[str, Any]:
     or delete a field in the data/schema and the bindable surface follows
     automatically. A binding to a field that no longer exists simply omits at
     runtime (planner bindings are optional), so field churn never breaks a turn.
+
+    Search/embedding substrate columns (`_BINDABLE_NOISE_KEYS`) are excluded —
+    they are not chainable business fields and would otherwise bloat every
+    response with the embedding array.
     """
     out: dict[str, Any] = {}
     for k, v in (record or {}).items():
-        if k in _RESERVED_SUMMARY_KEYS:
+        if k in _RESERVED_SUMMARY_KEYS or k in _BINDABLE_NOISE_KEYS:
+            continue
+        if k.startswith("_"):                       # internal bookkeeping (e.g. _updated_at)
             continue
         if isinstance(v, (str, int, float, bool)) and str(v).strip():
             out[k] = v
@@ -298,6 +319,198 @@ class SummarizeResult:
         }
 
 
+async def _resolve_field_intent(
+    user_message: str, humanised: dict[str, Any], *,
+    tenant_id: str, user_id: str, model: str,
+):
+    """Decide which fields THIS turn asks for. First-line is the embedding
+    field matcher (pure semantic, no synonym list, Stage 3 2026-05-29) — skipped
+    for linked-record / whole-record asks which still need the LLM's via_link
+    judgment. Falls through to the keyword+LLM extractor on no embed match /
+    fail-OPEN. Returns a FieldReadIntent."""
+    from oneops.use_cases.uc01_summarization.field_embedder import (
+        get_field_embedder,
+    )
+    from oneops.use_cases.uc01_summarization.field_read import (
+        _LINKED_RECORD_BAIL,
+        _WHOLE_RECORD_BAIL,
+        FieldReadIntent,
+        extract_requested_fields,
+    )
+    embedder = get_field_embedder()
+    embed_labels: list[str] | None = None
+    if (embedder is not None
+            and not _LINKED_RECORD_BAIL.search(user_message)
+            and not _WHOLE_RECORD_BAIL.search(user_message)):
+        try:
+            embed_labels = await embedder(
+                user_message, list(humanised.keys()),
+                tenant_id=tenant_id, user_id=user_id)
+        except Exception as exc:                  # noqa: BLE001
+            _log.warning("uc01.field_embedder.error", error=str(exc)[:200])
+            embed_labels = None
+    if embed_labels:
+        # Confident embedding match — synthesise a single-hop intent.
+        _log.info("uc01.field_read.extraction_path",
+                  path="embedding", user_message=user_message[:100],
+                  labels=embed_labels)
+        return FieldReadIntent(labels=tuple(embed_labels),
+                               via_link="", via_link_known=False)
+    return await extract_requested_fields(
+        user_message, list(humanised.keys()),
+        tenant_id=tenant_id, user_id=user_id, model=model)
+
+
+async def _serve_via_link(
+    intent: Any, humanised: dict[str, Any], *,
+    ticket_id: str, service_id: str, tenant_id: str, user_id: str,
+    role: str, model: str, user_message: str,
+) -> dict[str, Any]:
+    """Two-hop "X of the linked Y". Three sub-cases: (c) unknown link on the
+    focus → surface the mismatch; (a) known link + reachable → traverse; (b)
+    known link unresolved (empty / USR id / RBAC / cross-tenant) → surface the
+    link value verbatim. Never silently falls through to a summary."""
+    if not intent.via_link_known:
+        msg = (
+            f"{ticket_id} has no \"{intent.via_link}\" field. "
+            f"This {service_id} record doesn't expose that "
+            f"linked-record type."
+        )
+        _log.info("uc01.field_read.linked_unknown_on_focus",
+                  ticket_id=ticket_id, via_link=intent.via_link,
+                  service_id=service_id)
+        return SummarizeResult(
+            outcome="field_read", ticket_id=ticket_id,
+            service_id=service_id, message=msg, summary={"summary": msg},
+        ).to_dict()
+
+    linked_outcome = await _resolve_linked_field_read(
+        focus_humanised=humanised, via_link=intent.via_link,
+        tenant_id=tenant_id, user_id=user_id, role=role, model=model,
+        focus_ticket_id=ticket_id, user_message=user_message,
+    )
+    if linked_outcome is not None:
+        return linked_outcome
+
+    link_value = humanised.get(intent.via_link, "")
+    link_value_str = (", ".join(link_value) if isinstance(link_value, list)
+                      else str(link_value or ""))
+    if link_value_str:
+        msg = (f"{intent.via_link}: {link_value_str}. "
+               f"Ask about that record directly to see its "
+               f"{', '.join(intent.labels) if intent.labels else 'details'}.")
+    else:
+        msg = f"No {intent.via_link} on this {service_id}."
+    _log.info("uc01.field_read.linked_unresolved",
+              ticket_id=ticket_id, via_link=intent.via_link,
+              target_labels=list(intent.labels))
+    return SummarizeResult(
+        outcome="field_read", ticket_id=ticket_id,
+        service_id=service_id, message=msg, summary={"summary": msg},
+    ).to_dict()
+
+
+async def _serve_field_read(
+    intent: Any, humanised: dict[str, Any], *,
+    ticket_id: str, service_id: str, tenant_id: str, user_id: str,
+    role: str, model: str, user_message: str,
+) -> dict[str, Any] | None:
+    """Render a field-read outcome for a resolved intent, or None to fall
+    through to a full summary. Precedence: unavailable-field → single-hop
+    (a label directly on the focus wins over a spurious 2-hop UNLESS the user
+    explicitly named a link traversal) → two-hop via_link."""
+    from oneops.use_cases.uc01_summarization.field_read import render_field_read
+
+    if getattr(intent, "unavailable_field", "") and not intent.labels:
+        requested = intent.unavailable_field.strip()
+        msg = (
+            f"{ticket_id} ({service_id}) doesn't have a "
+            f"\"{requested}\" field. Available fields on this record: "
+            f"{', '.join(sorted(humanised.keys()))}."
+        )
+        _log.info("uc01.field_read.field_unavailable",
+                  ticket_id=ticket_id, service_id=service_id,
+                  requested=requested)
+        return SummarizeResult(
+            outcome="field_read", ticket_id=ticket_id,
+            service_id=service_id, message=msg, summary={"summary": msg},
+        ).to_dict()
+
+    user_requests_traversal = bool(_LINKED_RECORD_PHRASE_RE.search(user_message))
+    labels_on_focus = [lbl for lbl in (intent.labels or []) if lbl in humanised]
+    if labels_on_focus and not user_requests_traversal:
+        text = render_field_read(humanised, labels_on_focus, service_id)
+        _log.info("uc01.field_read.served",
+                  ticket_id=ticket_id, service_id=service_id,
+                  labels=labels_on_focus,
+                  via_link_overridden=bool(intent.via_link))
+        return SummarizeResult(
+            outcome="field_read", ticket_id=ticket_id,
+            service_id=service_id, message=text, summary={"summary": text},
+        ).to_dict()
+    if intent.labels and not intent.via_link:
+        text = render_field_read(humanised, list(intent.labels), service_id)
+        _log.info("uc01.field_read.served",
+                  ticket_id=ticket_id, service_id=service_id,
+                  labels=list(intent.labels))
+        return SummarizeResult(
+            outcome="field_read", ticket_id=ticket_id,
+            service_id=service_id, message=text, summary={"summary": text},
+        ).to_dict()
+
+    if intent.via_link:
+        return await _serve_via_link(
+            intent, humanised, ticket_id=ticket_id, service_id=service_id,
+            tenant_id=tenant_id, user_id=user_id, role=role, model=model,
+            user_message=user_message)
+    return None
+
+
+def _validate_summarize_inputs(
+    ticket_id: str, service_id: str, tenant_id: str,
+) -> dict[str, Any] | None:
+    """Required-field guards → an invalid_request outcome dict, or None to
+    proceed (ticket id, service module, and tenant scope are all mandatory)."""
+    if not ticket_id:
+        return SummarizeResult(
+            outcome="invalid_request", ticket_id=ticket_id, service_id=service_id,
+            message="A ticket id is required to summarise a record.",
+        ).to_dict()
+    if not service_id:
+        return SummarizeResult(
+            outcome="invalid_request", ticket_id=ticket_id, service_id=service_id,
+            message="A service module is required to summarise a record.",
+        ).to_dict()
+    if not tenant_id:
+        return SummarizeResult(
+            outcome="invalid_request", ticket_id=ticket_id, service_id=service_id,
+            message="No tenant scope was supplied for this request.",
+        ).to_dict()
+    return None
+
+
+def _build_summary_result(
+    summary: Any, visible: dict[str, Any], ticket_id: str, service_id: str,
+) -> dict[str, Any]:
+    """Assemble the 'summarized' outcome. Surfaces the cache-aside signal
+    (cache_hit / age) when the SummarizeFn returned one, and the record's own
+    RBAC-filtered fields as the dynamic bindable surface (no hardcoded names)."""
+    cache_meta = summary.pop("_cache", None) if isinstance(summary, dict) else None
+    out = SummarizeResult(
+        outcome="summarized", ticket_id=ticket_id, service_id=service_id,
+        message=(
+            f"Summarised {service_id} {ticket_id}"
+            + (" (from cache)." if cache_meta and cache_meta.get("hit") else ".")
+        ),
+        summary=summary,
+        bindable_fields=_record_bindable_fields(visible),
+    ).to_dict()
+    if cache_meta is not None:
+        out["cache_hit"] = bool(cache_meta.get("hit"))
+        out["cache_age_s"] = cache_meta.get("age_s")
+    return out
+
+
 async def summarize_entity(
     arguments: dict[str, Any], context: dict[str, Any],
 ) -> dict[str, Any]:
@@ -318,21 +531,9 @@ async def summarize_entity(
     role = str(context.get("role") or "").strip()
     model = str(arguments.get("model") or context.get("model") or "").strip()
 
-    if not ticket_id:
-        return SummarizeResult(
-            outcome="invalid_request", ticket_id=ticket_id, service_id=service_id,
-            message="A ticket id is required to summarise a record.",
-        ).to_dict()
-    if not service_id:
-        return SummarizeResult(
-            outcome="invalid_request", ticket_id=ticket_id, service_id=service_id,
-            message="A service module is required to summarise a record.",
-        ).to_dict()
-    if not tenant_id:
-        return SummarizeResult(
-            outcome="invalid_request", ticket_id=ticket_id, service_id=service_id,
-            message="No tenant scope was supplied for this request.",
-        ).to_dict()
+    invalid = _validate_summarize_inputs(ticket_id, service_id, tenant_id)
+    if invalid is not None:
+        return invalid
 
     record = await get_ticket_store().get(
         ticket_id=ticket_id, service_id=service_id, tenant_id=tenant_id)
@@ -364,190 +565,17 @@ async def summarize_entity(
     user_message = str(arguments.get("user_message") or "").strip()
     if user_message:
         from oneops.use_cases._shared.field_labels import humanise_record
-        from oneops.use_cases.uc01_summarization.field_read import (
-            extract_requested_fields,
-            render_field_read,
-        )
         humanised = humanise_record(visible)
-        # ── Embedding-based field matcher (Stage 3, 2026-05-29) ────────
-        # First-line field-read decision. Pure semantic — no keyword
-        # synonym list. Returns matched canonical labels when the
-        # message's cosine similarity to a field's semantic description
-        # crosses MATCH_THRESHOLD. None on fail-OPEN → fall through to
-        # the existing keyword+LLM extractor.
-        from oneops.use_cases.uc01_summarization.field_embedder import (
-            get_field_embedder,
-        )
-        embedder = get_field_embedder()
-        embed_labels: list[str] | None = None
-        if embedder is not None and user_message:
-            # Skip embedding path for linked-record / whole-record asks;
-            # those still need the LLM's via_link judgment.
-            from oneops.use_cases.uc01_summarization.field_read import (
-                _LINKED_RECORD_BAIL,
-                _WHOLE_RECORD_BAIL,
-            )
-            if not _LINKED_RECORD_BAIL.search(user_message) \
-                    and not _WHOLE_RECORD_BAIL.search(user_message):
-                try:
-                    embed_labels = await embedder(
-                        user_message, list(humanised.keys()),
-                        tenant_id=tenant_id,
-                        user_id=str(context.get("user_id") or ""),
-                    )
-                except Exception as exc:                  # noqa: BLE001
-                    _log.warning("uc01.field_embedder.error", error=str(exc)[:200])
-                    embed_labels = None
-        if embed_labels:
-            # Confident embedding match — render directly. Sets via_link=""
-            # via the existing single-hop path below by short-circuiting
-            # the extractor with a synthesised intent.
-            from oneops.use_cases.uc01_summarization.field_read import (
-                FieldReadIntent,
-            )
-            intent = FieldReadIntent(labels=tuple(embed_labels),
-                                     via_link="", via_link_known=False)
-            _log.info("uc01.field_read.extraction_path",
-                      path="embedding", user_message=user_message[:100],
-                      labels=embed_labels)
-        else:
-            intent = await extract_requested_fields(
-                user_message, list(humanised.keys()),
-                tenant_id=tenant_id, user_id=str(context.get("user_id") or ""),
-                model=model)
-
-        # ── Unavailable-field path (Stage 2.5 structural fix) ──────────
-        # When the user explicitly asked for a specific field by name
-        # (synonym hit in the deterministic extractor) but the focus
-        # record's schema doesn't expose that field, tell them cleanly
-        # — never silently fall through to a full summary, which buries
-        # the answer the user actually asked for.
-        if getattr(intent, "unavailable_field", "") and not intent.labels:
-            requested = intent.unavailable_field.strip()
-            msg = (
-                f"{ticket_id} ({service_id}) doesn't have a "
-                f"\"{requested}\" field. Available fields on this record: "
-                f"{', '.join(sorted(humanised.keys()))}."
-            )
-            _log.info("uc01.field_read.field_unavailable",
-                      ticket_id=ticket_id, service_id=service_id,
-                      requested=requested)
-            return SummarizeResult(
-                outcome="field_read", ticket_id=ticket_id,
-                service_id=service_id, message=msg,
-                summary={"summary": msg},
-            ).to_dict()
-
-        # ── Single-hop path ─────────────────────────────────────────────
-        # PRECEDENCE GUARD (production fix, 2026-05-28): when the requested
-        # label exists DIRECTLY on the focus record AND the user did NOT
-        # explicitly ask for a linked-record traversal, prefer single-hop
-        # over any spurious 2-hop the extractor proposed.
-        #
-        # Two distinct cases:
-        #   (a) "what is the RCA of PBM0003004"  →  extractor returns
-        #       `labels=['Root Cause'], via_link='Related Incidents'`.
-        #       Root Cause IS a direct field on the PBM. User did NOT say
-        #       "linked X / related X". → OVERRIDE via_link, single-hop.
-        #   (b) "status of the linked problem"   →  extractor returns
-        #       `labels=['Status'], via_link='Related Problem'`. Status is
-        #       on the focus AND on the linked record. User EXPLICITLY
-        #       said "linked problem". → DO NOT override; do the 2-hop.
-        #
-        # The detector for case (b) is `_LINKED_RECORD_PHRASE_RE`: any of
-        # "linked X / related X / affected X / parent X / its X / the X"
-        # where X is a record-type word. If that fires in the original
-        # user_message, the user requested traversal explicitly and we
-        # must respect it.
-        user_requests_traversal = bool(
-            _LINKED_RECORD_PHRASE_RE.search(user_message)
-        )
-        labels_on_focus = [lbl for lbl in (intent.labels or [])
-                           if lbl in humanised]
-        if labels_on_focus and not user_requests_traversal:
-            text = render_field_read(humanised, labels_on_focus, service_id)
-            _log.info("uc01.field_read.served",
-                      ticket_id=ticket_id, service_id=service_id,
-                      labels=labels_on_focus,
-                      via_link_overridden=bool(intent.via_link))
-            return SummarizeResult(
-                outcome="field_read", ticket_id=ticket_id,
-                service_id=service_id, message=text,
-                summary={"summary": text},
-            ).to_dict()
-        if intent.labels and not intent.via_link:
-            text = render_field_read(humanised, list(intent.labels), service_id)
-            _log.info("uc01.field_read.served",
-                      ticket_id=ticket_id, service_id=service_id,
-                      labels=list(intent.labels))
-            return SummarizeResult(
-                outcome="field_read", ticket_id=ticket_id,
-                service_id=service_id, message=text,
-                summary={"summary": text},
-            ).to_dict()
-
-        # ── Two-hop path: user named a link traversal ─────────────────
-        # Three sub-cases (the LLM-extracted intent carries the raw
-        # via_link; `via_link_known` says whether it matches a real
-        # label on THIS focus):
-        #   (a) known link + reachable record → 2-hop traversal.
-        #   (b) known link + record can't be resolved (empty value /
-        #       USR id / RBAC-denied / cross-tenant) → say so verbatim.
-        #   (c) UNKNOWN link (LLM proposed "Related Problem" against an
-        #       incident that doesn't expose that field) → surface the
-        #       mismatch explicitly. NEVER silently fall through to a
-        #       single-hop on the focus or to a full summary; that
-        #       hides a real semantic mismatch.
-        if intent.via_link:
-            if not intent.via_link_known:
-                msg = (
-                    f"{ticket_id} has no \"{intent.via_link}\" field. "
-                    f"This {service_id} record doesn't expose that "
-                    f"linked-record type."
-                )
-                _log.info("uc01.field_read.linked_unknown_on_focus",
-                          ticket_id=ticket_id, via_link=intent.via_link,
-                          service_id=service_id)
-                return SummarizeResult(
-                    outcome="field_read", ticket_id=ticket_id,
-                    service_id=service_id, message=msg,
-                    summary={"summary": msg},
-                ).to_dict()
-
-            linked_outcome = await _resolve_linked_field_read(
-                focus_humanised=humanised,
-                via_link=intent.via_link,
-                target_labels=list(intent.labels),
-                tenant_id=tenant_id,
-                user_id=str(context.get("user_id") or ""),
-                role=role,
-                model=model,
-                focus_ticket_id=ticket_id,
-                focus_service_id=service_id,
-                user_message=user_message,
-            )
-            if linked_outcome is not None:
-                return linked_outcome
-            # Fallback when the link field exists on the focus but the
-            # linked record can't be reached (empty value, USR/GRP id,
-            # RBAC-denied, or cross-tenant). Surface the field value
-            # verbatim — never silently fall through to a summary.
-            link_value = humanised.get(intent.via_link, "")
-            link_value_str = ", ".join(link_value) if isinstance(link_value, list) else str(link_value or "")
-            if link_value_str:
-                msg = (f"{intent.via_link}: {link_value_str}. "
-                       f"Ask about that record directly to see its "
-                       f"{', '.join(intent.labels) if intent.labels else 'details'}.")
-            else:
-                msg = (f"No {intent.via_link} on this {service_id}.")
-            _log.info("uc01.field_read.linked_unresolved",
-                      ticket_id=ticket_id, via_link=intent.via_link,
-                      target_labels=list(intent.labels))
-            return SummarizeResult(
-                outcome="field_read", ticket_id=ticket_id,
-                service_id=service_id, message=msg,
-                summary={"summary": msg},
-            ).to_dict()
+        intent = await _resolve_field_intent(
+            user_message, humanised,
+            tenant_id=tenant_id, user_id=str(context.get("user_id") or ""),
+            model=model)
+        served = await _serve_field_read(
+            intent, humanised, ticket_id=ticket_id, service_id=service_id,
+            tenant_id=tenant_id, user_id=str(context.get("user_id") or ""),
+            role=role, model=model, user_message=user_message)
+        if served is not None:
+            return served
 
     fn = _get_summarize_fn()
     if fn is None:
@@ -562,21 +590,41 @@ async def summarize_entity(
 
     summary = await fn(visible, tenant_id, model,
                        user_id=str(context.get("user_id") or ""))
-    # Surface the cache-aside signal (when present) so the executor + UI
-    # know whether the LLM was actually consulted on this turn. The frontend
-    # increments its "Cache hits" counter on `cache_hit=True`.
-    cache_meta = summary.pop("_cache", None) if isinstance(summary, dict) else None
+    return _build_summary_result(summary, visible, ticket_id, service_id)
+
+
+def _first_link_token(raw_link_value: Any) -> str:
+    """First candidate id from a link value: the first element of a list, or
+    the part before the first comma of a string (multi-target traversal is a
+    separate UI concern). Empty string when there's nothing to follow."""
+    if isinstance(raw_link_value, list):
+        return str(raw_link_value[0]).strip() if raw_link_value else ""
+    return str(raw_link_value).split(",")[0].strip()
+
+
+async def _summarize_linked_record(
+    linked_visible: dict[str, Any], *, tenant_id: str, model: str,
+    user_id: str, linked_id: str, linked_service: str,
+) -> dict[str, Any]:
+    """Full summary of a linked record (2-hop with no specific target labels).
+    Falls back to a structural note when no LLM is wired."""
+    fn = _get_summarize_fn()
+    if fn is None:
+        note = (f"The linked {linked_service} {linked_id} is on file. "
+                f"Ask 'summarize {linked_id}' to see its details.")
+        return SummarizeResult(
+            outcome="field_read", ticket_id=linked_id,
+            service_id=linked_service, message=note,
+            summary={"summary": note},
+        ).to_dict()
+    linked_summary = await fn(linked_visible, tenant_id, model, user_id=user_id)
+    cache_meta = (linked_summary.pop("_cache", None)
+                  if isinstance(linked_summary, dict) else None)
     out = SummarizeResult(
-        outcome="summarized", ticket_id=ticket_id, service_id=service_id,
-        message=(
-            f"Summarised {service_id} {ticket_id}"
-            + (" (from cache)." if cache_meta and cache_meta.get("hit") else ".")
-        ),
-        summary=summary,
-        # Dynamic bindable surface = the visible record's own fields (already
-        # RBAC/classification-filtered). Lets a downstream data-flow binding
-        # consume any field this record carries; no hardcoded names.
-        bindable_fields=_record_bindable_fields(visible),
+        outcome="summarized", ticket_id=linked_id, service_id=linked_service,
+        message=(f"Summarised linked {linked_service} {linked_id}"
+                 + (" (from cache)." if cache_meta and cache_meta.get("hit") else ".")),
+        summary=linked_summary,
     ).to_dict()
     if cache_meta is not None:
         out["cache_hit"] = bool(cache_meta.get("hit"))
@@ -588,13 +636,11 @@ async def _resolve_linked_field_read(
     *,
     focus_humanised: dict[str, Any],
     via_link: str,
-    target_labels: list[str],
     tenant_id: str,
     user_id: str,
     role: str,
     model: str,
     focus_ticket_id: str,
-    focus_service_id: str,
     user_message: str,
 ) -> dict[str, Any] | None:
     """Two-hop traversal for "X of the linked Y" / "owner of the related
@@ -635,14 +681,7 @@ async def _resolve_linked_field_read(
     # Take the first id when the link is a list-of-ids (Affected CIs,
     # Related Incidents, Approved By, Linked CIs). Multi-target
     # traversal is a separate UI concern.
-    if isinstance(raw_link_value, list):
-        if not raw_link_value:
-            return None
-        candidate_token = str(raw_link_value[0]).strip()
-    else:
-        # Strings may carry "PBM0003002, PBM0003003" — split on comma,
-        # take the first.
-        candidate_token = str(raw_link_value).split(",")[0].strip()
+    candidate_token = _first_link_token(raw_link_value)
     if not candidate_token:
         return None
 
@@ -683,31 +722,11 @@ async def _resolve_linked_field_read(
     # ("tell me about the linked change") `second.labels` may be empty
     # but via_link won't recur — fall back to the full summary path.
     if not second.labels:
-        # Full summary of the linked record. Re-enter via direct LLM
-        # summariser invocation if available, else a structural note.
-        fn = _get_summarize_fn()
-        if fn is None:
-            note = (f"The linked {linked_service} {linked_id} is on file. "
-                    f"Ask 'summarize {linked_id}' to see its details.")
-            return SummarizeResult(
-                outcome="field_read", ticket_id=linked_id,
-                service_id=linked_service, message=note,
-                summary={"summary": note},
-            ).to_dict()
-        linked_summary = await fn(linked_visible, tenant_id, model,
-                                   user_id=user_id)
-        cache_meta = linked_summary.pop("_cache", None) if isinstance(linked_summary, dict) else None
-        out = SummarizeResult(
-            outcome="summarized", ticket_id=linked_id,
-            service_id=linked_service,
-            message=(f"Summarised linked {linked_service} {linked_id}"
-                     + (" (from cache)." if cache_meta and cache_meta.get("hit") else ".")),
-            summary=linked_summary,
-        ).to_dict()
-        if cache_meta is not None:
-            out["cache_hit"] = bool(cache_meta.get("hit"))
-            out["cache_age_s"] = cache_meta.get("age_s")
-        return out
+        # Full summary of the linked record (the 2-hop named no specific
+        # target labels — "tell me about the linked change").
+        return await _summarize_linked_record(
+            linked_visible, tenant_id=tenant_id, model=model, user_id=user_id,
+            linked_id=linked_id, linked_service=linked_service)
 
     body = render_field_read(linked_humanised, list(second.labels), linked_service)
     # Prefix with the linked record id so the user sees WHICH linked

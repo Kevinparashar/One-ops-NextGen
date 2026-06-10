@@ -1,6 +1,6 @@
 """Service-to-service identity — signed JWTs for internal boundaries.
 
-ARCHITECTURE.md §9: AuthZ on *every* boundary. A user request is authenticated
+docs/architecture/ARCHITECTURE.md §9: AuthZ on *every* boundary. A user request is authenticated
 at the API Gateway; internal NATS calls between services carry a short-lived
 **service JWT** so a receiver verifies the *caller service's* identity before
 acting — internal traffic is not implicitly trusted.

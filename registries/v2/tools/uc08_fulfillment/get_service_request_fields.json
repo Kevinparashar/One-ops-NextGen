@@ -1,0 +1,43 @@
+{
+  "active_version": 1,
+  "id": "get_service_request_fields",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "fulfillment_read",
+          "fulfillment_orchestrate",
+          "action"
+        ]
+      },
+      "created_at": "2026-06-09T00:00:00.000000+00:00",
+      "description": "Return the intake-form schema for one catalog item: the list of fields (field_name, label, type, required, options) the user must fill to request it, plus which are required. Read-only — this is the mandatory step before create_service_request; collect exactly these fields, never invented ones.",
+      "execution_type": "read",
+      "handler_ref": "oneops.use_cases.uc08_fulfillment.tools:get_service_request_fields",
+      "id": "get_service_request_fields",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "name": "catalog_id",
+          "type": "str",
+          "required": true,
+          "description": "The catalog item id the user picked (from get_service_request_list).",
+          "data_classification": "internal"
+        }
+      ],
+      "policy_refs": [],
+      "requires_scopes": [
+        "read:catalog"
+      ],
+      "status": "active",
+      "timeout_ms": 15000,
+      "updated_at": "2026-06-09T00:00:00.000000+00:00",
+      "version": 1
+    }
+  }
+}

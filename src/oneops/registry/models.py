@@ -48,7 +48,7 @@ class DeterminismLevel(StrEnum):
 
 class RoutingShape(StrEnum):
     """The six routing shapes the router must be able to produce
-    (see docs/BEHAVIOR_CORPUS.md §2)."""
+    (see docs/product/BEHAVIOR_CORPUS.md §2)."""
 
     SINGLE = "single_agent"
     PARALLEL = "multi_agent_parallel"
@@ -309,7 +309,7 @@ class Skill(BaseModel):
     ADDITIVE / NOT-YET-WIRED: declaring skills changes no routing behavior
     today. The retrieval + disambiguation stages consume these cards only once
     the dynamic router is enabled (flag-gated + eval-gated). See
-    docs/agent-skills-spec.md.
+    docs/architecture/agent-skills-spec.md.
     """
 
     model_config = {"frozen": True}
@@ -339,6 +339,10 @@ class AgentRecord(_VersionedRecord):
 
     description: str = Field(min_length=1, max_length=MAX_DESCRIPTION_CHARS)
     intent_family: str = Field(min_length=1, max_length=64)   # docs/BEHAVIOR_CORPUS §1
+    # Routing scope: itsm | itom[.subdomain]. Default keeps existing cards valid;
+    # the skill-card contract requires NEW cards to declare it explicitly so an
+    # ITOM agent can't silently default to 'itsm' and get mis-scoped at retrieval.
+    domain: str = Field(default="itsm", min_length=1, max_length=64)
     routing_shape: RoutingShape
     # Every agent is a use case the router matches deterministically on this
     # condition. The conversational / out-of-scope / policy-boundary responder
@@ -364,6 +368,14 @@ class AgentRecord(_VersionedRecord):
     # cost for UCs that don't consume time scopes (UC-1 ID lookup, etc.).
     # Spec: docs/issues/.../TimeFilter-design.md (or §UC-2.6 spec).
     consumes_time_filter: bool = False
+    # Opt-in flag: when true, the executor does NOT fire its generic upfront
+    # action-approval interrupt for this agent's steps — the agent's handler
+    # manages approval itself, conversationally, at the right point (e.g. UC-8
+    # catalog: search → pick → fields → CONFIRM → create). Default False ⇒
+    # every existing action agent keeps the generic upfront gate (golden tests
+    # unchanged). Only a handler that calls interrupt_for_confirmation itself
+    # before its mutation may set this — never a shortcut to skip approval.
+    manages_own_approval: bool = False
     # Optional fast-path entry — UCs that opt in are served through the
     # generalised `/fast/{uc_id}` dispatcher (Moveworks deep-link). Absent
     # ⇒ the UC is chat-only.
@@ -379,23 +391,32 @@ class AgentRecord(_VersionedRecord):
             raise ValueError(f"compound agent {self.id} cannot contain itself")
         if self.compound_of and self.routing_shape is RoutingShape.SINGLE:
             raise ValueError("a compound action cannot have routing_shape=single_agent")
+        self._validate_journey()
+        # Action-tier agents must declare an auth re-check hook — defence in
+        # depth (docs/architecture/ARCHITECTURE.md §9: authz at every boundary).
+        if self.abac_tags.tier is ExecutionTier.ACTION and not self.hooks.before_invocation:
+            raise ValueError(
+                f"action-tier agent {self.id} must declare a before_invocation hook "
+                "(auth re-check) — see docs/architecture/ARCHITECTURE.md §9"
+            )
+        self._validate_fast_path()
+        return self
+
+    def _validate_journey(self) -> None:
+        """Journey ⇔ routing_shape=JOURNEY consistency; a journey is a gated
+        multi-turn flow so it can never be determinism_level=low."""
         if self.journey is not None:
             if self.routing_shape is not RoutingShape.JOURNEY:
                 raise ValueError("journey set → routing_shape must be slot_filling_journey")
-            # Journeys are inherently gated, multi-turn flows — never LOW determinism.
             if self.determinism_level is DeterminismLevel.LOW:
                 raise ValueError("a journey agent cannot be determinism_level=low")
         if self.routing_shape is RoutingShape.JOURNEY and self.journey is None:
             raise ValueError("routing_shape=slot_filling_journey requires a `journey` spec")
-        # Action-tier agents must declare an auth re-check hook — defence in
-        # depth (ARCHITECTURE.md §9: authz at every boundary).
-        if self.abac_tags.tier is ExecutionTier.ACTION and not self.hooks.before_invocation:
-            raise ValueError(
-                f"action-tier agent {self.id} must declare a before_invocation hook "
-                "(auth re-check) — see ARCHITECTURE.md §9"
-            )
-        # Fast-path cross-field rules. The dispatcher trusts the registry —
-        # validate the declaration here so a bad fast_path can never load.
+
+    def _validate_fast_path(self) -> None:
+        """Fast-path declaration sanity: primary_tool_id is one the agent owns
+        and input_field names are unique. The dispatcher trusts the registry,
+        so a bad fast_path must never load."""
         if self.fast_path is not None and self.fast_path.enabled:
             tool_ids = {ref.tool_id for ref in self.tool_refs}
             if self.fast_path.primary_tool_id not in tool_ids:
@@ -409,7 +430,6 @@ class AgentRecord(_VersionedRecord):
                 raise ValueError(
                     f"agent {self.id} fast_path input_fields have duplicate "
                     f"names: {field_names}")
-        return self
 
 
 class ToolParameter(BaseModel):
@@ -444,7 +464,7 @@ class ToolRecord(_VersionedRecord):
     @model_validator(mode="after")
     def _action_rules(self) -> ToolRecord:
         # An action tool that is not idempotent is a double-execution hazard
-        # under NATS at-least-once re-delivery (ARCHITECTURE.md §8).
+        # under NATS at-least-once re-delivery (docs/architecture/ARCHITECTURE.md §8).
         if self.execution_type is ExecutionTier.ACTION and not self.idempotent:
             raise ValueError(
                 f"action tool {self.id} must be idempotent — re-delivery is "

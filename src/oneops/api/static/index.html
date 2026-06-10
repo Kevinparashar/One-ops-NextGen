@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>OneOps AI · ITSM Assistant</title>
-  <!-- Google Fonts (Inter) — preconnect for low-RTT first paint -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" />
-  <!-- Markdown renderer for assistant responses (sole JS dep) -->
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Inter + JetBrains Mono — self-hosted (vendored to /static/fonts), no
+       third-party CDN dependency and no SRI needed (same-origin); S5725. -->
+  <link rel="stylesheet" href="/static/fonts.css" />
+  <!-- Markdown renderer for assistant responses — self-hosted (marked v12.0.2,
+       vendored to /static so there is no third-party CDN dependency; S5725). -->
+  <script src="/static/marked.min.js"></script>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
@@ -81,22 +81,11 @@
           🤖 Triage AI
           <span class="triage-pill" id="triage-pill-total">—</span>
         </button>
-        <button id="open-fulfillment" type="button" class="action-btn">
-          ✨ Fulfill Catalog Request
-        </button>
       </div>
     </header>
 
-    <!-- Modal: UC-8 Catalog Fulfillment -->
-    <div id="fulfillment-modal" class="modal hidden">
-      <div class="modal-card uc08-card">
-        <header>
-          <h3>✨ Fulfill Catalog Request</h3>
-          <button type="button" class="close" id="fulfillment-close">×</button>
-        </header>
-        <div id="fulfillment-body" class="uc08-body"></div>
-      </div>
-    </div>
+    <!-- UC-8 catalog fulfilment is chat-only — no button/modal. Just type
+         e.g. "I need a laptop" in the chat. -->
 
     <!-- Modal: UC-2 Similar Tickets -->
     <div id="similar-modal" class="modal hidden">
@@ -246,6 +235,5 @@
   <script src="/static/app.js"></script>
   <script src="/static/uc05_triage.js"></script>
   <script src="/static/uc02_similar.js"></script>
-  <script src="/static/uc08_fulfillment.js"></script>
 </body>
 </html>

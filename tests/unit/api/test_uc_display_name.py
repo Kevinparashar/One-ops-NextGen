@@ -3,7 +3,7 @@
 Covers the display-name helper, the fast-path session message, and the
 `/api/fast/{uc_id}/spec` contract. The `ucNN_` prefix is a stable wire id
 (routes/registry); these tests lock that it is NEVER shown to a human while the
-id itself stays put. See docs/change-log.md (Rename Option A) + audit.
+id itself stays put. See docs/history/change-log.md (Rename Option A) + audit.
 """
 from __future__ import annotations
 

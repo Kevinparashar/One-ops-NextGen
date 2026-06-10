@@ -27,7 +27,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && cd .. && pwd)"
 cd "$ROOT"
 
-EVIDIR="ops/pmg-evidence/Tracing logs"
+EVIDIR="ops/pmg-evidence/tracing-logs"
 APPEND=false
 [[ "${1:-}" == "--append" ]] && APPEND=true && mkdir -p "$EVIDIR"
 

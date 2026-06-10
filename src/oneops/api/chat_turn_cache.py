@@ -142,12 +142,24 @@ class DragonflyChatTurnCache:
 
 
 def should_cache(response_dict: Mapping[str, Any]) -> bool:
-    """Cache only successful, useful responses. Refusals, clarifications
-    and empty replies always re-run on the next turn."""
+    """Cache only successful, useful responses. Refusals, clarifications,
+    empty replies — and interrupted turns — always re-run on the next turn.
+
+    An `interrupted` turn is STATEFUL: its continuation lives in a per-session
+    LangGraph checkpoint. Caching it (or serving it to another session) hands
+    back a pause whose checkpoint doesn't exist, so the next turn can't resume
+    and falls back through the control gate. Never cache it."""
     status = str(response_dict.get("final_status") or "").lower()
     text = str(response_dict.get("final_response") or "")
-    if status in ("clarification", "refused", "error", ""):
+    if status in ("clarification", "refused", "error", "interrupted", ""):
         return False
+    # Interactive / stateful flows (UC-8 catalog conductor) must never be
+    # cached: their outputs depend on the live catalog + the per-session
+    # interrupt checkpoint. A cached "no match" or "SR created" would be wrongly
+    # served to the next request, and a cached step would skip the live flow.
+    for s in (response_dict.get("step_results") or []):
+        if str((s or {}).get("agent_id") or "") == "uc08_fulfillment":
+            return False
     if not text or len(text.strip()) < 20:
         return False
     return "out of my scope" not in text.lower()

@@ -28,6 +28,10 @@ import json
 import sys
 import urllib.request
 
+# Endpoint paths → constants (sonar S1192).
+_EP_FAST_UC01 = "/api/fast/uc01_summarization"
+_EP_CHAT = "/api/chat"
+
 BASE = "http://localhost:8765"
 HEADERS = {
     "content-type": "application/json",
@@ -91,13 +95,13 @@ def smoke() -> None:
     print("\n=== SMOKE: format across services + button==chat parity ===")
     for svc, tid, expect_bullets in TICKETS:
         print(f"\n[{svc} {tid}]")
-        chat = _post("/api/chat", {"message": f"summarize {tid}",
+        chat = _post(_EP_CHAT, {"message": f"summarize {tid}",
                                    "session_id": f"smoke-chat-{tid}"})
-        fast = _post(f"/api/fast/uc01_summarization",
+        fast = _post(_EP_FAST_UC01,
                      {"inputs": {"ticket_id": tid, "service_id": svc},
                       "session_id": f"smoke-fast-{tid}"})
-        c_txt, c_oc = _summary_of(chat)
-        f_txt, f_oc = _summary_of(fast)
+        c_txt, _ = _summary_of(chat)
+        f_txt, _ = _summary_of(fast)
 
         _check(bool(c_txt.strip()), f"{svc}: chat summary non-empty")
         _check(bool(f_txt.strip()), f"{svc}: fast summary non-empty")
@@ -121,14 +125,14 @@ def smoke() -> None:
                    first_line[:140])
         if expect_bullets:
             _check("\n- " in ("\n" + c_txt), f"{svc}: has dated bullets (timeline present)")
-        print(f"    summary:\n      " + c_txt.replace("\n", "\n      ")[:500])
+        print("    summary:\n      " + c_txt.replace("\n", "\n      ")[:500])
 
 
 def devils() -> None:
     print("\n=== DEVIL'S PLAY: adversarial / edge ===")
 
     print("\n[field-read still works — not a summary]")
-    p = _post("/api/chat", {"message": "give me sla of ticket INC0001001",
+    p = _post(_EP_CHAT, {"message": "give me sla of ticket INC0001001",
                             "session_id": "dev-fieldread"})
     txt, oc = _summary_of(p)
     _check(oc == "field_read", "sla query → outcome=field_read", f"got {oc!r}")
@@ -137,7 +141,7 @@ def devils() -> None:
            "sla query is NOT a full summary (no status line)")
 
     print("\n[non-existent ticket — graceful, no fabrication]")
-    p = _post("/api/chat", {"message": "summarize INC9999999",
+    p = _post(_EP_CHAT, {"message": "summarize INC9999999",
                             "session_id": "dev-notfound"})
     txt, oc = _summary_of(p)
     fr = str(p.get("final_response") or "").lower()
@@ -145,7 +149,7 @@ def devils() -> None:
            "missing ticket → graceful not_found", f"oc={oc!r} fr={fr[:80]!r}")
 
     print("\n[incident with notes — paraphrased bullets, no raw ids]")
-    p = _post("/api/chat", {"message": "summarize INC0001001",
+    p = _post(_EP_CHAT, {"message": "summarize INC0001001",
                             "session_id": "dev-notes"})
     txt, _ = _summary_of(p)
     _check("\n- " in ("\n" + txt), "incident has bullets")
@@ -153,7 +157,7 @@ def devils() -> None:
            "bullets are paraphrased (no WN-/note_id ids)")
 
     print("\n[asset — no timeline → no fabricated 'Key updates']")
-    p = _post("/api/fast/uc01_summarization",
+    p = _post(_EP_FAST_UC01,
               {"inputs": {"ticket_id": "AST0001001", "service_id": "asset"},
                "session_id": "dev-asset"})
     txt, _ = _summary_of(p)
@@ -162,7 +166,7 @@ def devils() -> None:
            "asset has NO 'Key updates' section (no timeline)", txt[:120])
 
     print("\n[request with NO comments — must omit Key updates, no 'none' filler]")
-    p = _post("/api/fast/uc01_summarization",
+    p = _post(_EP_FAST_UC01,
               {"inputs": {"ticket_id": "SR0002005", "service_id": "request"},
                "session_id": "dev-emptynotes"})
     txt, _ = _summary_of(p)

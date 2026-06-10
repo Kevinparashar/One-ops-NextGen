@@ -44,6 +44,11 @@ from oneops.observability import get_logger, get_tracer
 _log = get_logger("oneops.nats")
 _tracer = get_tracer("oneops.nats")
 
+# Telemetry literals (single source — sonar S1192).
+_MESSAGING_DESTINATION_NAME = "messaging.destination.name"
+_MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES = "messaging.message.payload_size_bytes"
+_MESSAGING_SYSTEM = "messaging.system"
+
 MsgHandler = Callable[[Msg], Awaitable[None]]
 
 
@@ -78,9 +83,9 @@ class NATSClient:
         with _tracer.start_as_current_span(
             "nats.request",
             attributes={
-                "messaging.system": "nats",
-                "messaging.destination.name": subject,
-                "messaging.message.payload_size_bytes": len(payload),
+                _MESSAGING_SYSTEM: "nats",
+                _MESSAGING_DESTINATION_NAME: subject,
+                _MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: len(payload),
             },
         ) as span:
             try:
@@ -109,9 +114,9 @@ class NATSClient:
         with _tracer.start_as_current_span(
             "nats.publish",
             attributes={
-                "messaging.system": "nats",
-                "messaging.destination.name": subject,
-                "messaging.message.payload_size_bytes": len(payload),
+                _MESSAGING_SYSTEM: "nats",
+                _MESSAGING_DESTINATION_NAME: subject,
+                _MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: len(payload),
             },
         ):
             await self._nc.publish(subject, payload, headers=merged_headers)
@@ -137,9 +142,9 @@ class NATSClient:
                 with _tracer.start_as_current_span(
                     "nats.process",
                     attributes={
-                        "messaging.system": "nats",
-                        "messaging.destination.name": msg.subject,
-                        "messaging.message.payload_size_bytes": len(msg.data),
+                        _MESSAGING_SYSTEM: "nats",
+                        _MESSAGING_DESTINATION_NAME: msg.subject,
+                        _MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: len(msg.data),
                         "messaging.operation": "process",
                     },
                 ):

@@ -4,7 +4,7 @@ A 1000-agent catalog with concurrent queries proves the deterministic
 `LexicalRetriever` clears the routing-funnel SLA. `PgVectorRetriever` is
 env-gated and only runs when `ONEOPS_PGVECTOR_DSN` is set (real DB+embedder).
 
-SLA — per ARCHITECTURE.md §7 (router p99 budget):
+SLA — per docs/architecture/ARCHITECTURE.md §7 (router p99 budget):
   * `LexicalRetriever` p50  <  50ms
   * `LexicalRetriever` p99  < 150ms
   * `PgVectorRetriever` p99 < 150ms (env-gated, live infra)

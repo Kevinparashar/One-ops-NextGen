@@ -15,7 +15,7 @@ Multi-turn focus migration flags (Phase 9):
   introspection / logging / tests.
 
   Default values preserve legacy behavior (Stage 1). See
-  `docs/multi_turn_focus_migration.md` for the four-stage rollout matrix.
+  `docs/planning/multi_turn_focus_migration.md` for the four-stage rollout matrix.
 """
 from __future__ import annotations
 
@@ -72,7 +72,11 @@ class Settings(BaseSettings):
     cache_default_ttl_seconds: int = 300
 
     # ── Postgres ─────────────────────────────────────────────────────
-    postgres_url: str = "postgresql://oneops:oneops@localhost:5432/oneops"
+    # Real DSN ALWAYS comes from the POSTGRES_URL env var (.env / secret
+    # store). This default is a credential-free placeholder so no secret
+    # lives in source (S6698); a deploy that forgets POSTGRES_URL fails
+    # loudly at pool-open rather than silently using an embedded password.
+    postgres_url: str = "postgresql://localhost:5432/oneops"
     postgres_pool_min: int = 2
     postgres_pool_max: int = 20
     langgraph_checkpointer: Literal["postgres", "memory"] = "memory"

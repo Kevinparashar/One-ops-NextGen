@@ -1,7 +1,7 @@
 """Embedding-input builders shared across seed-time and query-time.
 
 The same function MUST produce the embedding-input text whether we are:
-  * backfilling existing rows (tools/seed_incident_embeddings.py), or
+  * backfilling existing rows (database/<service>/backfill.py), or
   * embedding a brand-new ticket at UC-5 query-time
 
 Otherwise the two vector spaces drift and cosine similarity becomes

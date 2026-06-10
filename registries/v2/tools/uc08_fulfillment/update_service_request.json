@@ -1,0 +1,53 @@
+{
+  "active_version": 1,
+  "id": "update_service_request",
+  "versions": {
+    "1": {
+      "activation_condition": {
+        "clauses": [],
+        "negate": false,
+        "operator": "leaf",
+        "signal": "intent_in",
+        "values": [
+          "fulfillment_execute",
+          "fulfillment_orchestrate",
+          "action"
+        ]
+      },
+      "created_at": "2026-06-09T00:00:00.000000+00:00",
+      "description": "Update field values on an existing service request. Takes the request_id and a fields object of the changes to apply (shallow-merged into the stored form). Action-tier: confirm the change with the user before calling. For a service request whose catalog_id is unknown, fetch its schema with get_service_request_fields first so the field keys are valid.",
+      "execution_type": "action",
+      "handler_ref": "oneops.use_cases.uc08_fulfillment.tools:update_service_request",
+      "id": "update_service_request",
+      "idempotent": true,
+      "owner": "team-itsm",
+      "parameters": [
+        {
+          "name": "request_id",
+          "type": "str",
+          "required": true,
+          "description": "The service request id to update.",
+          "data_classification": "internal"
+        },
+        {
+          "name": "fields",
+          "type": "object",
+          "required": true,
+          "description": "The field changes to apply, keyed by field_name.",
+          "data_classification": "confidential"
+        }
+      ],
+      "policy_refs": [
+        "policy_pii_redact",
+        "policy_tenant_scope"
+      ],
+      "requires_scopes": [
+        "write:request"
+      ],
+      "status": "active",
+      "timeout_ms": 15000,
+      "updated_at": "2026-06-09T00:00:00.000000+00:00",
+      "version": 1
+    }
+  }
+}
