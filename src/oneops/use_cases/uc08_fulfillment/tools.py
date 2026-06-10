@@ -301,6 +301,10 @@ async def _apply_approval_gate(
             await _db.set_ritm_approval_state(
                 tenant_id=tenant_id, ritm_id=ritm_id,
                 approval_state="requested", conn=conn)
+            # Stamp the parent SR so the requester sees it via UC-1 / TRACK.
+            await _db.set_request_lifecycle(
+                tenant_id=tenant_id, request_id=request_id,
+                status="pending_approval", stage="approval", conn=conn)
             return {"ok": True, "request_id": request_id, "ritm_id": ritm_id,
                     "status": "approval_unresolved", "dispatched": False,
                     "display_text": (
@@ -322,6 +326,11 @@ async def _apply_approval_gate(
             await _db.set_ritm_approval_state(
                 tenant_id=tenant_id, ritm_id=ritm_id,
                 approval_state="requested", conn=conn)
+            # Stamp the parent SR (status+stage) IN THE SAME TRANSACTION so the
+            # customer-facing record the requester asks UC-1 about is in sync.
+            await _db.set_request_lifecycle(
+                tenant_id=tenant_id, request_id=request_id,
+                status="pending_approval", stage="approval", conn=conn)
 
         _log.info("uc08.approval.parked", tenant_id=tenant_id, ritm_id=ritm_id,
                   policy_id=decision.policy_id, approver_type=decision.approver_type,

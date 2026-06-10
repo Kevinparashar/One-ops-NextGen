@@ -142,11 +142,13 @@ Build: `approval.decide_approval` service (any_one: first approve releases, with
 - [x] Devil's play — non-approver denied; double-decide idempotent (no re-release); transactional (no half-release)
 - [x] Edge — any_one rule (siblings withdrawn on approve); tenant-scoped; **no hardcoding** (no IDs/groups in code)
 
-### - [x] Step 8′ — Requester TRACK shows "pending approval" (chat STATUS — read-only, runbook-OK)  ✅ DONE 2026-06-10
-Build: `get_fulfillment_status` renders `approval_state` as a human status (`requested`→"⏳ Pending approval", `approved`→"✓ Approved", `rejected`→"❌ Rejected"). `get_status` already reads `approval_state`; status only, no approve action.
+### - [x] Step 8′ — Requester sees approval status via UC-1 (parent-SR lifecycle stamp)  ✅ DONE 2026-06-11
+**Correction (2026-06-11):** the requester sees status through **UC-1** (its `ticket_store` does `SELECT * FROM itsm.request`), NOT a UC-8 status tool — we have no `search_requests`/`get_fulfillment_status` chat tool. The real gap was: the gate stamped the RITM's `approval_state` but **not the parent `itsm.request.status`** (what UC-1 reads). Fix: stamp the parent SR's `status`/`stage` across the FULL lifecycle (principled, not bug-patched): park/held → `pending_approval`/`approval`; approve → `approved`/`fulfillment`; reject → `rejected`/`closed`. New `db.set_request_lifecycle`; `apply_approval_outcome` now returns `request_id`; gate + `decide_approval` call it (same transaction).
 - [x] Build — ruff + mypy clean
-- [x] Smoke/Integration — live: parked request status = "…state=requested… ⏳ Pending approval before fulfilment begins."
-- [x] Edge — approved/rejected render; `not_required`→no approval line
+- [x] Unit — `test_approval_gate.py` (park+held stamp `pending_approval`) + `test_approval_decide.py` (approve→`approved/fulfillment`, reject→`rejected/closed`)
+- [x] Integration — **live**: park → `itsm.request.status=pending_approval`; **UC-1 `ticket_store.get` returns `pending_approval`** (proves UC-1 surfaces it); approve→`approved`; reject→`rejected`; cleaned up
+- [x] Edge — held (no approver) also stamps `pending_approval`; full lifecycle covered; flag-gated; no hardcoding
+- Note: `get_fulfillment_status` approval display kept (harmless; reads the right data) but it's not a registered tool — UC-1 is the real surface.
 
 ---
 

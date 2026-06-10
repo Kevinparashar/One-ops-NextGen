@@ -30,7 +30,7 @@ def patched(monkeypatch):
     """Record-only db helpers + a controllable approval row."""
     state = {"approval": {"ritm_id": "RITM1", "requested_from": "MGR",
                           "state": "pending"},
-             "withdrawn": 0, "outcome": None}
+             "withdrawn": 0, "outcome": None, "lifecycle": None}
 
     async def get_approval(**_kw):
         return state["approval"]
@@ -44,12 +44,16 @@ def patched(monkeypatch):
 
     async def outcome(**kw):
         state["outcome"] = kw["approved"]
-        return True
+        return "REQ1"  # parent request_id (transitioned)
+
+    async def set_lifecycle(**kw):
+        state["lifecycle"] = (kw["status"], kw["stage"])
 
     monkeypatch.setattr(_db, "get_approval", get_approval)
     monkeypatch.setattr(_db, "update_approval_decision", update_decision)
     monkeypatch.setattr(_db, "withdraw_other_pending_approvals", withdraw)
     monkeypatch.setattr(_db, "apply_approval_outcome", outcome)
+    monkeypatch.setattr(_db, "set_request_lifecycle", set_lifecycle)
     return state
 
 
@@ -64,6 +68,8 @@ async def test_approve_releases_fulfilment(patched) -> None:
     assert out.ok and out.state == "approved"
     assert out.should_dispatch is True          # caller releases the held NATS
     assert patched["withdrawn"] == 1 and patched["outcome"] is True
+    # parent SR stamped so the requester sees it via UC-1 / TRACK
+    assert patched["lifecycle"] == ("approved", "fulfillment")
 
 
 async def test_reject_stops_no_dispatch(patched) -> None:
@@ -71,6 +77,7 @@ async def test_reject_stops_no_dispatch(patched) -> None:
     assert out.ok and out.state == "rejected"
     assert out.should_dispatch is False         # nothing fulfilled
     assert patched["outcome"] is False and patched["withdrawn"] == 0
+    assert patched["lifecycle"] == ("rejected", "closed")
 
 
 async def test_wrong_actor_denied(patched) -> None:

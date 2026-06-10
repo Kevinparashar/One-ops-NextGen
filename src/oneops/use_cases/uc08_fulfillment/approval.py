@@ -380,8 +380,17 @@ async def decide_approval(
                 await _db.withdraw_other_pending_approvals(
                     tenant_id=tenant_id, ritm_id=ritm_id,
                     keep_approval_id=approval_id, conn=conn)
-            transitioned = await _db.apply_approval_outcome(
+            # `apply_approval_outcome` returns the parent request_id on transition.
+            request_id = await _db.apply_approval_outcome(
                 tenant_id=tenant_id, ritm_id=ritm_id, approved=approved, conn=conn)
+            transitioned = request_id is not None
+            if request_id is not None:
+                # Keep the customer-facing SR in sync (what UC-1 / TRACK reads):
+                #   approve → approved / fulfillment   ·   reject → rejected / closed
+                await _db.set_request_lifecycle(
+                    tenant_id=tenant_id, request_id=request_id,
+                    status="approved" if approved else "rejected",
+                    stage="fulfillment" if approved else "closed", conn=conn)
 
         increment("ai.uc08.approval.decided", decision=decision)
         _log.info("uc08.approval.decided", tenant_id=tenant_id, ritm_id=ritm_id,
