@@ -51,6 +51,7 @@ def wired(monkeypatch):
 
     inserts: list[dict] = []
     states: list[dict] = []
+    lifecycles: list[dict] = []
 
     async def fake_insert(**kw):
         inserts.append(kw)
@@ -59,9 +60,13 @@ def wired(monkeypatch):
     async def fake_state(**kw):
         states.append(kw)
 
+    async def fake_lifecycle(**kw):
+        lifecycles.append(kw)
+
     monkeypatch.setattr(_db, "insert_approval", fake_insert)
     monkeypatch.setattr(_db, "set_ritm_approval_state", fake_state)
-    yield inserts, states
+    monkeypatch.setattr(_db, "set_request_lifecycle", fake_lifecycle)
+    yield inserts, states, lifecycles
     tools.set_connection_provider(None)
 
 
@@ -78,7 +83,7 @@ async def _gate():
 
 
 async def test_parks_when_required(wired, monkeypatch) -> None:
-    inserts, states = wired
+    inserts, states, lifecycles = wired
     _patch_decision(monkeypatch, ApprovalDecision(
         required=True, policy_id="cat_hardware", approver_type="manager_of_requester",
         approval_type="manager", approvers=("MGR1", "MGR2"), rule="any_one",
@@ -91,20 +96,23 @@ async def test_parks_when_required(wired, monkeypatch) -> None:
     assert {i["requested_from"] for i in inserts} == {"MGR1", "MGR2"}
     assert all(i["approval_type"] == "manager" for i in inserts)
     assert states and states[0]["approval_state"] == "requested"
+    # parent SR stamped so the requester sees it via UC-1 / TRACK
+    assert lifecycles and lifecycles[0]["status"] == "pending_approval"
+    assert lifecycles[0]["stage"] == "approval"
 
 
 async def test_proceeds_when_not_required(wired, monkeypatch) -> None:
-    inserts, states = wired
+    inserts, states, lifecycles = wired
     _patch_decision(monkeypatch, ApprovalDecision(
         required=False, policy_id="selfservice_password", approver_type="none",
         approval_type="", approvers=(), rule="", reason="self-service", fell_back=False))
     out = await _gate()
     assert out is None              # caller dispatches as today
-    assert not inserts and not states
+    assert not inserts and not states and not lifecycles
 
 
 async def test_holds_when_unresolved_never_auto_approves(wired, monkeypatch) -> None:
-    inserts, states = wired
+    inserts, states, lifecycles = wired
     _patch_decision(monkeypatch, ApprovalDecision(
         required=True, policy_id="cat_access", approver_type="service_desk",
         approval_type="catalog_owner", approvers=(), rule="any_one",
@@ -114,3 +122,5 @@ async def test_holds_when_unresolved_never_auto_approves(wired, monkeypatch) -> 
     assert out["status"] == "approval_unresolved" and out["dispatched"] is False
     assert not inserts                          # NO approval rows when nobody can approve
     assert states and states[0]["approval_state"] == "requested"  # parked, not dispatched
+    # even when held, stamp the SR so the requester sees "pending approval"
+    assert lifecycles and lifecycles[0]["status"] == "pending_approval"

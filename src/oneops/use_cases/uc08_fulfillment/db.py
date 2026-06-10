@@ -736,14 +736,15 @@ async def withdraw_other_pending_approvals(
 
 async def apply_approval_outcome(
     *, tenant_id: str, ritm_id: str, approved: bool, conn: asyncpg.Connection,
-) -> bool:
+) -> str | None:
     """Move a parked RITM to approved or rejected (only from `requested`).
 
-    Returns True if it transitioned. On approve → `state=approved`,
-    `approval_state=approved` (caller then dispatches the held fulfilment); on
-    reject → `state=rejected`, `approval_state=rejected` (nothing dispatched).
+    Returns the parent `request_id` if it transitioned (so the caller can stamp
+    the SR's lifecycle for TRACK/UC-1 visibility), else ``None``. On approve →
+    `state=approved`, `approval_state=approved` (caller then dispatches the held
+    fulfilment); on reject → `state=rejected`, `approval_state=rejected`.
     """
-    row = await conn.fetchval(
+    return await conn.fetchval(
         """
         UPDATE itsm.request_item
            SET approval_state = CASE WHEN $3 THEN 'approved' ELSE 'rejected' END,
@@ -753,11 +754,29 @@ async def apply_approval_outcome(
                updated_at     = now(),
                version        = version + 1
          WHERE tenant_id = $1 AND ritm_id = $2 AND state = 'requested'
-        RETURNING ritm_id
+        RETURNING request_id
         """,
         tenant_id, ritm_id, approved,
     )
-    return row is not None
+
+
+async def set_request_lifecycle(
+    *, tenant_id: str, request_id: str, status: str, stage: str,
+    conn: asyncpg.Connection,
+) -> None:
+    """Stamp the PARENT SR's `status` + `stage` — the fields UC-1 / TRACK read
+    (UC-1's ticket_store reads `itsm.request`). The approval gate stamps a parked
+    request 'pending_approval' / 'approval' here so the requester sees it when
+    they ask UC-1 'status of REQ…'. The gate stamps `request_item.approval_state`
+    separately; this keeps the customer-facing record in sync."""
+    await conn.execute(
+        """
+        UPDATE itsm.request
+           SET status = $3, stage = $4, updated_at = now()
+         WHERE tenant_id = $1 AND request_id = $2
+        """,
+        tenant_id, request_id, status, stage,
+    )
 
 
 async def get_approval(
