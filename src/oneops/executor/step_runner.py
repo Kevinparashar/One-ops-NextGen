@@ -340,6 +340,26 @@ class HandlerStepExecutor:
             arguments.update(bound_inputs)
         context = _build_handler_context(request)
 
+        # ── Slot-filling gate (flag-gated, additive) ──────────────────────
+        # If a REQUIRED entity-shaped parameter (e.g. ticket_id) is still
+        # unbound AND there's no conversational focus to fill it, ASK the user
+        # which record they mean instead of dispatching the tool to a certain
+        # failure. On the first pass `maybe_elicit_entity` raises GraphInterrupt
+        # (the turn pauses with the question); on resume it returns the resolved
+        # bindings, which we merge before dispatch. Flag OFF ⇒ skipped wholesale
+        # (today's path, zero regression). Focus-bound follow-ups are left to
+        # the existing focus path — we never interrupt mid-conversation.
+        if _elicitation_enabled() and not context.get("focus_entity_id"):
+            slot = _missing_entity_slot(tool, arguments)
+            if slot is not None:
+                from oneops.executor import entity_elicitation
+                param_name, service_param = slot
+                bindings = await entity_elicitation.maybe_elicit_entity(
+                    param_name=param_name, service_param=service_param,
+                    context=context)
+                if bindings:
+                    arguments.update(bindings)
+
         # Live UI: announce the tool is now executing (no-op unless a
         # streaming sink is open for this request).
         rid = str(request.get("request_id") or "")
@@ -496,6 +516,38 @@ def _tool_specificity(need: set[str]) -> tuple[int, int]:
     entity-shaped names among them). More required params = more specific;
     structured-entity match outranks free-text match on equal counts."""
     return (len(need), len(need & _ENTITY_SHAPED_PARAMS))
+
+
+def _elicitation_enabled() -> bool:
+    """Slot-filling feature flag. Graduated to ON by default (2026-06-11) after
+    live validation: a missing required entity now ASKS the user which record
+    they mean instead of dispatch-and-fail. Set
+    `ONEOPS_ENTITY_ELICITATION_ENABLED=false` to disable. Read per-call so an
+    operator can flip it without a restart (matches `approval_enabled`)."""
+    from oneops.config import _parse_flag
+    return _parse_flag("ONEOPS_ENTITY_ELICITATION_ENABLED", default=True)
+
+
+def _missing_entity_slot(
+    tool: Any, arguments: dict[str, Any],
+) -> tuple[str, str] | None:
+    """The first REQUIRED, entity-shaped parameter this step left unbound (e.g.
+    `ticket_id` for 'summarize my ticket'), paired with the tool's service
+    parameter name so resolution can bind both. `None` when every required
+    entity slot is filled — the common case, near-zero overhead.
+
+    Data-driven: `required` + entity-shaped come from the tool's own registry
+    parameters; no UC-specific code, no hardcoded tool/param names beyond the
+    shared `_ENTITY_SHAPED_PARAMS` / `service_id` envelope."""
+    params = tool.parameters or []
+    present = {k for k, v in arguments.items() if v not in (None, "", [], {})}
+    service_param = "service_id" if any(
+        getattr(p, "name", "") == "service_id" for p in params) else ""
+    for p in params:
+        if (p.required and p.name in _ENTITY_SHAPED_PARAMS
+                and p.name not in present):
+            return (p.name, service_param)
+    return None
 
 
 def _build_handler_context(request: dict[str, Any]) -> dict[str, Any]:

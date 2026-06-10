@@ -23,17 +23,35 @@
         "tier": "read"
       },
       "activation_condition": {
-        "clauses": [],
+        "operator": "any_of",
         "negate": false,
-        "operator": "leaf",
-        "signal": "entity_service_in",
-        "values": [
-          "incident",
-          "request",
-          "problem",
-          "change",
-          "asset",
-          "cmdb_ci"
+        "signal": null,
+        "values": [],
+        "clauses": [
+          {
+            "clauses": [],
+            "negate": false,
+            "operator": "leaf",
+            "signal": "entity_service_in",
+            "values": [
+              "incident",
+              "request",
+              "problem",
+              "change",
+              "asset",
+              "cmdb_ci"
+            ]
+          },
+          {
+            "clauses": [],
+            "negate": false,
+            "operator": "leaf",
+            "signal": "intent_in",
+            "values": [
+              "summary",
+              "field_read"
+            ]
+          }
         ]
       },
       "compound_of": [],

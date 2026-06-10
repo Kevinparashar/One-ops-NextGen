@@ -670,6 +670,11 @@ async def _lifespan(app: FastAPI):
             set_field_embedder,
         )
         set_field_embedder(build_field_embedder(gateway))
+        # Entity elicitation (slot-filling) — the gateway powers contextual
+        # reply resolution ("my last ticket"). Wired here so the executor's
+        # flag-gated gate has an egress; unset on shutdown below.
+        from oneops.executor.entity_elicitation import set_elicitation_gateway
+        set_elicitation_gateway(gateway)
         # Conversational boundary — classifies non-routed turns and emits
         # the right reply per category. Out-of-scope literal is enforced
         # server-side. Disambiguator is already an LlmDisambiguator (set
@@ -2481,12 +2486,24 @@ async def _run(
                         tenant_id=envelope.get("tenant_id", ""),
                         key=f"__interrupt__{session_id}",
                         value={"interrupt": _payload, "thread": graph_thread})
+            _clarification = _payload.get(
+                "prompt", _payload.get("question", "Input required."))
+            # Persist the paused turn (user message + clarification) so the
+            # conversation history is complete even when a turn ASKS instead of
+            # completing — the in-graph `persist` node never runs on interrupt.
+            # Dedup in the helper keeps resume from double-writing the message.
+            _store = getattr(request.app.state, "session_store", None)
+            if _store is not None:
+                with suppress(Exception):
+                    from oneops.executor.nodes import append_turn_events
+                    await append_turn_events(
+                        _store, envelope.get("tenant_id", ""), session_id,
+                        user_message=envelope.get("message", "") or "",
+                        assistant_message=_clarification)
             return TurnResponse(
                 door=door,
                 final_status="interrupted",
-                final_response=_payload.get(
-                    "prompt",
-                    _payload.get("question", "Input required.")),
+                final_response=_clarification,
                 step_results=[],
                 session_id=session_id,
                 request_id=envelope["request_id"],
@@ -2514,11 +2531,23 @@ async def _run(
                     tenant_id=envelope.get("tenant_id", ""),
                     key=f"__interrupt__{session_id}",
                     value={"interrupt": _intr, "thread": graph_thread})
+        _clar = _intr.get("prompt", _intr.get("question", "Input required."))
+        # Persist the paused turn (user message + clarification) so the
+        # conversation history is complete even when the turn ASKS instead of
+        # completing — same as the raised-interrupt path above. Resume-safe via
+        # the helper's user-dedup.
+        _store = getattr(request.app.state, "session_store", None)
+        if _store is not None and not _is_resume:
+            with suppress(Exception):
+                from oneops.executor.nodes import append_turn_events
+                await append_turn_events(
+                    _store, envelope.get("tenant_id", ""), session_id,
+                    user_message=envelope.get("message", "") or "",
+                    assistant_message=_clar)
         return TurnResponse(
             door=door,
             final_status="interrupted",
-            final_response=_intr.get(
-                "prompt", _intr.get("question", "Input required.")),
+            final_response=_clar,
             step_results=[],
             session_id=session_id,
             request_id=envelope["request_id"],

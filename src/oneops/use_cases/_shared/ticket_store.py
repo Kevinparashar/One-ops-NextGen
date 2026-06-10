@@ -56,6 +56,68 @@ def supported_services() -> tuple[str, ...]:
     return tuple(_SERVICE_TABLE_MAP)
 
 
+# Per-service columns for "records a user is party to, most-recent first" reads
+# — the data behind contextual replies like "my last ticket" / "recent ones".
+# DATA, not code (§2.1 / never-hardcode): a new service module adds one entry,
+# no reader change. `owner_cols` = the human-party columns that make a record
+# "mine" (reporter / requester / requested-for / assignee) — the union covers
+# both the end-user persona and the agent persona without role-branching;
+# `recency_col` orders most-recent-first; `title_col` / `status_col` shape the
+# short candidate label the resolver shows the LLM. Verified against
+# database/<service>/01_schema.sql. Services absent here are simply not offered
+# as recency candidates (extensible, never a crash).
+_SERVICE_RECENT_MAP: dict[str, dict[str, Any]] = {
+    "incident": {
+        "owner_cols": ("reported_by", "assigned_to"),
+        "recency_col": "updated_at", "title_col": "title",
+        "status_col": "status",
+    },
+    "request": {
+        "owner_cols": ("requested_by", "requested_for", "assigned_to"),
+        "recency_col": "updated_at", "title_col": "title",
+        "status_col": "status",
+    },
+}
+
+
+def recency_services() -> tuple[str, ...]:
+    """Service ids that can be offered as 'recent records' candidates."""
+    return tuple(_SERVICE_RECENT_MAP)
+
+
+def _recent_candidate(
+    row: dict[str, Any], service_id: str, spec: dict[str, Any],
+) -> dict[str, Any]:
+    """Normalise a raw record into the compact candidate the resolver consumes:
+    id + service + short title + status + the raw recency value (for sorting)."""
+    table, pk_col = _SERVICE_TABLE_MAP[service_id]
+    return {
+        "ticket_id": row.get(pk_col) or "",
+        "service_id": service_id,
+        "title": row.get(spec["title_col"]) or "",
+        "status": row.get(spec["status_col"]) or "",
+        "_recency": row.get(spec["recency_col"]),
+    }
+
+
+def _rank_recent(
+    cands: list[dict[str, Any]], limit: int,
+) -> list[dict[str, Any]]:
+    """Sort candidates most-recent-first (missing recency sorts last) and cap
+    at `limit`, dropping the internal `_recency` sort key from the output."""
+    def _key(c: dict[str, Any]) -> str:
+        r = c.get("_recency")
+        if hasattr(r, "isoformat"):           # datetime → ISO sorts chronologically
+            return r.isoformat()
+        return str(r) if r is not None else ""
+    cands.sort(key=_key, reverse=True)
+    out: list[dict[str, Any]] = []
+    for c in cands[: max(0, limit)]:
+        c.pop("_recency", None)
+        out.append(c)
+    return out
+
+
 @runtime_checkable
 class TicketStore(Protocol):
     """Fetch one ITSM work record (incident / request / problem / change /
@@ -65,6 +127,17 @@ class TicketStore(Protocol):
     async def get(
         self, *, ticket_id: str, service_id: str, tenant_id: str
     ) -> dict[str, Any] | None: ...
+
+    async def list_recent_for_user(
+        self, *, tenant_id: str, user_id: str,
+        services: tuple[str, ...] | None = None, limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Records this user is party to, most-recent first, across `services`
+        (default: all recency-capable services). Tenant- and user-scoped — only
+        the caller's own records, never another user's. Each item is a compact
+        candidate dict (`ticket_id`, `service_id`, `title`, `status`). Used to
+        resolve contextual replies ('my last ticket', 'recent ones')."""
+        ...
 
 
 class InMemoryTicketStore:
@@ -93,6 +166,28 @@ class InMemoryTicketStore:
     ) -> dict[str, Any] | None:
         row = self._rows.get((tenant_id, service_id, ticket_id))
         return dict(row) if row is not None else None
+
+    async def list_recent_for_user(
+        self, *, tenant_id: str, user_id: str,
+        services: tuple[str, ...] | None = None, limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        want = tuple(services) if services else recency_services()
+        cands: list[dict[str, Any]] = []
+        for (t_id, svc_id, _tid), row in self._rows.items():
+            if t_id != tenant_id or svc_id not in want:
+                continue
+            spec = _SERVICE_RECENT_MAP.get(svc_id)
+            if spec is None:
+                continue
+            # "mine" = the user appears in any human-party column for this svc.
+            if not any(row.get(c) == user_id for c in spec["owner_cols"]):
+                continue
+            cand = _recent_candidate(row, svc_id, spec)
+            # InMemory keys by id (the pk column isn't stored in the row, unlike
+            # Postgres SELECT *) — take the id from the key.
+            cand["ticket_id"] = _tid
+            cands.append(cand)
+        return _rank_recent(cands, limit)
 
 
 class PostgresTicketStore:
@@ -269,6 +364,69 @@ class PostgresTicketStore:
             # store returns.
             return dict(row)
 
+    async def list_recent_for_user(
+        self, *, tenant_id: str, user_id: str,
+        services: tuple[str, ...] | None = None, limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        want = [s for s in (services or recency_services())
+                if s in _SERVICE_RECENT_MAP]
+        if not want or not tenant_id or not user_id:
+            return []
+        pool = await self._ensure_pool()
+        cands: list[dict[str, Any]] = []
+        with _tracer.start_as_current_span(
+            "ticket_store.postgres.list_recent_for_user",
+            attributes={
+                "db.system": "postgresql",
+                "oneops.tenant_id": tenant_id,
+                "oneops.service_count": len(want),
+            },
+        ) as span:
+            try:
+                async with pool.acquire() as conn:
+                    for svc_id in want:
+                        cands.extend(
+                            await self._recent_one(conn, svc_id, tenant_id,
+                                                   user_id, limit))
+            except Exception as exc:
+                span.set_attribute("error", True)
+                _log.warning("ticket_store.postgres.recent_failed",
+                             error=str(exc)[:200])
+                increment("ai.postgres.errors.total",
+                          store="ticket_store", service_id="recent",
+                          reason=type(exc).__name__)
+                raise OneOpsError(
+                    "ticket_store.postgres: recent read failed",
+                    cause=exc) from exc
+            ranked = _rank_recent(cands, limit)
+            span.set_attribute("oneops.candidate_count", len(ranked))
+            return ranked
+
+    async def _recent_one(
+        self, conn: Any, service_id: str, tenant_id: str, user_id: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Most-recent records for one service where the user is a human party.
+        Identifiers come from the static maps (never user input) — safe to
+        interpolate; tenant_id and user_id stay parametrised."""
+        table, pk_col = _SERVICE_TABLE_MAP[service_id]
+        spec = _SERVICE_RECENT_MAP[service_id]
+        owner_or = " OR ".join(f'"{c}" = $2' for c in spec["owner_cols"])
+        sql = (
+            f'SELECT "{pk_col}" AS ticket_id, '
+            f'"{spec["title_col"]}" AS title, '
+            f'"{spec["status_col"]}" AS status, '
+            f'"{spec["recency_col"]}" AS _recency '
+            f"FROM {table} "
+            f"WHERE tenant_id = $1 AND ({owner_or}) "
+            f'ORDER BY "{spec["recency_col"]}" DESC NULLS LAST '
+            f"LIMIT $3"
+        )
+        rows = await conn.fetch(sql, tenant_id, user_id, max(0, limit))
+        return [{"ticket_id": r["ticket_id"] or "", "service_id": service_id,
+                 "title": r["title"] or "", "status": r["status"] or "",
+                 "_recency": r["_recency"]} for r in rows]
+
 
 _store: TicketStore | None = None
 
@@ -305,4 +463,5 @@ __all__ = [
     "get_ticket_store",
     "set_ticket_store",
     "supported_services",
+    "recency_services",
 ]
