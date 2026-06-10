@@ -1567,7 +1567,7 @@
     "role": "service_desk_agent",
     "department": "Demo",
     "location": "HQ",
-    "manager_id": null,
+    "manager_id": "u_admin",
     "vip": false,
     "locale": "en",
     "is_active": true
@@ -1580,7 +1580,7 @@
     "role": "end_user",
     "department": "Demo",
     "location": "HQ",
-    "manager_id": null,
+    "manager_id": "u_admin",
     "vip": false,
     "locale": "en",
     "is_active": true
@@ -1593,7 +1593,7 @@
     "role": "manager",
     "department": "Demo",
     "location": "HQ",
-    "manager_id": null,
+    "manager_id": "USR00020",
     "vip": false,
     "locale": "en",
     "is_active": true
@@ -1606,7 +1606,7 @@
     "role": "end_user",
     "department": "Demo",
     "location": "HQ",
-    "manager_id": null,
+    "manager_id": "u_admin",
     "vip": false,
     "locale": "en",
     "is_active": true
@@ -1619,7 +1619,7 @@
     "role": "service_desk_agent",
     "department": "Demo",
     "location": "HQ",
-    "manager_id": null,
+    "manager_id": "u_admin",
     "vip": false,
     "locale": "en",
     "is_active": true
@@ -1632,7 +1632,7 @@
     "role": "end_user",
     "department": "Demo",
     "location": "HQ",
-    "manager_id": null,
+    "manager_id": "u_admin",
     "vip": false,
     "locale": "en",
     "is_active": true
@@ -1645,7 +1645,7 @@
     "role": "manager",
     "department": "Demo",
     "location": "HQ",
-    "manager_id": null,
+    "manager_id": "USR90001",
     "vip": false,
     "locale": "en",
     "is_active": true
@@ -1658,7 +1658,7 @@
     "role": "end_user",
     "department": "Demo",
     "location": "HQ",
-    "manager_id": null,
+    "manager_id": "u_admin",
     "vip": false,
     "locale": "en",
     "is_active": true
@@ -1671,7 +1671,7 @@
     "role": "service_desk_agent",
     "department": "Demo",
     "location": "HQ",
-    "manager_id": null,
+    "manager_id": "u_admin",
     "vip": false,
     "locale": "en",
     "is_active": true
@@ -1684,7 +1684,7 @@
     "role": "end_user",
     "department": "Demo",
     "location": "HQ",
-    "manager_id": null,
+    "manager_id": "u_admin",
     "vip": false,
     "locale": "en",
     "is_active": true
@@ -1697,7 +1697,7 @@
     "role": "manager",
     "department": "Demo",
     "location": "HQ",
-    "manager_id": null,
+    "manager_id": "USR80001",
     "vip": false,
     "locale": "en",
     "is_active": true
@@ -1710,7 +1710,7 @@
     "role": "end_user",
     "department": "Demo",
     "location": "HQ",
-    "manager_id": null,
+    "manager_id": "u_admin",
     "vip": false,
     "locale": "en",
     "is_active": true

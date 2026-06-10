@@ -37,6 +37,7 @@ from typing import Any
 import structlog
 from opentelemetry import trace
 
+from oneops.use_cases.uc08_fulfillment import approval as _approval
 from oneops.use_cases.uc08_fulfillment import catalog_search as _catalog_search
 from oneops.use_cases.uc08_fulfillment import core as _core
 from oneops.use_cases.uc08_fulfillment import db as _db
@@ -245,6 +246,96 @@ async def get_service_request_fields(
                 "required": required, "field_count": len(fields)}
 
 
+async def release_fulfilment(
+    *, tenant_id: str, ritm_id: str, trace_id: str | None = None,
+) -> bool:
+    """Dispatch the fulfilment a gate previously WITHHELD — called by the
+    non-chat approve action once a request is approved ("the IT team handles it
+    on the request"). Same NATS path as create's §5 dispatch. Returns whether it
+    was kicked off; never raises (logs on failure, §2.7)."""
+    if _nats_client is None or not ritm_id:
+        return False
+    try:
+        await _nats_dispatcher.dispatch_execute(
+            nats=_nats_client, tenant_id=tenant_id,
+            ritm_id=ritm_id, trace_id=trace_id)
+        return True
+    except Exception as exc:                                  # noqa: BLE001
+        _log.warning("uc08.approval.release_failed", tenant_id=tenant_id,
+                     ritm_id=ritm_id, error=str(exc))
+        return False
+
+
+async def _apply_approval_gate(
+    *, tenant_id: str, requester_id: str, catalog_id: str,
+    ritm_id: str, request_id: str,
+) -> dict[str, Any] | None:
+    """Evaluate the approval matrix for a just-persisted RITM and, if approval is
+    required, park it (write `itsm.approval` rows + set `approval_state`) and
+    return a 'pending' payload. Returns ``None`` when no approval is required —
+    the caller then dispatches as normal. Only called when the feature flag is on.
+
+    Fail-CLOSED at every branch: an unresolved decision (nobody can approve) is
+    HELD, never auto-fulfilled (§2.7). Approval writes are transactional so a
+    partial failure leaves no half-written approval set.
+    """
+    cp = _connection_provider or _db.default_connection_provider
+    conn = await cp()
+    try:
+        row = await conn.fetchrow(
+            "SELECT category, owner_group FROM itsm.catalog_item "
+            "WHERE tenant_id=$1 AND catalog_item_id=$2", tenant_id, catalog_id)
+        item = {
+            "catalog_item_id": catalog_id,
+            "category": row["category"] if row else None,
+            "owner_group": row["owner_group"] if row else None,
+        }
+        decision = await _approval.resolve_approvers(
+            item=item, requester_id=requester_id, tenant_id=tenant_id, conn=conn)
+
+        if not decision.required:
+            return None  # self-service — proceed to dispatch (fulfil now)
+
+        if not decision.resolved:
+            # Required but nobody can approve — HOLD (never auto-approve/fulfil).
+            await _db.set_ritm_approval_state(
+                tenant_id=tenant_id, ritm_id=ritm_id,
+                approval_state="requested", conn=conn)
+            return {"ok": True, "request_id": request_id, "ritm_id": ritm_id,
+                    "status": "approval_unresolved", "dispatched": False,
+                    "display_text": (
+                        f"Service request {request_id} is submitted and waiting "
+                        "for an approver — IT will route it.")}
+
+        # Park: write one approval row per approver + set approval_state. The
+        # approval_type comes from the matrix DATA (decision.approval_type).
+        async with conn.transaction():
+            for approver in decision.approvers:
+                await _db.insert_approval(
+                    tenant_id=tenant_id, ritm_id=ritm_id, task_id=None,
+                    approval_type=decision.approval_type, reason=decision.reason,
+                    requested_from=approver,
+                    payload={"policy_id": decision.policy_id,
+                             "approver_type": decision.approver_type,
+                             "fell_back": decision.fell_back},
+                    langgraph_interrupt_id=None, conn=conn)
+            await _db.set_ritm_approval_state(
+                tenant_id=tenant_id, ritm_id=ritm_id,
+                approval_state="requested", conn=conn)
+
+        _log.info("uc08.approval.parked", tenant_id=tenant_id, ritm_id=ritm_id,
+                  policy_id=decision.policy_id, approver_type=decision.approver_type,
+                  approvers=len(decision.approvers), fell_back=decision.fell_back)
+        return {"ok": True, "request_id": request_id, "ritm_id": ritm_id,
+                "status": "pending_approval", "dispatched": False,
+                "approver_count": len(decision.approvers),
+                "display_text": (
+                    f"Service request {request_id} is submitted and is pending "
+                    "approval before fulfilment begins.")}
+    finally:
+        await conn.close()
+
+
 async def create_service_request(
     arguments: dict[str, Any], context: dict[str, Any],
 ) -> dict[str, Any]:
@@ -352,7 +443,28 @@ async def create_service_request(
                 "display_text": (
                     f"I don't recognise that catalog item ({catalog_id}).")}
 
-    # 4. Dispatch execution (fire-and-forget). No silent drop (rule §2.7):
+    # 4. Approval gate — flag-gated; INERT when UC08_APPROVAL_ENABLED is off, so
+    #    the live flow below is byte-for-byte unchanged today. Fail-CLOSED: any
+    #    error here parks the request, never falls through to dispatch.
+    if _approval.approval_enabled() and outcome.ritm_id:
+        try:
+            gated = await _apply_approval_gate(
+                tenant_id=tenant_id, requester_id=requested_for,
+                catalog_id=catalog_id, ritm_id=outcome.ritm_id,
+                request_id=request_id)
+        except Exception as exc:                              # noqa: BLE001
+            _log.error("uc08.approval.gate_failed", tenant_id=tenant_id,
+                       ritm_id=outcome.ritm_id, error=str(exc))
+            return {"ok": True, "request_id": request_id,
+                    "ritm_id": outcome.ritm_id, "status": "approval_error",
+                    "dispatched": False,
+                    "display_text": (
+                        f"Service request {request_id} is submitted and held for "
+                        "an approval check — IT will follow up.")}
+        if gated is not None:
+            return gated   # parked for approval (or held) — NOT dispatched
+
+    # 5. Dispatch execution (fire-and-forget). No silent drop (rule §2.7):
     # the result states whether the DAG was kicked off.
     dispatched = False
     if _nats_client is not None and outcome.ritm_id:
@@ -950,8 +1062,15 @@ async def get_fulfillment_status(
                 display += f", {failed} failed"
             if blocked:
                 display += f", {blocked} blocked"
-            if status.pending_approvals:
-                display += f". Awaiting approval: {', '.join(status.pending_approvals)}"
+            # Step 8′ — surface approval as a human status for the REQUESTER
+            # (read-only; the approve ACTION lives outside chat per the runbook).
+            appr = status.approval_state.value if status.approval_state else None
+            if appr == "requested":
+                display += ". ⏳ Pending approval before fulfilment begins"
+            elif appr == "approved":
+                display += ". ✓ Approved"
+            elif appr == "rejected":
+                display += ". ❌ Rejected — this request will not be fulfilled"
             display += "."
             payload = status.model_dump(mode="json")
             payload["display_text"] = display

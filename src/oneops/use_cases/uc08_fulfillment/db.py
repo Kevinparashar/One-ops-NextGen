@@ -617,6 +617,28 @@ async def transition_ritm_state(
     )
 
 
+async def set_ritm_approval_state(
+    *, tenant_id: str, ritm_id: str, approval_state: str,
+    conn: asyncpg.Connection,
+) -> None:
+    """Set the RITM's `approval_state` (not_required|requested|approved|rejected).
+
+    Separate from `transition_ritm_state` (which moves `state`): the approval
+    gate parks a request by setting `approval_state='requested'` while leaving
+    `state='requested'` (not dispatched). Stamps `approved_at` when approved.
+    """
+    await conn.execute(
+        """
+        UPDATE itsm.request_item
+           SET approval_state = $3,
+               approved_at    = CASE WHEN $3 = 'approved' THEN now() ELSE approved_at END,
+               updated_at     = now()
+         WHERE tenant_id = $1 AND ritm_id = $2
+        """,
+        tenant_id, ritm_id, approval_state,
+    )
+
+
 async def get_ritm(
     *, tenant_id: str, ritm_id: str, conn: asyncpg.Connection,
 ) -> dict[str, Any] | None:
@@ -665,6 +687,77 @@ async def insert_approval(
         requested_from, langgraph_interrupt_id,
     )
     return approval_id
+
+
+async def update_approval_decision(
+    *, tenant_id: str, approval_id: str, decision: str,
+    decided_by: str, comment: str | None, conn: asyncpg.Connection,
+) -> str | None:
+    """Record an approve/reject on one pending approval row (idempotent).
+
+    Only transitions a row that is still `pending` → returns its `ritm_id` on
+    success, or ``None`` if the row was already decided/withdrawn (so a
+    double-decide is a safe no-op). `decision` is 'approved' | 'rejected'.
+    """
+    return await conn.fetchval(
+        """
+        UPDATE itsm.approval
+           SET state            = $3,
+               decision         = $3,
+               decided_by       = $4,
+               decision_comment = $5,
+               decided_at       = now(),
+               version          = version + 1
+         WHERE tenant_id = $1 AND approval_id = $2 AND state = 'pending'
+        RETURNING ritm_id
+        """,
+        tenant_id, approval_id, decision, decided_by, comment,
+    )
+
+
+async def withdraw_other_pending_approvals(
+    *, tenant_id: str, ritm_id: str, keep_approval_id: str,
+    conn: asyncpg.Connection,
+) -> int:
+    """After an any_one approval lands, retire the sibling pending rows."""
+    return await conn.fetchval(
+        """
+        WITH upd AS (
+            UPDATE itsm.approval
+               SET state = 'withdrawn', version = version + 1
+             WHERE tenant_id = $1 AND ritm_id = $2
+               AND state = 'pending' AND approval_id <> $3
+            RETURNING 1)
+        SELECT count(*) FROM upd
+        """,
+        tenant_id, ritm_id, keep_approval_id,
+    ) or 0
+
+
+async def apply_approval_outcome(
+    *, tenant_id: str, ritm_id: str, approved: bool, conn: asyncpg.Connection,
+) -> bool:
+    """Move a parked RITM to approved or rejected (only from `requested`).
+
+    Returns True if it transitioned. On approve → `state=approved`,
+    `approval_state=approved` (caller then dispatches the held fulfilment); on
+    reject → `state=rejected`, `approval_state=rejected` (nothing dispatched).
+    """
+    row = await conn.fetchval(
+        """
+        UPDATE itsm.request_item
+           SET approval_state = CASE WHEN $3 THEN 'approved' ELSE 'rejected' END,
+               state          = CASE WHEN $3 THEN 'approved' ELSE 'rejected' END,
+               approved_at    = CASE WHEN $3 THEN now() ELSE approved_at END,
+               closed_at      = CASE WHEN NOT $3 THEN now() ELSE closed_at END,
+               updated_at     = now(),
+               version        = version + 1
+         WHERE tenant_id = $1 AND ritm_id = $2 AND state = 'requested'
+        RETURNING ritm_id
+        """,
+        tenant_id, ritm_id, approved,
+    )
+    return row is not None
 
 
 async def get_approval(
