@@ -284,13 +284,28 @@ class LlmGateway:
             histogram("ai.llm.call.duration_ms", float(latency_ms),
                       model=served_model, fell_back="false")
 
-            yield LlmStreamChunk(done=True, response=LlmResponse(
+            # Build the terminal chunk while the span is still open (cost and
+            # attributes are already recorded on it), but DEFER the yield until
+            # after the span's context manager exits. The consumer stops
+            # iterating on this terminal chunk, so its GeneratorExit must not
+            # fire inside `start_as_current_span`: doing so detaches the OTel
+            # context token during async-generator close, which often runs in a
+            # different asyncio context than the one that attached it
+            # ("ValueError: Token was created in a different Context"). Closing
+            # the span here — in the same context it opened — keeps the trace
+            # clean with zero latency cost (the deferred yield is instant and
+            # per-token yields above still nest correctly during active stream).
+            terminal_chunk = LlmStreamChunk(done=True, response=LlmResponse(
                 content=content, model=served_model,
                 prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
                 cost_usd=cost, latency_ms=latency_ms,
                 finish_reason=finish_reason, redacted_pii=redacted_pii,
                 fell_back=False, cache_read_input_tokens=cache_read,
                 cache_creation_input_tokens=cache_creation))
+
+        # Span closed above (same context it was opened in) — now safe to hand
+        # the terminal chunk to the consumer; its GeneratorExit detaches nothing.
+        yield terminal_chunk
 
     async def embed(
         self, texts: list[str], *, model: str, tenant_id: str,
