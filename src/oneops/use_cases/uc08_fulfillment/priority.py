@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 import structlog
 from opentelemetry import trace

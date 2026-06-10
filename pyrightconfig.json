@@ -1,0 +1,35 @@
+{
+  "//": "Pylance/Pyright project config. Editor-only — CI uses ruff + mypy (see pyproject.toml). Purpose: resolve imports against THIS project's .venv and the src/ layout for EVERY file at once, so Pylance never reports phantom 'could not be resolved' on installed deps.",
+
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+
+  "// extraPaths": "src/ layout — packages live under src/ (import oneops...). Without this, first-party imports don't resolve.",
+  "extraPaths": ["src"],
+
+  "// typeCheckingMode": "off — the CI type checker is MYPY (pyproject + ci.sh), not Pyright. Pylance should resolve imports and catch syntax/undefined-name, NOT impose its own (stricter, divergent) type layer that flags 100+ 'errors' the mypy gate passes. This keeps the editor consistent with CI. Run mypy for type checking.",
+  "typeCheckingMode": "off",
+
+  "reportMissingImports": "error",
+  "reportMissingModuleSource": "none",
+
+  "// reportInvalidTypeForm": "off-mode artifact: with type-checking off Pyright can't resolve type names (e.g. a Protocol/TYPE_CHECKING import) so it mislabels valid types as 'variables'. mypy validates these correctly in CI, so silence the Pyright-only false positives.",
+  "reportInvalidTypeForm": "none",
+
+  "exclude": [
+    "**/.venv",
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/*.egg-info",
+    "**/node_modules",
+    "data",
+    "docs",
+    "langgraph_docs",
+    "registries",
+    "ops",
+    "proto",
+    "**/*_pb2.py",
+    "**/*_pb2_grpc.py"
+  ]
+}

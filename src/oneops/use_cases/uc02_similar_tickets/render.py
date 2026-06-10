@@ -27,6 +27,7 @@ Edge cases handled here:
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 from oneops.use_cases.uc02_similar_tickets.contracts import (
     SimilarTicket,

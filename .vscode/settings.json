@@ -4,6 +4,8 @@
 
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "python.analysis.extraPaths": ["${workspaceFolder}/src"],
+  "// diagnosticMode": "Analyse the WHOLE project (not just open files), so all issues show in the Problems panel at once — no clicking file-by-file.",
+  "python.analysis.diagnosticMode": "workspace",
 
   "files.exclude": {
     "**/__pycache__": true,
