@@ -1331,6 +1331,12 @@ def build_app() -> FastAPI:
     # button routes (uc08_routes.py) + button frontend were removed. UC-8 is
     # reached via the conversational router (card-driven routing) and runs
     # through its 4 chat tools + the fulfilment engine; there is no button path.
+    #
+    # EXCEPTION — the APPROVE action is NON-chat by runbook design ("the IT team
+    # handles it on the request"), so it is a small endpoint, NOT a chat tool and
+    # NOT a catalog request route. Inert unless a request was parked for approval.
+    from oneops.api.uc08_approval_routes import router as _uc08_appr_router
+    app.include_router(_uc08_appr_router)
 
     # ── frontend ──────────────────────────────────────────────────────
     static_dir = os.path.join(os.path.dirname(__file__), "static")

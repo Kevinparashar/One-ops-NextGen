@@ -1,0 +1,23 @@
+{
+  "description": "owner_group -> the sys_user attribute that STAFFS it. The owning_group approver resolves to real people from itsm.sys_user (by role, or department for non-IT teams) — the system of record for org membership — with NO separate roster table or column. Resolution is tenant-scoped at query time and fails safe + observable on a gap. This declarative map is the authoritative bridge until an HR/IdP group sync feeds membership directly; resolve_group_members() is the single seam where that source is swapped, with no change to callers. See APPROVAL_IMPLEMENTATION_PLAN.md Step 2.",
+  "groups": {
+    "GRP-APPS":          {"role": "application_support"},
+    "GRP-ASSET":         {"role": "asset_manager"},
+    "GRP-NETOPS":        {"role": "network_engineer"},
+    "GRP-SECOPS":        {"role": "security_engineer"},
+    "GRP-PLATFORM":      {"role": "cloud_engineer"},
+    "GRP-SERVICE-DESK":  {"role": "service_desk_agent"},
+    "GRP-KNOWLEDGE":     {"role": "knowledge_manager"},
+    "GRP-IDENTITY":      {"role": "security_engineer"},
+    "GRP-TELECOM":       {"role": "network_engineer"},
+    "GRP-HR":            {"department": "HR"},
+    "GRP-FINANCE":       {"department": "Finance"},
+    "GRP-FACILITIES":    {"role": "service_desk_agent"},
+    "GRP-T002-APPS":     {"role": "application_support"},
+    "GRP-T002-ASSET":    {"role": "asset_manager"},
+    "GRP-T002-INFRA":    {"role": "cloud_engineer"},
+    "GRP-T002-NETOPS":   {"role": "network_engineer"},
+    "GRP-T003-ENG":      {"role": "cloud_engineer"},
+    "GRP-T003-PLATFORM": {"role": "cloud_engineer"}
+  }
+}

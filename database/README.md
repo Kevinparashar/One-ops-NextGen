@@ -63,6 +63,7 @@ psql "$POSTGRES_URL" -f database/request/02_embeddings.sql
 
 # 5. fulfillment workflow tables AFTER request (request_item FK -> request)
 psql "$POSTGRES_URL" -f database/catalog_fulfillment/03_fulfillment.sql
+psql "$POSTGRES_URL" -f database/catalog_fulfillment/04_approval_policy.sql
 
 # 6. registry + conversation (independent of itsm entity FKs)
 psql "$POSTGRES_URL" -f database/agent/01_schema.sql
