@@ -19,12 +19,17 @@ no code path that reads a session without naming its tenant.
 from __future__ import annotations
 
 import threading
-from typing import Protocol
+from typing import Protocol, TypeAlias
 
 from oneops.codec import messages as msg
 
-# An event is the protobuf ConversationEvent contract (ADR-0001).
-ConversationEvent = msg.ConversationEvent
+# An event is the protobuf ConversationEvent contract (ADR-0001). Declared as an
+# explicit TypeAlias so it is valid in type positions (a plain `X = msg.Y`
+# re-export reads as a *variable*, which type checkers reject in annotations).
+# NOT the PEP 695 `type` statement (UP040): that yields a non-callable
+# TypeAliasType, but this name is *constructed* at runtime (`ConversationEvent()`
+# in dragonfly_log/postgres_log/executor), so it must stay a plain class ref.
+ConversationEvent: TypeAlias = msg.ConversationEvent  # noqa: UP040
 
 
 def _key(tenant_id: str, session_id: str) -> tuple[str, str]:

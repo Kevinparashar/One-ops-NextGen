@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
+from collections.abc import AsyncIterator
 from urllib.parse import urlparse
 
 import pytest
@@ -43,7 +44,7 @@ def _sid() -> str:
 
 
 @pytest.fixture
-async def store() -> SessionStore:
+async def store() -> AsyncIterator[SessionStore]:
     reset_session_store_for_test()
     s = await get_session_store()
     yield s
