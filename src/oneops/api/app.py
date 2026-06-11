@@ -362,6 +362,63 @@ def _extract_interrupt_payload(out: Any) -> dict[str, Any] | None:
     return val if isinstance(val, dict) else {"value": val}
 
 
+# Identify the knowledge and fulfilment agents by registry DATA, not literal ids
+# (storage-agnostic: JSON today, itsm.agent in prod). The KB suffix matches the
+# convention the router's _floor_dispatch already uses; the fulfilment agent is
+# found by its intent_family (a column on the agent record).
+_KB_AGENT_SUFFIX = "_kb_lookup"
+_FULFILMENT_INTENT_FAMILY = "fulfillment_orchestrate"
+
+
+def _active_fulfilment_agent_id(registry: Any) -> str | None:
+    """The active fulfilment/request agent id, derived from its registry
+    intent_family. None when none is active or the registry is unavailable."""
+    if registry is None:
+        return None
+    try:
+        for agent in registry.agents.list_active():
+            if getattr(agent, "intent_family", "") == _FULFILMENT_INTENT_FAMILY:
+                return agent.id
+    except Exception:                                             # noqa: BLE001
+        return None
+    return None
+
+
+def _build_service_request_offer(
+    out: Any, registry: Any, message: str,
+) -> dict[str, Any] | None:
+    """Self-service-first, two-turn offer. When a turn was answered SOLELY by the
+    knowledge (KB) agent — the ambiguous "is this a how-to or a request?" default
+    lands here — offer to raise a service request. Choosing it PINS the fulfilment
+    agent via `forced_agent_ids` (so it can never loop back to KB) and passes the
+    ORIGINAL query, which the forced path threads as the catalog-search seed — so
+    the conductor runs its FULL flow (search → pick → form → create), not the
+    empty "what would you like to request?" opener. Returns None when the turn was
+    not a sole-KB answer or no fulfilment agent is active; never raises."""
+    if not isinstance(out, dict):
+        return None
+    if str(out.get("final_status") or "").lower() not in ("executed", "partial"):
+        return None
+    agents = {str((s or {}).get("agent_id") or "")
+              for s in (out.get("step_results") or [])}
+    agents.discard("")
+    if not agents or not all(a.endswith(_KB_AGENT_SUFFIX) for a in agents):
+        return None
+    fulfil_id = _active_fulfilment_agent_id(registry)
+    if not fulfil_id:
+        return None
+    return {
+        "kind": "service_request_offer",
+        "prompt": ("If that didn't resolve it, I can raise a service request to "
+                   "get it actioned for you."),
+        "options": [
+            {"label": "Raise a service request", "value": "yes",
+             "forced_agent_ids": [fulfil_id], "message": message},
+            {"label": "No, thanks", "value": "no"},
+        ],
+    }
+
+
 def _nesting_depth(value: Any, _depth: int = 1) -> int:
     """Max container-nesting depth of a JSON-like value (scalars = 0)."""
     if isinstance(value, dict):
@@ -1974,6 +2031,12 @@ def build_app() -> FastAPI:
             "session_id": session_id, "user_id": user_id, "role": role,
             "message": req.message,
         }
+        # Pre-routed dispatch: a caller (e.g. the "Raise a service request" offer
+        # button) already chose the agent(s). Forward so `route` SKIPS the LLM
+        # router and runs them directly — parity with the non-stream /api/chat.
+        # Without this the stream door silently re-routed (KB → offer → loop).
+        if req.forced_agent_ids:
+            envelope["forced_agent_ids"] = list(req.forced_agent_ids)
         # Forward an interrupt reply so the browser's widget answer RESUMES the
         # paused flow (pick → fields → confirm → create) instead of starting a
         # new turn. `_run` routes these to resume_turn.
@@ -2555,6 +2618,14 @@ async def _run(
             latency_ms=int((time.monotonic() - t0) * 1000),
             interrupt=_intr,
         )
+    # Self-service-first: a sole-KB answer carries a "raise a service request?"
+    # offer (rendered as buttons; choosing it re-dispatches to fulfilment). Best
+    # effort — a failure here must never break the answer.
+    _sr_offer = None
+    with suppress(Exception):
+        _sr_offer = _build_service_request_offer(
+            out, getattr(request.app.state, "registry", None),
+            envelope.get("message", "") or "")
     return TurnResponse(
         door=door,
         final_status=out.get("final_status") or "",
@@ -2564,6 +2635,7 @@ async def _run(
         request_id=envelope["request_id"],
         trace_id=trace_id,
         latency_ms=int((time.monotonic() - t0) * 1000),
+        interrupt=_sr_offer,
     )
 
 

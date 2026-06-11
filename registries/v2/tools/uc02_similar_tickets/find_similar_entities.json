@@ -23,16 +23,23 @@
       "parameters": [
         {
           "data_classification": "internal",
-          "description": "Source ticket id (e.g. INC0001234 or REQ0001234).",
+          "description": "Source ticket id (e.g. INC0001234 or REQ0001234). Provide this OR query_text; when present the search anchors on the named record.",
           "name": "ticket_id",
-          "required": true,
+          "required": false,
           "type": "str"
         },
         {
           "data_classification": "internal",
-          "description": "Service module: 'incident' or 'request'.",
+          "description": "Free-text problem/symptom description that anchors the search when no ticket id is given (provide this OR ticket_id). The chat router supplies the user's text. With no service_id, both incident and request are searched.",
+          "name": "query_text",
+          "required": false,
+          "type": "str"
+        },
+        {
+          "data_classification": "internal",
+          "description": "Service module: 'incident' or 'request'. On the id path it is auto-derived from the ticket_id prefix; on the text path, omit to search both services or set to scope to one.",
           "name": "service_id",
-          "required": true,
+          "required": false,
           "type": "str"
         },
         {

@@ -1024,6 +1024,56 @@
     conv.scrollTop = conv.scrollHeight;
   }
 
+  // Self-service-first offer: rendered BELOW a sole-KB answer (not in place of
+  // it). "Raise a service request" re-dispatches the original query to the
+  // fulfilment agent as a fresh forced turn; "No, thanks" just dismisses.
+  function renderServiceRequestOffer(intr) {
+    const turn = document.createElement("div");
+    turn.className = "turn assistant interrupt-widget";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble interrupt-bubble";
+    const prompt = document.createElement("div");
+    prompt.className = "interrupt-prompt";
+    prompt.textContent = intr.prompt
+      || "If that didn't help, I can raise a service request for you.";
+    bubble.appendChild(prompt);
+    const row = document.createElement("div");
+    row.className = "interrupt-confirm-row";
+    (intr.options || []).forEach((opt) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = opt.value === "yes"
+        ? "interrupt-submit" : "interrupt-option interrupt-skip";
+      btn.textContent = opt.label || opt.value;
+      btn.addEventListener("click", async () => {
+        row.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+        turn.remove();
+        // "Yes" PINS the fulfilment agent (forced_agent_ids) and passes the
+        // original query — the forced path threads it as the catalog-search
+        // seed, so uc08 runs its full flow (no loop, no empty opener). uc08
+        // then renders its own selection/form interrupts below.
+        if (opt.value === "yes" && Array.isArray(opt.forced_agent_ids)) {
+          addUserBubble({ door: "chat", text: opt.label });
+          await streamTurnInto({
+            url: "/api/chat/stream",
+            body: {
+              message: opt.message || "",
+              session_id: sessionId,
+              forced_agent_ids: opt.forced_agent_ids,
+            },
+            door: "chat",
+            statusLabel: "Raising a service request…",
+          });
+        }
+      });
+      row.appendChild(btn);
+    });
+    bubble.appendChild(row);
+    turn.appendChild(bubble);
+    conv.appendChild(turn);
+    conv.scrollTop = conv.scrollHeight;
+  }
+
   // ── chat door ────────────────────────────────────────────────────────
 
   // Shared live-streaming turn driver — used by BOTH the chat door and the
@@ -1186,6 +1236,12 @@
           meta: metaForPayload(finalPayload),
           content: renderResponseContent(finalPayload),
         });
+        // Sole-KB answers carry a "raise a service request?" offer — render the
+        // buttons below the answer (the answer itself already showed above).
+        if (finalPayload.interrupt
+            && finalPayload.interrupt.kind === "service_request_offer") {
+          renderServiceRequestOffer(finalPayload.interrupt);
+        }
         tallyTurn(finalPayload);
         setStatus("Ready.");
         refreshThreadList();

@@ -114,8 +114,12 @@ async def test_list_shows_topk_when_best_is_relevant():
     assert out["count"] == 2
 
 
-async def test_list_no_match_when_best_below_floor():
+async def test_list_no_match_when_best_below_floor(monkeypatch):
     # The best match is below the floor → genuine no-match (not a noisy list).
+    # Pin the floor explicitly so the test is deterministic regardless of the
+    # ambient UC08_CATALOG_COSINE_FLOOR (.env sets it to 0.30 for recall): the
+    # 0.30 candidate must sit BELOW the pinned 0.50 floor.
+    monkeypatch.setenv("UC08_CATALOG_COSINE_FLOOR", "0.50")
     rows = [
         {"catalog_item_id": "CAT_X", "name": "Something", "description": "x",
          "category": "c", "owner_group": "g", "cosine_score": 0.30},
