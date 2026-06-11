@@ -456,7 +456,7 @@ Use-case agents are declared in `registries/v2/agents/uc01_summarization.json`, 
 
 ### Agent lifecycle
 
-Registry loader: `src/oneops/registry/store.py`. Router refusal path: `src/oneops/router/router.py` (emits `lifecycle.refused` span events). Phase log: `ops/pmg-evidence/phase-3-lifecycle.log`. Reference seed scripts for tenant onboarding: `database/_utils/uc03_seed_password_reset_kb.py` and `database/_utils/uc08_seed_mfa_catalog.py`. The per-tenant catalog overlay surface is described in DOC-07 §4.6 of the production-maturity plan and is a P1 roadmap item.
+Registry loader: `src/oneops/registry/store.py`. Router refusal path: `src/oneops/router/router.py` (emits `lifecycle.refused` span events). Phase log: `ops/pmg-evidence/phase-3-lifecycle.log`. Reference seed script for tenant onboarding: `database/_utils/uc03_seed_password_reset_kb.py`. (Catalog items now live in the single source of truth `data/itsm/catalog_item.json` — loaded + validated by `database/catalog_fulfillment/load_data.py` — rather than per-item seed scripts; e.g. the MFA re-enrollment item `CAT_T001_MFA_REENROLL_30` was migrated there.) The per-tenant catalog overlay surface is described in DOC-07 §4.6 of the production-maturity plan and is a P1 roadmap item.
 
 
 ### Performance tracking

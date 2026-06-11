@@ -4027,5 +4027,59 @@
         "required": false
       }
     ]
+  },
+  {
+    "tenant_id": "T001",
+    "catalog_item_id": "CAT_T001_MFA_REENROLL_30",
+    "name": "MFA re-enrollment",
+    "description": "Re-enroll multi-factor authentication on a new or replacement device. Use when the user has a new phone, lost their old device, or needs to reset their MFA token. Covers SMS, authenticator-app (TOTP), and hardware-token re-binding for any user account.",
+    "category": "access",
+    "owner_group": "GRP-IDENTITY",
+    "estimated_total_minutes": 32,
+    "tasks": [
+      {
+        "name": "Verify requester identity",
+        "type": "manual",
+        "task_id": "VERIFY_IDENTITY",
+        "depends_on": [],
+        "owner_group": "GRP-IDENTITY",
+        "approval_required": false,
+        "estimated_minutes": 10
+      },
+      {
+        "name": "Revoke prior MFA token from IdP",
+        "type": "manual",
+        "task_id": "REVOKE_OLD_TOKEN",
+        "depends_on": [
+          "VERIFY_IDENTITY"
+        ],
+        "owner_group": "GRP-IDENTITY",
+        "approval_required": false,
+        "estimated_minutes": 5
+      },
+      {
+        "name": "Send re-enrollment link to user and confirm new device binding",
+        "type": "manual",
+        "task_id": "ENROLL_NEW_DEVICE",
+        "depends_on": [
+          "REVOKE_OLD_TOKEN"
+        ],
+        "owner_group": "GRP-IDENTITY",
+        "approval_required": false,
+        "estimated_minutes": 15
+      },
+      {
+        "name": "Notify user MFA re-enrollment complete",
+        "type": "manual",
+        "task_id": "NOTIFY_USER",
+        "depends_on": [
+          "ENROLL_NEW_DEVICE"
+        ],
+        "owner_group": "GRP-IDENTITY",
+        "approval_required": false,
+        "estimated_minutes": 2
+      }
+    ],
+    "request_fields": []
   }
 ]
