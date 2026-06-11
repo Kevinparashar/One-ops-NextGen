@@ -162,7 +162,9 @@ async def test_primary_tool_id_drives_handler_selection(registry):
     registry.agents.create(agent_with_two); registry.agents.activate(agent_with_two.id, 1)
 
     runner = HandlerStepExecutor(registry=registry, resolver=resolver)
-    result = await runner.run(_step(), _envelope())
+    # A realistic step carries the tool's required entity id (so the
+    # slot-filling gate is a no-op and we test tool SELECTION in isolation).
+    result = await runner.run(_step(ticket_id="INC0001001"), _envelope())
     assert result["status"] == "success"
     assert result["output"] == {"outcome": "from_primary"}
     assert calls == ["primary"]
@@ -182,7 +184,7 @@ async def test_handler_exception_becomes_status_failed(registry):
     _seed(registry, agent, tool)
 
     runner = HandlerStepExecutor(registry=registry, resolver=resolver)
-    result = await runner.run(_step(), _envelope())
+    result = await runner.run(_step(ticket_id="INC0001001"), _envelope())
     assert result["status"] == "failed"
     assert "RuntimeError" in result["error"]
     assert "kaboom" in result["error"]
@@ -201,7 +203,7 @@ async def test_handler_timeout_is_typed_failure(registry):
     _seed(registry, agent, tool)
 
     runner = HandlerStepExecutor(registry=registry, resolver=resolver)
-    result = await runner.run(_step(), _envelope())
+    result = await runner.run(_step(ticket_id="INC0001001"), _envelope())
     assert result["status"] == "failed"
     assert "timed out" in result["error"].lower()
 

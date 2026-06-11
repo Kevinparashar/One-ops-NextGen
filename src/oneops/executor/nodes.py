@@ -1302,7 +1302,13 @@ class ExecutorNodes:
     async def persist(self, state: ExecutorState) -> dict[str, Any]:
         """Append this turn — the user message and the assistant response — to
         the durable conversation log, so the next turn can resolve references
-        against it. A no-op when no session store is wired."""
+        against it. A no-op when no session store is wired.
+
+        Resume-safe: a turn that previously paused (interrupt) already had its
+        user message + clarification recorded by `append_turn_events`; on resume
+        this node re-runs with the ORIGINAL message in state, so the shared
+        helper's user-dedup drops the duplicate and only the final assistant
+        response is appended — after the clarification, never colliding."""
         if self._session_store is None:
             return {}
         tenant_id = state.get("tenant_id", "")
@@ -1310,25 +1316,16 @@ class ExecutorNodes:
         if not tenant_id or not session_id:
             return {}
 
-        message = state.get("message", "") or ""
-        response = state.get("final_response", "") or ""
-        base = len(state.get("conversation_history") or [])
-        now = int(time.time() * 1000)
-
         with _tracer.start_as_current_span(
             "executor.persist",
             attributes={_ONEOPS_TENANT_ID: tenant_id,
                         "oneops.user_id": state.get("user_id", ""),
                         _SESSION_ID: session_id},
         ):
-            if message:
-                await self._session_store.append(tenant_id, session_id, ConversationEvent(
-                    session_id=session_id, turn_role="user", content=message,
-                    turn_index=base, occurred_at_unix_ms=now))
-            if response:
-                await self._session_store.append(tenant_id, session_id, ConversationEvent(
-                    session_id=session_id, turn_role="assistant", content=response,
-                    turn_index=base + 1, occurred_at_unix_ms=now))
+            await append_turn_events(
+                self._session_store, tenant_id, session_id,
+                user_message=state.get("message", "") or "",
+                assistant_message=state.get("final_response", "") or "")
         return {}
 
 
@@ -1376,6 +1373,50 @@ def dispatch_wave(state: ExecutorState) -> list[Send] | str:
         sends.append(Send("run_step", {"_step": s, "_request": request,
                                        "_previous_results": dep_results}))
     return sends
+
+
+async def append_turn_events(
+    session_store: Any,
+    tenant_id: str,
+    session_id: str,
+    *,
+    user_message: str,
+    assistant_message: str,
+) -> None:
+    """Append one (user, assistant) exchange to the durable conversation log,
+    AFTER everything already stored, with user-message dedup.
+
+    Used by both the end-of-turn `persist` node and the interrupt-capture path
+    in the API, so a turn is recorded whether it completes OR pauses to ask —
+    the conversation history is never lost (a clarification exchange is part of
+    the record).
+
+    `turn_index` is the LIVE event count (`len(recent())`), so a write always
+    lands after existing events — robust to interrupt-written events and to a
+    token-trimmed in-state history. Dedup: if the user message already appears
+    in the last two stored events, it is NOT written again — this is what makes
+    resume safe (the resumed turn replays the original message that the
+    interrupt already recorded), so only the final assistant response lands."""
+    if session_store is None or not tenant_id or not session_id:
+        return
+    existing = await session_store.recent(tenant_id, session_id)
+    base = len(existing)
+    now = int(time.time() * 1000)
+    tail = existing[-2:] if existing else []
+    dup_user = bool(user_message) and any(
+        getattr(e, "turn_role", "") == "user"
+        and getattr(e, "content", "") == user_message
+        for e in tail)
+    if user_message and not dup_user:
+        await session_store.append(tenant_id, session_id, ConversationEvent(
+            session_id=session_id, turn_role="user", content=user_message,
+            turn_index=base, occurred_at_unix_ms=now))
+        base += 1
+    if assistant_message:
+        await session_store.append(tenant_id, session_id, ConversationEvent(
+            session_id=session_id, turn_role="assistant",
+            content=assistant_message, turn_index=base,
+            occurred_at_unix_ms=now))
 
 
 # ── Typed Conversational Interrupt Protocol ──────────────────────────────
@@ -1460,6 +1501,7 @@ __all__ = [
     "ExecutorNodes",
     "route_branch",
     "dispatch_wave",
+    "append_turn_events",
     "interrupt_for_selection",
     "interrupt_for_input",
     "interrupt_for_confirmation",
