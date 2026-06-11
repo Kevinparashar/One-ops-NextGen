@@ -297,16 +297,43 @@ async def _execute_one_task(
             )
             return "blocked"
 
-        # Tasks without an adapter binding → human work, marked done.
+        # No adapter binding.
+        #   • MANUAL task → genuine human work the owner_group fulfils; mark
+        #     done (the demo stands in for the technician queue).
+        #   • AUTOMATED task with no tool_id → catalog misconfiguration: there
+        #     is nothing to dispatch, so completing it would silently provision
+        #     nothing. Fail loud (§2.7) — never silent-success. The load-time
+        #     validator (catalog_validation) makes this unreachable for seeded
+        #     data; this is runtime defence-in-depth for any other write path.
         if not tool_id:
+            if task_type == TaskType.MANUAL.value:
+                await _db.transition_task_state(
+                    tenant_id=tenant_id, task_id=task_id,
+                    from_state="in_progress", to_state="done",
+                    version=version,
+                    output_payload={"resolved": "manual_no_tool"},
+                    conn=conn,
+                )
+                return "done"
             await _db.transition_task_state(
                 tenant_id=tenant_id, task_id=task_id,
-                from_state="in_progress", to_state="done",
+                from_state="in_progress", to_state="failed",
                 version=version,
-                output_payload={"resolved": "no_tool_noop"},
+                error_message=(
+                    f"task '{task['task_name']}' is type=automated but has no "
+                    f"tool_id — catalog item misconfigured; refusing to "
+                    f"silently no-op"
+                ),
+                error_code="catalog_misconfigured",
+                retry_count=int(task["retry_count"]),
                 conn=conn,
             )
-            return "done"
+            _log.error(
+                "uc08.executor.automated_task_missing_tool_id",
+                tenant_id=tenant_id, ritm_id=ritm_id, task_id=task_id,
+                task_name=task.get("task_name"),
+            )
+            return "failed"
 
         if task_type == TaskType.MANUAL.value:
             await _db.transition_task_state(

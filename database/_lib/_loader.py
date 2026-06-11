@@ -81,6 +81,7 @@ async def load_table(
     data_dir: Path = DATA_DIR,
     conflict_cols: list[str] | None = None,
     update_cols: list[str] | None = None,
+    validate: Callable[[list[dict[str, Any]]], None] | None = None,
 ) -> int:
     """Insert every row of data_dir/<table>.json into itsm.<table>.
 
@@ -92,8 +93,15 @@ async def load_table(
     PK) AND `update_cols` (the non-key columns to refresh) to switch to
     `ON CONFLICT (conflict_cols) DO UPDATE SET col = EXCLUDED.col ...`. This keeps
     existing rows' identity (FK-safe — no delete) while refreshing their data.
+
+    Validation (opt-in): pass `validate` to run a service-specific invariant
+    check on the parsed rows BEFORE any row is written. It must raise on a
+    violation — the caller's transaction then rolls back, so a malformed file
+    fails the load loudly instead of seeding bad data (rule §2.7).
     """
     rows = json.loads((data_dir / f"{table}.json").read_text())
+    if validate is not None:
+        validate(rows)
     cols = [c for c, _ in spec]
     placeholders = ", ".join(f"${i + 1}" for i in range(len(cols)))
     if conflict_cols and update_cols:
