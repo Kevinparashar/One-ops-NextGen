@@ -5,8 +5,8 @@
   "venv": ".venv",
   "pythonVersion": "3.12",
 
-  "// extraPaths": "src/ layout — packages live under src/ (import oneops...). Without this, first-party imports don't resolve.",
-  "extraPaths": ["src"],
+  "// extraPaths": "src/ = first-party layout (import oneops...). .venv site-packages = forces installed deps (asyncpg/langgraph/structlog/…) to resolve for EVERY V1.1 file even when the editor's selected interpreter is a sibling project's venv (the multi-project parent-folder case) — this is what stops the phantom 'could not be resolved' flood. database/ = resolves the per-service loader helpers (_lib._loader / _lib._worker_base) that load_data.py + the loader tests import via a runtime sys.path insert.",
+  "extraPaths": ["src", ".venv/lib/python3.12/site-packages", "database"],
 
   "// typeCheckingMode": "off — the CI type checker is MYPY (pyproject + ci.sh), not Pyright. Pylance should resolve imports and catch syntax/undefined-name, NOT impose its own (stricter, divergent) type layer that flags 100+ 'errors' the mypy gate passes. This keeps the editor consistent with CI. Run mypy for type checking.",
   "typeCheckingMode": "off",

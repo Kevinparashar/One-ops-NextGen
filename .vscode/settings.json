@@ -3,10 +3,11 @@
   "sonarlint.analysisExcludesStandalone": "**/.venv/**, **/__pycache__/**, **/*.pyc, **/*_pb2.py, **/*_pb2_grpc.py, proto/**, contracts/**, data/**, docs/**, langgraph_docs/**, registries/**, ops/**, **/node_modules/**, src/oneops/api/static/**",
 
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
-  "// extraPaths": "src/ = first-party layout. The .venv site-packages line forces Pylance to resolve installed deps (structlog/opentelemetry/…) for EVERY file even if the selected interpreter is wrong — so no 'could not be resolved' anywhere. (python3.12 matches this project's venv.)",
+  "// extraPaths": "src/ = first-party layout. The .venv site-packages line forces Pylance to resolve installed deps (structlog/opentelemetry/…) for EVERY file even if the selected interpreter is wrong — so no 'could not be resolved' anywhere. database/ resolves the per-service loader helpers (_lib._loader / _lib._worker_base) imported via a runtime sys.path insert. (python3.12 matches this project's venv.)",
   "python.analysis.extraPaths": [
     "${workspaceFolder}/src",
-    "${workspaceFolder}/.venv/lib/python3.12/site-packages"
+    "${workspaceFolder}/.venv/lib/python3.12/site-packages",
+    "${workspaceFolder}/database"
   ],
   "// diagnosticMode": "Analyse the WHOLE project (not just open files), so all issues show in the Problems panel at once — no clicking file-by-file.",
   "python.analysis.diagnosticMode": "workspace",
