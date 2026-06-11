@@ -270,3 +270,37 @@ class IntegrationAdapter(Protocol):
         po_id: str,
         idempotency_key: str,
     ) -> AdapterResponse[GenericTaskResult]: ...
+
+
+# ── Canonical tool surface — single source of truth ─────────────────────────
+#
+# The forward integrations every fulfilment task may bind to. This IS the
+# integration surface (a domain enum), not a business-rule map — a catalog
+# task's `tool_id` is valid iff it names one of these (or the approval
+# pseudo-tool). Kept in lock-step with the Protocol methods above by
+# `test_tool_surface_matches_protocol` so a renamed/added method can never
+# silently drift from what the validator accepts.
+FORWARD_TOOL_IDS: frozenset[str] = frozenset({
+    "create_directory_account",
+    "provision_email_mailbox",
+    "grant_vpn_access",
+    "add_to_groups",
+    "assign_software_license",
+    "order_hardware_asset",
+    "notify_milestone",
+})
+
+COMPENSATION_TOOL_IDS: frozenset[str] = frozenset({
+    "disable_directory_account",
+    "deprovision_email_mailbox",
+    "revoke_vpn_access",
+    "release_software_license",
+    "cancel_hardware_order",
+})
+
+# Special non-integration tool: the executor parks the task for human
+# approval rather than calling an external system.
+APPROVAL_TOOL_ID = "request_human_approval"
+
+# Every tool_id a catalog task is allowed to carry.
+VALID_TASK_TOOL_IDS: frozenset[str] = FORWARD_TOOL_IDS | {APPROVAL_TOOL_ID}

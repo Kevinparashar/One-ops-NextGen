@@ -31,6 +31,10 @@ CATEGORY = "access"
 OWNER = "GRP-IDENTITY"
 TOTAL_MINUTES = 32
 
+# All steps are MANUAL: the IdP team (GRP-IDENTITY) performs them. There is
+# no MFA/IdP integration in the adapter, so marking these `automated` without
+# a tool_id would silently no-op at runtime (the very defect the catalog
+# completeness guardrail forbids). They are honest owner-group work.
 TASKS = [
     {
         "task_id": "VERIFY_IDENTITY",
@@ -44,7 +48,7 @@ TASKS = [
     {
         "task_id": "REVOKE_OLD_TOKEN",
         "name": "Revoke prior MFA token from IdP",
-        "type": "automated",
+        "type": "manual",
         "depends_on": ["VERIFY_IDENTITY"],
         "owner_group": OWNER,
         "estimated_minutes": 5,
@@ -53,7 +57,7 @@ TASKS = [
     {
         "task_id": "ENROLL_NEW_DEVICE",
         "name": "Send re-enrollment link and confirm new device binding",
-        "type": "automated",
+        "type": "manual",
         "depends_on": ["REVOKE_OLD_TOKEN"],
         "owner_group": OWNER,
         "estimated_minutes": 15,
@@ -62,7 +66,7 @@ TASKS = [
     {
         "task_id": "NOTIFY_USER",
         "name": "Notify user re-enrollment complete",
-        "type": "automated",
+        "type": "manual",
         "depends_on": ["ENROLL_NEW_DEVICE"],
         "owner_group": OWNER,
         "estimated_minutes": 2,

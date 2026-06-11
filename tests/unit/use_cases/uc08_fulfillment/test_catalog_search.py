@@ -97,9 +97,9 @@ async def test_onboarding_query_returns_onboarding_top1(conn, gateway):
         gateway=gateway, conn=conn,
     )
     assert len(r.matches) >= 1
-    # The requestable onboarding item is the FORMED one (CAT_HR_ONBOARD
-    # "New Employee Onboarding"); the unformed CAT_ONBOARDING duplicate is
-    # hidden by the has-form filter (require_form defaults True). Assert on
+    # The split-brain was consolidated (2026-06-11): CAT_ONBOARDING is now the
+    # single canonical onboarding item, carrying BOTH the intake form and the
+    # tool_id'd workflow, so it is requestable and tops the result. Assert on
     # the human name so it's robust to which onboarding id wins.
     assert "ONBOARD" in r.matches[0].name.upper()
 
@@ -107,10 +107,16 @@ async def test_onboarding_query_returns_onboarding_top1(conn, gateway):
 @pytest.mark.asyncio
 async def test_require_form_filter_hides_unformed_duplicates(conn, gateway):
     """The has-form rule (2026-06-09): find returns only requestable items
-    (non-empty request_fields). The unformed legacy duplicate ids
-    (CAT_LAPTOP_STD, CAT_ONBOARDING, CAT_T001_VPN_ACCESS_29) must NEVER
-    surface; their formed twins may."""
-    unformed = {"CAT_LAPTOP_STD", "CAT_ONBOARDING", "CAT_T001_VPN_ACCESS_29"}
+    (non-empty request_fields) — any form-less item must NEVER surface.
+
+    The unformed set is DERIVED from the live catalog rather than hand-listed,
+    so the test stays correct as items gain or lose forms (e.g. CAT_ONBOARDING
+    became formed in the 2026-06-11 split-brain consolidation)."""
+    rows = await conn.fetch(
+        "SELECT catalog_item_id FROM itsm.catalog_item WHERE tenant_id=$1 "
+        "AND COALESCE(jsonb_array_length(request_fields), 0) = 0", TEST_TENANT)
+    unformed = {r["catalog_item_id"] for r in rows}
+    assert unformed, "expected at least one form-less item to prove the filter"
     for q in ("I need a standard laptop", "onboard a new employee",
               "I need VPN access"):
         r = await find_closest_catalog_items(

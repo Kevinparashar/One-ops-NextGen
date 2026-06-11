@@ -16,6 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from _lib._loader import connect, count, load_table  # noqa: E402
 
+from oneops.use_cases.uc08_fulfillment.catalog_validation import (  # noqa: E402
+    validate_catalog_items,
+)
+
 SPEC: list[tuple[str, str]] = [
     ("tenant_id", "s"), ("catalog_item_id", "s"), ("name", "s"),
     ("description", "s"), ("category", "s"), ("owner_group", "s"),
@@ -33,7 +37,8 @@ async def main() -> None:
     try:
         async with conn.transaction():
             n = await load_table(conn, "catalog_item", SPEC,
-                                  conflict_cols=CONFLICT_COLS, update_cols=UPDATE_COLS)
+                                  conflict_cols=CONFLICT_COLS, update_cols=UPDATE_COLS,
+                                  validate=validate_catalog_items)
             print(f"  catalog_item {n:4d} rows upserted")
         print(f"  total catalog_item {await count(conn, 'catalog_item'):4d}")
     finally:

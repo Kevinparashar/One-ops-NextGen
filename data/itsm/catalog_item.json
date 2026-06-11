@@ -19,7 +19,7 @@
       {
         "task_id": "T2",
         "name": "Imaging: apply standard image",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-ASSET",
         "depends_on": [
           "T1"
@@ -29,7 +29,7 @@
       {
         "task_id": "T3",
         "name": "Asset register: assign tag and serial",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-ASSET",
         "depends_on": [
           "T2"
@@ -61,7 +61,7 @@
       {
         "task_id": "T1",
         "name": "Validate user is active and authorized",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [],
         "estimated_minutes": 5
@@ -69,7 +69,7 @@
       {
         "task_id": "T2",
         "name": "Assign license from pool",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -79,7 +79,7 @@
       {
         "task_id": "T3",
         "name": "Send activation email",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -109,7 +109,7 @@
       {
         "task_id": "T2",
         "name": "Apply quota change in Exchange",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-APPS",
         "depends_on": [
           "T1"
@@ -119,7 +119,7 @@
       {
         "task_id": "T3",
         "name": "Notify requester",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-APPS",
         "depends_on": [
           "T2"
@@ -149,7 +149,7 @@
       {
         "task_id": "T2",
         "name": "Add user to HR-Reports group",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-APPS",
         "depends_on": [
           "T1"
@@ -159,7 +159,7 @@
       {
         "task_id": "T3",
         "name": "Notify requester",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-APPS",
         "depends_on": [
           "T2"
@@ -195,7 +195,7 @@
     "description": "Full onboarding bundle: AD account, email, laptop, VPN, GitHub, licenses, badge, desk, welcome kit.",
     "category": "onboarding",
     "owner_group": "GRP-SERVICE-DESK",
-    "estimated_total_minutes": 2880,
+    "estimated_total_minutes": 3405,
     "tasks": [
       {
         "task_id": "T1",
@@ -203,91 +203,174 @@
         "type": "automated",
         "owner_group": "GRP-SECOPS",
         "depends_on": [],
-        "estimated_minutes": 5
+        "tool_id": "create_directory_account",
+        "input_template": {
+          "user_full_name": "{employee_name}",
+          "email_suggested": "{employee_email}"
+        },
+        "sla_minutes": 30
       },
       {
         "task_id": "T2",
-        "name": "Create email and calendar",
+        "name": "Order laptop",
         "type": "automated",
-        "owner_group": "GRP-APPS",
+        "owner_group": "GRP-PROCUREMENT",
         "depends_on": [],
-        "estimated_minutes": 10
+        "tool_id": "order_hardware_asset",
+        "input_template": {
+          "asset_type": "laptop",
+          "model_preferred": "{laptop_model}",
+          "deliver_to": "{office_location}"
+        },
+        "sla_minutes": 120
       },
       {
         "task_id": "T3",
-        "name": "Order laptop",
+        "name": "Schedule HR induction",
         "type": "manual",
-        "owner_group": "GRP-ASSET",
+        "owner_group": "GRP-HR",
         "depends_on": [],
-        "estimated_minutes": 720
+        "sla_minutes": 240
       },
       {
         "task_id": "T4",
-        "name": "Provision VPN access",
+        "name": "Provision mailbox",
         "type": "automated",
-        "owner_group": "GRP-NETOPS",
+        "owner_group": "GRP-EXCHANGE",
         "depends_on": [
           "T1"
         ],
-        "estimated_minutes": 5
+        "tool_id": "provision_email_mailbox",
+        "input_template": {
+          "user_full_name": "{employee_name}",
+          "primary_smtp": "{employee_email}"
+        },
+        "sla_minutes": 60
       },
       {
         "task_id": "T5",
-        "name": "Add to GitHub org",
+        "name": "Grant VPN access",
         "type": "automated",
-        "owner_group": "GRP-PLATFORM",
+        "owner_group": "GRP-NETSEC",
         "depends_on": [
           "T1"
         ],
-        "estimated_minutes": 5
+        "tool_id": "grant_vpn_access",
+        "input_template": {
+          "user_id": "{requested_for}"
+        },
+        "sla_minutes": 30
       },
       {
         "task_id": "T6",
-        "name": "License: IDE + Jira",
+        "name": "Add to AD groups",
         "type": "automated",
-        "owner_group": "GRP-PLATFORM",
+        "owner_group": "GRP-SECOPS",
         "depends_on": [
           "T1"
         ],
-        "estimated_minutes": 5
+        "tool_id": "add_to_groups",
+        "input_template": {
+          "user_id": "{requested_for}",
+          "groups": [
+            "all-staff",
+            "{department}"
+          ]
+        },
+        "sla_minutes": 30
       },
       {
         "task_id": "T7",
-        "name": "Create badge request",
+        "name": "Manager welcome call",
         "type": "manual",
-        "owner_group": "GRP-SECOPS",
+        "owner_group": "GRP-MANAGER",
         "depends_on": [
           "T1",
           "T2",
           "T3"
         ],
-        "estimated_minutes": 240
+        "sla_minutes": 1440
       },
       {
         "task_id": "T8",
-        "name": "Assign desk and workspace",
+        "name": "Issue access badge",
         "type": "manual",
-        "owner_group": "GRP-ASSET",
+        "owner_group": "GRP-FACILITIES",
         "depends_on": [
           "T1",
           "T2",
           "T3"
         ],
-        "estimated_minutes": 60
+        "sla_minutes": 1440
       },
       {
         "task_id": "T9",
-        "name": "Send welcome kit email",
+        "name": "Send onboarding-complete email",
         "type": "automated",
-        "owner_group": "GRP-SERVICE-DESK",
+        "owner_group": "GRP-HR",
         "depends_on": [
           "T7",
           "T8"
         ],
-        "estimated_minutes": 5
+        "tool_id": "notify_milestone",
+        "input_template": {
+          "recipient_user_id": "{requested_for}",
+          "message": "Onboarding complete for {employee_name}",
+          "level": "info"
+        },
+        "sla_minutes": 15
       }
     ],
-    "request_fields": []
+    "request_fields": [
+      {
+        "field_name": "employee_name",
+        "label": "New employee full name",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "employee_email",
+        "label": "Work email address",
+        "type": "email",
+        "required": true
+      },
+      {
+        "field_name": "start_date",
+        "label": "Start date",
+        "type": "date",
+        "required": true
+      },
+      {
+        "field_name": "department",
+        "label": "Department",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "role",
+        "label": "Job title / role",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "manager_email",
+        "label": "Manager email",
+        "type": "email",
+        "required": true
+      },
+      {
+        "field_name": "laptop_model",
+        "label": "Preferred laptop model",
+        "type": "text",
+        "required": true
+      },
+      {
+        "field_name": "office_location",
+        "label": "Office location",
+        "type": "text",
+        "required": true
+      }
+    ]
   },
   {
     "tenant_id": "T002",
@@ -309,7 +392,7 @@
       {
         "task_id": "T2",
         "name": "Imaging: apply GlobalCorp standard image",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-T002-ASSET",
         "depends_on": [
           "T1"
@@ -319,7 +402,7 @@
       {
         "task_id": "T3",
         "name": "Asset register: assign tag and serial",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-T002-ASSET",
         "depends_on": [
           "T2"
@@ -359,7 +442,7 @@
       {
         "task_id": "T2",
         "name": "Provision VPN credentials in firewall",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-T002-NETOPS",
         "depends_on": [
           "T1"
@@ -369,7 +452,7 @@
       {
         "task_id": "T3",
         "name": "Send credentials to user",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-T002-NETOPS",
         "depends_on": [
           "T2"
@@ -399,7 +482,7 @@
       {
         "task_id": "T2",
         "name": "Provision nodes via GCP Terraform",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-T003-PLATFORM",
         "depends_on": [
           "T1"
@@ -409,7 +492,7 @@
       {
         "task_id": "T3",
         "name": "Join nodes to cluster and validate",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-T003-PLATFORM",
         "depends_on": [
           "T2"
@@ -419,7 +502,7 @@
       {
         "task_id": "T4",
         "name": "Update CMDB with new node CIs",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-T003-PLATFORM",
         "depends_on": [
           "T3"
@@ -889,7 +972,7 @@
       {
         "task_id": "T2",
         "name": "Imaging: apply developer image",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -899,7 +982,7 @@
       {
         "task_id": "T3",
         "name": "Asset register: tag and assign",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -963,7 +1046,7 @@
       {
         "task_id": "T2",
         "name": "Imaging: apply standard image",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -973,7 +1056,7 @@
       {
         "task_id": "T3",
         "name": "Asset register: tag and assign",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -1027,7 +1110,7 @@
       {
         "task_id": "T2",
         "name": "Setup: assemble and image",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1037,7 +1120,7 @@
       {
         "task_id": "T3",
         "name": "Delivery: install at desk",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -1086,7 +1169,7 @@
       {
         "task_id": "T2",
         "name": "Delivery: ship to desk",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1147,7 +1230,7 @@
       {
         "task_id": "T2",
         "name": "Schedule: hardware install",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1207,7 +1290,7 @@
       {
         "task_id": "T2",
         "name": "Schedule: hardware install",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1267,7 +1350,7 @@
       {
         "task_id": "T2",
         "name": "Delivery: ship to desk",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1320,7 +1403,7 @@
       {
         "task_id": "T2",
         "name": "Delivery: ship to desk",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1373,7 +1456,7 @@
       {
         "task_id": "T2",
         "name": "Delivery: ship to desk",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1416,7 +1499,7 @@
       {
         "task_id": "T2",
         "name": "Delivery: ship to desk",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1465,7 +1548,7 @@
       {
         "task_id": "T2",
         "name": "Assign license",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1475,7 +1558,7 @@
       {
         "task_id": "T3",
         "name": "Notify user",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -1528,7 +1611,7 @@
       {
         "task_id": "T2",
         "name": "Assign license",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1538,7 +1621,7 @@
       {
         "task_id": "T3",
         "name": "Notify user",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -1592,7 +1675,7 @@
       {
         "task_id": "T2",
         "name": "Assign license",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1602,7 +1685,7 @@
       {
         "task_id": "T3",
         "name": "Notify user",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -1657,7 +1740,7 @@
       {
         "task_id": "T2",
         "name": "Assign to project",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1667,7 +1750,7 @@
       {
         "task_id": "T3",
         "name": "Notify user",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -1716,7 +1799,7 @@
       {
         "task_id": "T2",
         "name": "Assign license",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1726,7 +1809,7 @@
       {
         "task_id": "T3",
         "name": "Notify user",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -1779,7 +1862,7 @@
       {
         "task_id": "T2",
         "name": "Verify install",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1828,7 +1911,7 @@
       {
         "task_id": "T2",
         "name": "Assign license",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1882,7 +1965,7 @@
       {
         "task_id": "T2",
         "name": "Approve / procure license",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1892,7 +1975,7 @@
       {
         "task_id": "T3",
         "name": "Install",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -1947,7 +2030,7 @@
       {
         "task_id": "T2",
         "name": "Assign default groups",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -1957,7 +2040,7 @@
       {
         "task_id": "T3",
         "name": "Send credentials",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -2018,7 +2101,7 @@
       {
         "task_id": "T2",
         "name": "Provision VPN profile",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2028,7 +2111,7 @@
       {
         "task_id": "T3",
         "name": "Send activation email",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -2098,7 +2181,7 @@
       {
         "task_id": "T2",
         "name": "Grant DB role",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2108,7 +2191,7 @@
       {
         "task_id": "T3",
         "name": "Notify user",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -2173,7 +2256,7 @@
       {
         "task_id": "T2",
         "name": "Add to access group",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2232,7 +2315,7 @@
       {
         "task_id": "T2",
         "name": "Provision app role",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2293,7 +2376,7 @@
       {
         "task_id": "T2",
         "name": "Time-bound grant",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2303,7 +2386,7 @@
       {
         "task_id": "T3",
         "name": "Audit log entry",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -2369,7 +2452,7 @@
       {
         "task_id": "T2",
         "name": "Add to org / team",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2429,7 +2512,7 @@
       {
         "task_id": "T2",
         "name": "Apply budget guardrails",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2439,7 +2522,7 @@
       {
         "task_id": "T3",
         "name": "Send access details",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -2504,7 +2587,7 @@
       {
         "task_id": "T2",
         "name": "Apply policies",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2514,7 +2597,7 @@
       {
         "task_id": "T3",
         "name": "Notify requester",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -2573,7 +2656,7 @@
       {
         "task_id": "T2",
         "name": "Add members",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2628,7 +2711,7 @@
       {
         "task_id": "T2",
         "name": "Apply quota change",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2638,7 +2721,7 @@
       {
         "task_id": "T3",
         "name": "Notify requester",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -2687,7 +2770,7 @@
       {
         "task_id": "T2",
         "name": "Assign license",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2741,7 +2824,7 @@
       {
         "task_id": "T2",
         "name": "Grant network access",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2795,7 +2878,7 @@
       {
         "task_id": "T2",
         "name": "Apply rule / IP",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2850,7 +2933,7 @@
       {
         "task_id": "T2",
         "name": "Procure device + plan",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2860,7 +2943,7 @@
       {
         "task_id": "T3",
         "name": "Activate and deliver",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -2913,7 +2996,7 @@
       {
         "task_id": "T2",
         "name": "Procure SIM / plan",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -2967,7 +3050,7 @@
       {
         "task_id": "T2",
         "name": "Reset / re-enroll MFA",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3021,7 +3104,7 @@
       {
         "task_id": "T2",
         "name": "Reset password",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3070,7 +3153,7 @@
       {
         "task_id": "T2",
         "name": "Issue certificate",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3130,7 +3213,7 @@
       {
         "task_id": "T2",
         "name": "Assign to support",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3179,7 +3262,7 @@
       {
         "task_id": "T2",
         "name": "Schedule and implement",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3260,77 +3343,6 @@
   },
   {
     "tenant_id": "T001",
-    "catalog_item_id": "CAT_HR_ONBOARD",
-    "name": "New Employee Onboarding",
-    "description": "Onboard a new employee \u2014 provision account, email, laptop, access, and badge. The full new-joiner setup.",
-    "category": "onboarding",
-    "owner_group": "GRP-HR",
-    "estimated_total_minutes": 2880,
-    "tasks": [
-      {
-        "task_id": "T1",
-        "name": "Create accounts",
-        "type": "manual",
-        "owner_group": "GRP-SERVICE-DESK",
-        "depends_on": [],
-        "estimated_minutes": 30
-      },
-      {
-        "task_id": "T2",
-        "name": "Provision equipment",
-        "type": "automated",
-        "owner_group": "GRP-SERVICE-DESK",
-        "depends_on": [
-          "T1"
-        ],
-        "estimated_minutes": 30
-      },
-      {
-        "task_id": "T3",
-        "name": "Schedule orientation",
-        "type": "automated",
-        "owner_group": "GRP-SERVICE-DESK",
-        "depends_on": [
-          "T2"
-        ],
-        "estimated_minutes": 30
-      }
-    ],
-    "request_fields": [
-      {
-        "field_name": "employee_name",
-        "label": "New employee name",
-        "type": "text",
-        "required": true
-      },
-      {
-        "field_name": "start_date",
-        "label": "Start date",
-        "type": "date",
-        "required": true
-      },
-      {
-        "field_name": "department",
-        "label": "Department",
-        "type": "text",
-        "required": true
-      },
-      {
-        "field_name": "manager_email",
-        "label": "Manager email",
-        "type": "email",
-        "required": true
-      },
-      {
-        "field_name": "role",
-        "label": "Job title / role",
-        "type": "text",
-        "required": true
-      }
-    ]
-  },
-  {
-    "tenant_id": "T001",
     "catalog_item_id": "CAT_HR_OFFBOARD",
     "name": "Employee Offboarding",
     "description": "Offboard a departing employee \u2014 revoke access, recover assets, disable accounts. The full leaver process.",
@@ -3349,7 +3361,7 @@
       {
         "task_id": "T2",
         "name": "Revoke access",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3359,7 +3371,7 @@
       {
         "task_id": "T3",
         "name": "Recover assets",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T2"
@@ -3408,7 +3420,7 @@
       {
         "task_id": "T2",
         "name": "Open requisition",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3463,7 +3475,7 @@
       {
         "task_id": "T2",
         "name": "Update records and access",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3512,7 +3524,7 @@
       {
         "task_id": "T2",
         "name": "Update leave balance",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3573,7 +3585,7 @@
       {
         "task_id": "T2",
         "name": "Print and program badge",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3627,7 +3639,7 @@
       {
         "task_id": "T2",
         "name": "Sign and issue",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3676,7 +3688,7 @@
       {
         "task_id": "T2",
         "name": "Enroll / book",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3725,7 +3737,7 @@
       {
         "task_id": "T2",
         "name": "Finance review and payout",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3785,7 +3797,7 @@
       {
         "task_id": "T2",
         "name": "Finance review and payout",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3840,7 +3852,7 @@
       {
         "task_id": "T2",
         "name": "Raise PO",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3895,7 +3907,7 @@
       {
         "task_id": "T2",
         "name": "Notify requester",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3938,7 +3950,7 @@
       {
         "task_id": "T2",
         "name": "Confirm booking",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
@@ -3987,7 +3999,7 @@
       {
         "task_id": "T2",
         "name": "Assign / issue permit",
-        "type": "automated",
+        "type": "manual",
         "owner_group": "GRP-SERVICE-DESK",
         "depends_on": [
           "T1"
