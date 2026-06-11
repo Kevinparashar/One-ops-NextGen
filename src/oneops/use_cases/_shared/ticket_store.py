@@ -90,7 +90,7 @@ def _recent_candidate(
 ) -> dict[str, Any]:
     """Normalise a raw record into the compact candidate the resolver consumes:
     id + service + short title + status + the raw recency value (for sorting)."""
-    table, pk_col = _SERVICE_TABLE_MAP[service_id]
+    _, pk_col = _SERVICE_TABLE_MAP[service_id]
     return {
         "ticket_id": row.get(pk_col) or "",
         "service_id": service_id,
