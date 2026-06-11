@@ -110,10 +110,17 @@ def should_rerank(top1_cosine: float) -> tuple[bool, str]:
 
     Returns (should_run, skip_reason). When `should_run=False`, the caller
     uses the embedding-only verdict (auto-pick or reject) directly.
+
+    Floor/ceiling are re-read from the env per-call: the module-level
+    RERANK_FLOOR / RERANK_CEILING are import-time defaults read BEFORE the app
+    loads .env, so a per-call read is what makes UC08_RERANK_* changes take
+    effect (parity with uc03's per-call gate).
     """
-    if top1_cosine >= RERANK_CEILING:
+    floor = float(os.environ.get("UC08_RERANK_FLOOR", str(RERANK_FLOOR)))
+    ceiling = float(os.environ.get("UC08_RERANK_CEILING", str(RERANK_CEILING)))
+    if top1_cosine >= ceiling:
         return False, "above_ceiling_auto_pick"
-    if top1_cosine < RERANK_FLOOR:
+    if top1_cosine < floor:
         return False, "below_floor_no_match"
     return True, ""
 

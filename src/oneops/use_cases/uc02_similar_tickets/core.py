@@ -83,6 +83,27 @@ _DIAG_THRESHOLD = float(os.getenv("UC02_DIAG_CONFIRM_THRESHOLD", "0.70"))
 _RECENCY_LAMBDA = float(os.getenv("UC02_RECENCY_LAMBDA", "0.10"))
 _LIMITED_CTX_CHARS = int(os.getenv("UC02_LIMITED_CTX_CHARS", "40"))
 
+# Embedding model/dims for the SAME-BY-TEXT path. The query text is embedded
+# at request time and matched against the stored `symptom_anchor` vectors, so
+# it MUST use the identical model + dimensions the embedding worker used to
+# build `ai.embeddings_<service>` (see database/_lib/_worker_base.py).
+_EMBED_MODEL = os.getenv("UC02_EMBED_MODEL", "text-embedding-3-large")
+_EMBED_DIM = int(os.getenv("UC02_EMBED_DIM", "1536"))
+
+
+async def _embed_query_text(gateway: Any, text: str, tenant_id: str) -> list[float]:
+    """Embed a free-text symptom description into the symptom_anchor space.
+
+    Single-egress (§2.5): `gateway` MUST be an `oneops.llm.gateway.LlmGateway`.
+    A malformed/empty response surfaces as RuntimeError (no silent failure)."""
+    vecs = await gateway.embed(
+        [text], model=_EMBED_MODEL, tenant_id=tenant_id, dimensions=_EMBED_DIM)
+    if not vecs or len(vecs[0]) != _EMBED_DIM:
+        raise RuntimeError(
+            f"embedding gateway returned malformed response for UC-2 text "
+            f"query (got {len(vecs)} vectors, expected dim {_EMBED_DIM})")
+    return vecs[0]
+
 # pgvector HNSW filter hardening lives in `oneops.db.pgvector_hnsw` — shared
 # across UC-2, UC-5, and any future filtered-ANN UC. Configured via
 # ONEOPS_HNSW_* env vars; see that module's docstring.
@@ -236,7 +257,7 @@ async def find_similar(
     *,
     tenant_id: str,
     service_id: ServiceId,
-    ticket_id: str,
+    ticket_id: str = "",
     user_id: str,
     role: str,
     max_results: int = 5,
@@ -254,6 +275,12 @@ async def find_similar(
     # are silenced (see `discriminators.generate_discriminators`).
     discriminator_gateway: Any = None,
     discriminator_model: str | None = None,
+    # Same-by-TEXT path (2026-06-12). When `query_text` is set, the source
+    # anchor is the EMBEDDED query (no ticket required) instead of a stored
+    # `symptom_anchor` row; `ticket_id` is ignored and `embedding_gateway`
+    # MUST be wired. The id-based path (query_text falsy) is unchanged.
+    query_text: str | None = None,
+    embedding_gateway: Any = None,
 ) -> SimilarTicketsResponse:
     """Return up to `max_results` similar tickets for `(tenant_id, ticket_id)`.
 
@@ -272,11 +299,17 @@ async def find_similar(
     """
     now = now or datetime.now(UTC)
     cols = _cols_for(service_id)
+    text_query = (query_text or "").strip()
+    text_mode = bool(text_query)
+    # The id used in user-facing messages / the response header — the ticket id
+    # on the id path, a friendly label on the text path.
+    msg_ref = "your description" if text_mode else ticket_id
 
     span = _tracer.start_as_current_span("uc02.core.find_similar", attributes={
         "oneops.tenant_id": tenant_id,
         "uc02.service_id": service_id,
         "uc02.source_ticket_id": ticket_id,
+        "uc02.mode": "text" if text_mode else "ticket",
         "uc02.k": max_results,
     })
     with span as s:
@@ -285,20 +318,39 @@ async def find_similar(
             # Shared pgvector HNSW filter-hardening — see oneops.db.pgvector_hnsw.
             await _apply_hnsw_hardening(conn)
 
-            # Stages 0-1b — existence (404 vs 503) + source anchor/diagnosis.
-            anchor_vec, anchor_text, diag_vec = await _load_source_anchor(
-                conn, cols, tenant_id, ticket_id,
-                diagnosis_confirm=diagnosis_confirm)
-            limited_ctx = len(anchor_text.strip()) < _LIMITED_CTX_CHARS
-
-            # Stages 2-3 — source row + scope/RBAC predicates + ANN+JOIN SQL.
-            sql_main, params, where, tf_boundary_col, src = \
-                await _build_candidate_query(
-                    conn, cols, tenant_id, ticket_id, anchor_vec,
+            if text_mode:
+                # Same-by-text: the source anchor is the EMBEDDED query. There is
+                # no source ticket, so `src` carries only a title (for the
+                # discriminator's source context) and yields zero metadata signal
+                # in re-rank; diagnosis-confirm is inapplicable (diag_vec=None).
+                if embedding_gateway is None:
+                    raise RuntimeError(
+                        "query_text provided but no embedding_gateway wired")
+                anchor_vec = await _embed_query_text(
+                    embedding_gateway, text_query, tenant_id)
+                anchor_text, diag_vec = text_query, None
+                src = {"title": text_query[:200]}
+                limited_ctx = len(anchor_text) < _LIMITED_CTX_CHARS
+                sql_main, params, where, tf_boundary_col = _assemble_candidate_sql(
+                    cols, tenant_id, anchor_vec, src={}, exclude_entity_id=None,
                     max_results=max_results, time_filter=time_filter,
-                    same_category_only=same_category_only,
-                    same_service_only=same_service_only,
+                    same_category_only=False, same_service_only=False,
                     prefer_status=prefer_status, role=role, user_id=user_id)
+            else:
+                # Stages 0-1b — existence (404 vs 503) + source anchor/diagnosis.
+                anchor_vec, anchor_text, diag_vec = await _load_source_anchor(
+                    conn, cols, tenant_id, ticket_id,
+                    diagnosis_confirm=diagnosis_confirm)
+                limited_ctx = len(anchor_text.strip()) < _LIMITED_CTX_CHARS
+
+                # Stages 2-3 — source row + scope/RBAC predicates + ANN+JOIN SQL.
+                sql_main, params, where, tf_boundary_col, src = \
+                    await _build_candidate_query(
+                        conn, cols, tenant_id, ticket_id, anchor_vec,
+                        max_results=max_results, time_filter=time_filter,
+                        same_category_only=same_category_only,
+                        same_service_only=same_service_only,
+                        prefer_status=prefer_status, role=role, user_id=user_id)
 
             rows = await conn.fetch(sql_main, *params)
             s.set_attribute("uc02.candidates_count", len(rows))
@@ -325,7 +377,7 @@ async def find_similar(
             # Stage 6 — response rows + spec messages.
             results = _build_results(top, src, service_id, discriminators)
             message, warning = _build_messages(
-                results, rows, time_filter, ticket_id,
+                results, rows, time_filter, msg_ref,
                 min_similarity_score, limited_ctx)
 
             _metric_inc("ai.uc02.results.total", len(results),
@@ -344,7 +396,11 @@ async def find_similar(
                     and not time_filter.is_empty()
                     else None
                 ),
-                source_ticket=_source_snapshot(src, service_id, ticket_id),
+                # Text path has no source ticket to echo (the "source" was the
+                # query text); the renderer hides the echo block when None.
+                source_ticket=(
+                    None if text_mode
+                    else _source_snapshot(src, service_id, ticket_id)),
             )
         finally:
             try:
@@ -510,26 +566,30 @@ def _compose_main_sql(
     """
 
 
-async def _build_candidate_query(
-    conn: asyncpg.Connection, cols: _Cols,
-    tenant_id: str, ticket_id: str, anchor_vec: Any, *,
+def _assemble_candidate_sql(
+    cols: _Cols, tenant_id: str, anchor_vec: Any, *,
+    src: dict[str, Any], exclude_entity_id: str | None,
     max_results: int, time_filter: TimeFilter | None,
     same_category_only: bool, same_service_only: bool,
     prefer_status: PreferStatus, role: str, user_id: str,
-) -> tuple[str, list[Any], list[str], str, dict[str, Any]]:
-    """Stages 2-3: fetch the source row, assemble the scope predicates
-    (category / service / time-window / status) and the RBAC predicate, and
-    compose the final ANN+JOIN SQL.
+) -> tuple[str, list[Any], list[str], str]:
+    """Compose the scope predicates (category / service / time-window /
+    status), the RBAC predicate, and the final ANN+JOIN SQL from an already-
+    resolved `(anchor_vec, src)`.
 
-    Returns `(sql, params, where, tf_boundary_col, src)`."""
+    `exclude_entity_id` drops the source ticket from its own result set on the
+    id-based path; the text path passes None (there is no source ticket).
+    `src` may be `{}` (text path) — the category/service scope filters are
+    source-derived, so they are simply skipped when those keys are absent.
+
+    Returns `(sql, params, where, tf_boundary_col)`."""
     limit_n = max(max_results * _OVERFETCH, max_results + 5)
-    where = ["e.tenant_id = $1",
-             "e.chunk_type = 'symptom_anchor'",
-             "e.entity_id <> $2",
-             "b.tenant_id = $1"]
-    params: list[Any] = [tenant_id, ticket_id]
-
-    src = await _fetch_source_row(conn, cols, tenant_id, ticket_id)
+    where = ["e.tenant_id = $1", "e.chunk_type = 'symptom_anchor'"]
+    params: list[Any] = [tenant_id]
+    if exclude_entity_id is not None:
+        params.append(exclude_entity_id)
+        where.append(f"e.entity_id <> ${len(params)}")
+    where.append("b.tenant_id = $1")
 
     if same_category_only and src.get("category"):
         params.append(src["category"])
@@ -565,6 +625,28 @@ async def _build_candidate_query(
     lim_param = f"${len(params)}"
 
     sql_main = _compose_main_sql(cols, where, vec_param, lim_param)
+    return sql_main, params, where, tf_boundary_col
+
+
+async def _build_candidate_query(
+    conn: asyncpg.Connection, cols: _Cols,
+    tenant_id: str, ticket_id: str, anchor_vec: Any, *,
+    max_results: int, time_filter: TimeFilter | None,
+    same_category_only: bool, same_service_only: bool,
+    prefer_status: PreferStatus, role: str, user_id: str,
+) -> tuple[str, list[Any], list[str], str, dict[str, Any]]:
+    """Stages 2-3 (id path): fetch the source row, then delegate scope/RBAC/SQL
+    assembly to `_assemble_candidate_sql` with the source excluded from its own
+    result set.
+
+    Returns `(sql, params, where, tf_boundary_col, src)`."""
+    src = await _fetch_source_row(conn, cols, tenant_id, ticket_id)
+    sql_main, params, where, tf_boundary_col = _assemble_candidate_sql(
+        cols, tenant_id, anchor_vec, src=src, exclude_entity_id=ticket_id,
+        max_results=max_results, time_filter=time_filter,
+        same_category_only=same_category_only,
+        same_service_only=same_service_only,
+        prefer_status=prefer_status, role=role, user_id=user_id)
     return sql_main, params, where, tf_boundary_col, src
 
 

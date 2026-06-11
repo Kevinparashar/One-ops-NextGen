@@ -23,33 +23,45 @@
         "tier": "read"
       },
       "activation_condition": {
-        "operator": "any_of",
+        "operator": "all_of",
         "negate": false,
-        "signal": null,
-        "values": [],
         "clauses": [
           {
-            "clauses": [],
+            "operator": "any_of",
             "negate": false,
-            "operator": "leaf",
-            "signal": "entity_service_in",
-            "values": [
-              "incident",
-              "request",
-              "problem",
-              "change",
-              "asset",
-              "cmdb_ci"
+            "clauses": [
+              {
+                "clauses": [],
+                "negate": false,
+                "operator": "leaf",
+                "signal": "entity_service_in",
+                "values": [
+                  "incident",
+                  "request",
+                  "problem",
+                  "change",
+                  "asset",
+                  "cmdb_ci"
+                ]
+              },
+              {
+                "clauses": [],
+                "negate": false,
+                "operator": "leaf",
+                "signal": "intent_in",
+                "values": [
+                  "summary",
+                  "field_read"
+                ]
+              }
             ]
           },
           {
-            "clauses": [],
+            "operator": "any_of",
             "negate": false,
-            "operator": "leaf",
-            "signal": "intent_in",
-            "values": [
-              "summary",
-              "field_read"
+            "clauses": [
+              {"clauses": [], "negate": false, "operator": "leaf", "signal": "entity_present", "values": []},
+              {"clauses": [], "negate": false, "operator": "leaf", "signal": "focus_required", "values": []}
             ]
           }
         ]

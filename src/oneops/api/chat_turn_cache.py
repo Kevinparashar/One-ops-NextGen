@@ -153,6 +153,11 @@ def should_cache(response_dict: Mapping[str, Any]) -> bool:
     text = str(response_dict.get("final_response") or "")
     if status in ("clarification", "refused", "error", "interrupted", ""):
         return False
+    # A turn carrying an interrupt/offer (e.g. the post-KB "raise a service
+    # request?" offer) is stateful follow-up — never cache it, or a later request
+    # would be served the answer without its offer, or the offer without context.
+    if response_dict.get("interrupt"):
+        return False
     # Interactive / stateful flows (UC-8 catalog conductor) must never be
     # cached: their outputs depend on the live catalog + the per-session
     # interrupt checkpoint. A cached "no match" or "SR created" would be wrongly

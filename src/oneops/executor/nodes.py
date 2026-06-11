@@ -799,8 +799,17 @@ class ExecutorNodes:
                 "unrouted": [], "plan": [], "entity_clarification": "",
                 "time_filter": {},
             }
+        # Thread the user text as user_message/query into each forced agent's
+        # params — exactly what the normal router's `_chat_bind` does. Without
+        # this a forced conductor (UC-8 catalog) gets no search seed and only
+        # opens "what would you like to request?"; with it, it runs its full
+        # flow (catalog search → pick → form → create) on the original query.
+        msg = str(state.get("message", "") or "")
+        forced_params = ({a: {"user_message": msg, "query": msg} for a in forced}
+                         if msg else {})
         plan = assemble_plan(
-            [SubQueryRoute(sub_query_id="sq_forced", agent_ids=forced)],
+            [SubQueryRoute(sub_query_id="sq_forced", agent_ids=forced,
+                           parameters_by_agent=forced_params)],
             self._registry)
         span.set_attribute(_EXECUTOR_ROUTE_OUTCOME, "routed")
         increment(_AI_ROUTER_OUTCOME_TOTAL, outcome="routed",

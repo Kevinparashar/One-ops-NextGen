@@ -127,198 +127,214 @@ class ThresholdDisambiguator:
 _DISAMBIGUATE_PROMPT = """You route an ITSM/ITOM query to the right agent(s) \
 from a short candidate list. Output is strict JSON only.
 
-## The ONE semantic test
+## How to decide — the cards are authoritative
 
-Ask yourself: **what is the user trying to achieve with this query?**
-
-  AXIS A — **Understand the entity / record ITSELF.**
-  The user wants facts ABOUT the record: what it is, its summary,
-  description, status, priority, severity, owner, assignee, SLA, impact,
-  urgency, related changes, current known state, what happened, what is
-  going on, what we know about it, its background, context, history. A
-  bare entity id alone ("INC0001001", "CI0000001") falls here — the user
-  is referencing the record itself.
-  → route to the entity-summary agent (renders the record's own fields).
-
-  AXIS B — **Find supporting knowledge OUTSIDE the entity.**
-  The user wants material that HELPS understand, resolve, or troubleshoot:
-  documents, KB articles, runbooks, playbooks, SOPs, procedures,
-  troubleshooting guides, fixes, workarounds, known issues, previous
-  resolutions, internal write-ups, reference material, "how do I fix",
-  "how was this solved", "what should I follow", "any guidance",
-  "anything documented", "what info is available for". Topic-only
-  questions with no entity ("how do I fix VPN", "MFA reset procedure")
-  also fall here.
-  → route to the KB / knowledge-content agent.
-
-  AXIS C — **Both.** The query contains BOTH an axis-A ask AND an axis-B
-  ask. Return both agents in the order [entity-summary, KB].
-
-  AXIS D — **Off-domain.** The query is not about an ITSM/ITOM record,
-  service, or operational task at all (jokes, weather, chit-chat).
-  Return no agents.
-
-## Card-first selection (AUTHORITATIVE — read this before the axes)
-
-The axes above are a COARSE guide for the single most common confusion
-(understand a record vs. find knowledge). They are NOT the full set of things
-a user can ask for, and a query is NOT off-domain just because it fits none of
-A/B/C/D. The AUTHORITATIVE scope of each candidate is its CARD — its
-description + "Use when" + "Do NOT use" — provided with the query below.
-
-Decide from the cards:
+The scope of each candidate is its CARD — its description, "Use when"
+(positive scope), and "Do NOT use" (out-of-scope cases, each naming the agent
+to pick instead). The cards are provided with the query below. For each thing
+the user asks for:
   • Select the candidate whose "Use when" covers the ask AND whose "Do NOT
     use" does not exclude it.
-  • A query can match a candidate's "Use when" even when it fits NONE of axes
-    A/B/C/D. Example: a request to OBTAIN, PROVISION, ORDER, REQUEST, or SET UP
-    something new (software, a license, hardware, access, an account,
-    onboarding) matches the fulfilment/catalog agent's card — though it is
-    neither "understand a record" (A) nor "find knowledge" (B). Select it.
-  • When the cards and the axes disagree, THE CARDS WIN. The axes never
-    override a candidate whose "Use when" plainly covers the ask.
-This is how new capabilities are routed without new axes: the card carries the
-per-agent truth; you reason over the cards in the candidate list.
+  • "Do NOT use" is DECISIVE: if the ask matches a candidate's "Do NOT use"
+    clause, do not select that candidate — select the agent it names instead,
+    when that agent is in the candidate list.
+  • A query may ask for several things — return every agent whose card covers
+    a part of it (see Multi-intent below).
+  • Do not invent agents that are not in the candidate list.
 
-## The hard distinction (the one users get wrong)
+Reason over the cards, not over a fixed taxonomy. Every candidate is
+first-class; none is a default.
 
-The trap: "what do we know about INC0001001" and "what info is available
-for INC0001001" look almost identical, but they ask different things.
+## The job each ask wants done (a lens for reading the cards, not a checklist)
 
-  • "what do we know about X" — asks for facts ABOUT the entity itself.
-    This is axis A (entity-summary). The user is asking US to summarise
-    what we have on the record.
-  • "what info is available for X" — asks what KNOWLEDGE material exists
-    for X. This is axis B (KB). The user is asking what supporting
-    documentation has been written about / linked to X.
+The clarifying question is: **what does the user want DONE with the object,
+and where does the answer come from?** Common jobs — each owned by whichever
+candidate's card claims it:
+  • Read THIS record's own facts — its status, priority, owner, SLA,
+    description, what happened, current state, or the VALUE of one of its
+    stored / linked fields (including root_cause / RCA, affected_ci, the
+    related or linked problem or change — these are fields ON the record). A
+    bare id ("INC0001001") is this.
+  • Find OTHER records like this one — duplicates, prior or recurring
+    occurrences, whether we have seen this pattern before, how widespread or
+    frequent it is, related cases for resolution reuse. Anything about the
+    issue's PREVALENCE or HISTORY across many tickets, rather than this one
+    record's own fields.
+  • Retrieve authored KNOWLEDGE about the object — KB articles, runbooks,
+    SOPs, how-to, documented fixes / workarounds, a documented "known-error"
+    write-up. Topic-only questions with no record ("how do I fix VPN") are
+    this too.
+  • Classify or act on a record — triage, prioritise, categorise, assign, or
+    route a single ticket.
+  • Obtain something new — software, a license, hardware, access, an account,
+    onboarding (OBTAIN / PROVISION / ORDER / REQUEST / SET UP).
 
-Mental model: "details OF X" / "details ABOUT X" / "what do we know
-about X" → entity itself (axis A). "info available FOR X" / "anything
-written up ON X" / "docs FOR X" / "any data regarding X" → external
-material (axis B).
+These jobs are a lens for reading the cards. If a card's "Use when" plainly
+covers the ask, select it even when the ask fits none of the jobs above.
 
-Second trap — "root cause" / "RCA" / "the affected CI". These look
-like knowledge phrases but they refer to FIELDS stored on the record
-(a problem record has its own root_cause field; a change record has
-its own affected_ci field). They are axis A field-reads, not axis B
-KB lookups. Anything asking for the VALUE of a specific attribute or
-linked-record-id of the focus is axis A, regardless of the noun used.
+## Record-scoped agents need a record in scope (admission rule)
 
-The distinction is in what the user wants RETURNED:
-  - axis A returns the record's own fields
-  - axis B returns KB articles linked to / about the record
+The record-summary agent reads ONE specific record's own fields, so it is
+meaningful ONLY when a record is identified — a record id in the query itself or
+the ACTIVE FOCUS record shown above. With neither, it has nothing to read;
+selecting it only forces a "which record do you mean?" dead-end, so do NOT.
+
+The similar-tickets agent has TWO ways to be anchored, and needs EITHER:
+  • a specific record (id or active focus) — find tickets like THAT record; or
+  • an ask to RETRIEVE OTHER TICKETS matching a described problem — the
+    described symptoms are the anchor, so no record is required.
+Decide by the deliverable the user walks away with: when it is a SET OF
+EXISTING TICKETS (peer or historical records they want surfaced), it is similar-
+tickets, even with no id. When it is UNDERSTANDING or FIXING their own problem —
+including a bare problem-report that does not ask to see other tickets — it is
+authored guidance → the knowledge agent; a plain ask to OBTAIN something → the
+fulfilment agent. When neither anchor is present AND the ask is not to surface
+other tickets, do NOT select similar-tickets.
+
+## The confusions users actually trigger (contrastive principles)
+
+1. The record's own facts vs. authored knowledge — the classic trap.
+   "what do we know about INC0001001" and "what info is available for
+   INC0001001" look identical but differ:
+   • "what do we know about X" / "details OF / ABOUT X" / "tell me about X" /
+     "what happened in X" → the record's OWN fields → the record-summary agent.
+   • "what info is available FOR X" / "anything written up ON X" / "docs or
+     runbook FOR X" / "how was this solved" → AUTHORED material → the KB agent.
+   The answer-source is what the user NEEDS, not the phrasing: a direct "how
+   do I fix X" and a meta "is there a procedure for X" both want authored KB.
+   • Field-reads disguised as knowledge — "root cause" / "RCA" / "the affected
+     CI" / "the related or linked problem or change" / "its X". These are the
+     VALUE of a field stored on the record → record-summary, regardless of the
+     noun. Anything asking the value of a specific attribute or linked-record
+     id of the focus is a field-read on the record.
+
+2. THIS record vs. OTHER records like it — the prevalence trap (these are
+   frequently mis-routed to record-summary):
+   • "summarize / status / who owns INC0001001" → THIS record →
+     record-summary.
+   • "is this recurring" / "have we seen this before" / "is it trending" /
+     "is this happening org-wide" / "any duplicates" / "is this a known
+     recurring issue" / "is this a fresh issue or an old one" / "did we
+     already fix this somewhere" → the issue's prevalence or history across
+     MANY tickets → the similar-tickets agent. A "known RECURRING issue /
+     pattern" → similar-tickets; a documented "known-error ARTICLE" → KB. The
+     signal is whether the user wants past TICKETS or an authored DOCUMENT.
+
+3. Same record, different job. "how do I resolve INC0001001" carries an id but
+   wants authored guidance → KB; "triage INC0001001" wants classification →
+   triage; "summarize INC0001001" wants its fields → record-summary. The id is
+   shared; the JOB differs — let the cards' "Do NOT use" clauses arbitrate.
+
+## "Learn it" vs "get it" — and the safe default (teach before you provision)
+
+For an IT problem or need, the user is ultimately after ONE of two deliverables.
+Decide by what they would walk away with — read from their words AND the
+conversation so far, never from a single trigger verb:
+
+  • KNOWING — they want to understand, fix, or do the thing themselves; what
+    they walk away with is an explanation or steps they will act on.
+    → the knowledge (KB) agent.
+  • HAVING — they want to be put in possession of something they lack or cannot
+    yet use (access, a license, hardware, an account, a provisioned resource);
+    what they walk away with is work carried out for them.
+    → the fulfilment (request) agent.
+
+Three rules settle the hard cases:
+
+  1. Lacking something — not having it, or being unable to access or use it — is
+     a PROBLEM STATE, not a request. It is HAVING only when the user actually
+     asks to be granted, given, provisioned, or set up with it. "I can't get
+     into X" / "X isn't available to me" reports a state; it does not by itself
+     ask to be granted X.
+
+  2. When the message commits to NEITHER deliverable — it only reports that
+     something is missing, blocked, broken, slow, or unavailable, with no sign
+     of whether the user wants to be shown how or wants it done for them — it is
+     AMBIGUOUS. DEFAULT to the knowledge (KB) agent. Never refuse; never guess
+     fulfilment.
+
+  3. Wanting to understand the PROCESS by which something is obtained — the
+     procedure or steps one follows to get access to, set up, or request a thing
+     — is itself a KNOWING ask: the deliverable the user wants FIRST is the
+     procedure, not the thing. This holds even when the thing named is ordinarily
+     provisioned — seeking the how-to defaults to the knowledge agent, and the
+     follow-up then offers to raise the actual request. It is HAVING only when
+     the user is asking to be given or granted the thing itself, with no interest
+     in the procedure for getting it.
+
+The guiding heuristic: **when in doubt, teach before you provision.** Defaulting
+to KB is safe because a later step offers to raise a service request after the
+KB answer, so the user is never stranded on the wrong path. This governs ONLY
+the knowledge-vs-fulfilment choice — it never overrides another card whose "Use
+when" plainly fits, and never overrides a request that clearly asks to be given
+or provisioned something.
 
 ## Contrastive examples (apply the PRINCIPLE, do not match strings)
 
-Axis A — entity itself (→ entity-summary agent):
-  • "summarize INC0001001"
-  • "describe INC0001001"
-  • "details of INC0001001"
-  • "details about INC0001001"
-  • "what do we know about INC0001001"
-  • "tell me about CI0000001"
-  • "walk me through INC0001001"
-  • "explain this incident"
-  • "what happened in INC0001001"
-  • "what is going on with INC0001001"
-  • "give me the ticket context"
-  • "why was INC0001001 raised"
-  • "what is the priority / status / SLA / owner / category / impact / urgency / severity / state of INC0001001"
-  • "who is INC0001001 assigned to"
-  • "INC0001001"                            (bare id)
-  • "CI0000001"                             (bare id)
+Read THIS record's own facts (→ record-summary agent):
+  • "summarize INC0001001" / "describe INC0001001" / "details of INC0001001"
+  • "what do we know about INC0001001" / "what happened in INC0001001"
+  • "what is the priority / status / SLA / owner / category / severity of INC0001001"
+  • "who is INC0001001 assigned to" / "INC0001001" (bare id) / "CI0000001"
+  • Linked / RCA field-reads — also this agent (the values are STORED ON the
+    record): "root cause" / "RCA" / "the affected CI" / "the related problem" /
+    "the linked change" / "status of the linked problem" / "owner of the
+    related problem" / "its X". Resolve the link and read the field; not a KB
+    search.
 
-  Chained linked-record field-reads — also axis A:
-  The record's own linked-record-id fields (related_problem,
-  related_changes, affected_ci, parent_incident, linked_kb) are
-  STORED ON THE RECORD itself. When the user asks for the VALUE
-  of a linked field — even with paraphrases like "the linked X",
-  "the related X", "the affected X", "its X" — that is a chained
-  field-read on the record. It is axis A, NOT a KB search. The
-  entity-summary agent resolves the link and reads the linked
-  record's field. KB content lives elsewhere; these queries want
-  the record's own linkage value.
-    • "any related changes for INC0001001"
-    • "the related problem"  / "what is the related problem"
-    • "the linked change" / "the linked problem"
-    • "the affected CI" / "criticality of the affected CI"
-    • "status of the linked problem"
-    • "priority of the linked problem"
-    • "owner of the related problem" / "who owns the linked X"
-    • "risk level of the linked change"
-    • "root cause" / "RCA" / "what is the root cause"   (a PBM's
-      own root_cause field is part of the entity record)
+Find OTHER records like it (→ similar-tickets agent):
+  • "any duplicates of INC0001001" / "have we seen this before"
+  • "is this recurring" / "is this trending" / "is it happening org-wide"
+  • "other tickets with the same problem" / "past cases like this one"
+  • "is this a fresh issue or an old one" / "did we already fix this somewhere"
+  • "is this a known recurring issue"   (past TICKETS, not an article)
 
-Axis B — supporting material (→ KB agent):
-  • "any docs for INC0001001"
-  • "any runbooks for INC0001001"
-  • "any guidance for CI0000001"
-  • "anything written up on CI0000001"
-  • "available documents linked to INC0001001"
-  • "known issues for VPN handoff"
-  • "info available for INC0001001"
-  • "what data do we have for CI0000001"
-  • "is there anything in our database for INC0001001"
-  • "do we have any information related to INC0001001"
-  • "has anyone documented this before"
-  • "is there a playbook for this"
-  • "what should I follow for this issue"
-  • "how was this solved earlier"
-  • "find supporting material for this incident"
-  • "what can help me resolve VPN handoff"
-  • "is there any internal knowledge on this"
-  • "how do I fix VPN"   (topic only, no entity)
-  • "MFA reset procedure"
+Retrieve authored knowledge (→ KB agent):
+  • "any docs / runbooks / playbook for INC0001001" / "how was this solved"
+  • "what should I follow for this issue" / "is there anything documented"
+  • "how do I fix VPN" (topic only, no entity) / "MFA reset procedure"
+  • "is there a known-error article for this"
 
-Axis C — both (→ [entity-summary, KB]):
-  • "summarize INC0001001 and any docs for it"
-  • "details of INC0001001 and do we have any data regarding this"
+Classify or route a ticket (→ triage agent):
+  • "triage INC0001001" / "what priority should this be" / "which team owns this"
 
-Axis D — off-domain (→ []):
-  • "tell me a joke"
-  • "what's the weather"
+Obtain something new (→ fulfilment / catalog agent):
+  • "I need a new laptop" / "request access to the finance folder"
+  • "set me up with a VPN token" / "can I get Tableau installed"
 
-## Decision procedure — capability-driven dispatch
+Several at once (→ every agent that applies; record-summary first if present):
+  • "summarize INC0001001 and any docs for it" → [record-summary, KB]
+  • "summarize INC0001001 and find similar ones" → [record-summary, similar-tickets]
 
-For each ask in the query, identify two things explicitly:
+Off-domain (→ []):
+  • "tell me a joke" / "what's the weather"
 
-  • OBJECT — what the user is asking about. Either a specific instance
-    (an identified record, or the current focused record when the query
-    is a follow-up), or a class of things (a topic, technology, service,
-    symptom, operational concern).
+## Decision procedure
 
-  • ANSWER-SOURCE — where the answer must come from. Either:
-        ─ STORED-ATTRIBUTE — the answer is the value of a field held on
-          the specific record itself. The agent reads the record's own
-          data.
-        ─ AUTHORED-MATERIAL — the answer is a separately authored
-          resource about the object: a write-up, procedure, guideline,
-          troubleshooting steps, documented fix, known-issue note. The
-          agent retrieves authored content distinct from any single
-          record's stored fields.
+For each ask in the query, identify two things:
 
-The answer-source is determined by what the user NEEDS, not by phrasing.
-A direct question ("how do I fix X") and a meta question ("any material
-on X", "is there a procedure documented for X", "what do we have on X",
-"where is the write-up for X") both resolve to AUTHORED-MATERIAL — the
-user needs authored content, regardless of how they asked for it.
+  • OBJECT — what the user is asking about: a specific record (or the current
+    focused record on a follow-up), or a class of things (a topic, technology,
+    service, symptom, operational concern).
 
-Route by matching (OBJECT × ANSWER-SOURCE) to the candidate whose
-capability description fits that pair. Each candidate agent's card is
-provided with the query (its description, Use when, and Do NOT use). Select
-the candidate whose card fits; do not invent agents not listed.
+  • WHAT THEY WANT DONE — the value of a field on that record (read it), other
+    records like it (its prevalence / history), authored knowledge about it, a
+    classification / routing action on it, or obtaining something new. This is
+    determined by what the user NEEDS, not by phrasing — a direct "how do I fix
+    X" and a meta "is there a procedure for X" both want authored knowledge.
 
-Each candidate card also lists "Use when" (the agent's positive scope) and
-"Do NOT use" (out-of-scope cases, each naming the agent to pick instead).
-Treat these as DECISIVE: if the query matches a candidate's "Do NOT use"
-clause, do NOT select that candidate — select the agent named in that clause
-when it is in the candidate list. These boundaries are how same-entity
-look-alikes are told apart — e.g. "how do I resolve INC0001001" carries a
-record id but asks for authored guidance, so the summary/similar agents'
-"Do NOT use" clauses send it to the KB agent.
+Match that to the candidate whose card ("Use when" / "Do NOT use") covers it.
+"Do NOT use" is DECISIVE: if the ask matches a candidate's "Do NOT use" clause,
+do not pick that candidate — pick the agent it names, when present. This is how
+same-id look-alikes are separated: "how do I resolve INC0001001" carries an id
+but asks for authored guidance, so the summary / similar agents' "Do NOT use"
+clauses hand it to the KB agent; "is INC0001001 recurring" carries the same id
+but asks about other tickets, so it goes to the similar-tickets agent.
 
-When the query contains BOTH a stored-attribute ask AND an
-authored-material ask, return both agents, ordered with the stored-
-attribute reader first.
+## Multi-intent
+
+When the query asks for more than one of these, return every agent that
+applies, ordered with the record-summary agent first when it is selected.
 
 ## Dispatch discipline
 
@@ -330,9 +346,8 @@ topic — at least one in-domain agent should be selected. Each agent
 reports its own no-result when its lookup yields nothing; that is the
 correct place to surface "no match", not the router.
 
-When the candidate set includes the authored-material agent and you are
-uncertain whether the user needs stored-attribute or authored-material,
-prefer the authored-material agent. Its no-result reply is honest and
+When you are genuinely uncertain between in-domain candidates and the KB
+(knowledge) agent is in the set, prefer it. Its no-result reply is honest and
 recoverable; a router-level refusal is not.
 
 ## Output schema (STRICT JSON only)
@@ -340,7 +355,7 @@ recoverable; a router-level refusal is not.
 {"selected_agent_ids":["..."],
  "intents":["..."],
  "confidence":0.0-1.0,
- "rationale":"<one short sentence: axis (A/B/C/D) + the ask that decided it>"}
+ "rationale":"<one short sentence: the job the ask wanted + the card 'Use when' that decided it>"}
 
 The `intents` field uses tokens from: summary, field_read, kb_search, \
 kb_article_fetch, similar_search, action, off_domain."""
@@ -410,9 +425,10 @@ def _deterministic_preroute(
 
 
 def _build_focus_block(focus_id: str, focus_service: str) -> str:
-    """The ACTIVE-FOCUS prompt section (the axis-A/B routing prior for
-    follow-up queries). Empty string when the conversation has no focus
-    entity, so the caller can concatenate it unconditionally."""
+    """The ACTIVE-FOCUS prompt section (supplies a missing subject for bare
+    follow-up queries; carries no routing meaning — the cards decide). Empty
+    string when the conversation has no focus entity, so the caller can
+    concatenate it unconditionally."""
     if not focus_id:
         return ""
     return (
@@ -471,19 +487,36 @@ def _floor_dispatch(
     top = max(candidates, key=lambda c: c.score)
     if top.score < 0.10:        # narrow floor, matches MIN_FUSED_SCORE on retriever side
         return None
-    span.set_attribute(_ONEOPS_ROUTER_SELECTED, top.agent_id)
-    span.set_attribute("oneops.router.dispatch_reason", "retriever_floor_llm_hedge")
+    # Teach-before-provision on a hedge: when the LLM could not pin the query to
+    # one card but a viable in-domain set survived, prefer the knowledge (KB)
+    # agent if it is a candidate, rather than whatever embedded closest. A hedge
+    # over a vague problem statement ("issue with <system>") otherwise fell
+    # through to the top retrieval score — often similar-tickets/summary — which
+    # contradicts the self-service-first default. KB is the safe, recoverable
+    # choice (it reports its own no-result, and a downstream step offers a
+    # service request). KB identified by the id-suffix convention already used
+    # for the intents tag below; it must still clear the same narrow floor.
+    kb = next((c for c in candidates
+               if c.agent_id.endswith("_kb_lookup") and c.score >= 0.10), None)
+    chosen = kb if kb is not None else top
+    span.set_attribute(_ONEOPS_ROUTER_SELECTED, chosen.agent_id)
+    span.set_attribute(
+        "oneops.router.dispatch_reason",
+        "retriever_floor_llm_hedge_kb_default" if kb is not None
+        else "retriever_floor_llm_hedge")
     span.set_attribute("oneops.router.llm_hedge_rationale",
                        str(doc.get("rationale") or "")[:160])
     return Disambiguation.select(
-        [top.agent_id], confidence=float(top.score),
+        [chosen.agent_id], confidence=float(chosen.score),
         rationale=(
-            "supervisor dispatch-by-default: stage-3 "
-            "retriever surfaced this agent above the "
-            "signal floor; stage-4 LLM hedged "
-            "(no_match). The agent reports its own "
-            "no-result if its lookup yields nothing."),
-        intents=["kb_search"] if top.agent_id.endswith("_kb_lookup") else [])
+            "supervisor dispatch-by-default: stage-3 retriever surfaced a viable "
+            "in-domain set; stage-4 LLM hedged (no_match). Defaulted to the "
+            "knowledge agent (teach-before-provision) — it reports its own "
+            "no-result if nothing is found." if kb is not None else
+            "supervisor dispatch-by-default: stage-3 retriever surfaced this "
+            "agent above the signal floor; stage-4 LLM hedged (no_match). The "
+            "agent reports its own no-result if its lookup yields nothing."),
+        intents=["kb_search"] if chosen.agent_id.endswith("_kb_lookup") else [])
 
 
 class LlmDisambiguator:
@@ -521,7 +554,7 @@ class LlmDisambiguator:
         self._registry = registry
         # Abstain = a JUNK-SKIP floor, NOT a decision threshold (2026-06-07 v2).
         # A retrieval SCORE must never *refuse* a query — only the reranker may
-        # (it reads the full card and judges intent + axis-D). So this floor is
+        # (it reads the full card and judges intent + off-domain). So this floor is
         # set LOW (~0.25): below it, retrieval is clearly junk → skip the LLM to
         # save cost; ABOVE it, the borderline band falls THROUGH to the reranker,
         # which is the refuse authority. This is the canonical "retrieve → if
@@ -737,7 +770,7 @@ class LlmDisambiguator:
         # entity (carried in the LangGraph state via request_ctx), surface
         # it to the disambiguator so it has the correct prior. A
         # follow-up query like "what is the root cause" anchored on a PBM
-        # record is overwhelmingly a record-field read (axis A), not a KB
+        # record is overwhelmingly a record-field read on that record, not a KB
         # search — without this signal the LLM looks at the words alone
         # and can probabilistically drift to UC-3.
         focus_block = _build_focus_block(

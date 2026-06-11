@@ -49,3 +49,32 @@ BEGIN
       ) STORED;
   END IF;
 END$$;
+
+-- ── Lexical search vector (FTS branch of the HYBRID catalog retriever) ──────
+-- Generated tsvector over the item's searchable text (name + description +
+-- category), mirroring itsm.kb_knowledge.content_tsv. Auto-populates every row
+-- and stays in sync on insert/update — no backfill, no trigger, no worker.
+-- INDEPENDENT of content_hash_catalog (above) and of ai.embeddings_catalog_item,
+-- so adding it NEVER changes the hash or triggers a re-embed. Consumed by
+-- find_closest_catalog_items' FTS branch, RRF-fused with the dense (cosine)
+-- branch before the LLM listwise reranker.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='itsm' AND table_name='catalog_item'
+      AND column_name='content_tsv'
+  ) THEN
+    ALTER TABLE itsm.catalog_item
+      ADD COLUMN content_tsv tsvector
+      GENERATED ALWAYS AS (
+        to_tsvector('english',
+          coalesce(name, '')        || ' ' ||
+          coalesce(description, '')  || ' ' ||
+          coalesce(category, ''))
+      ) STORED;
+  END IF;
+END$$;
+
+CREATE INDEX IF NOT EXISTS idx_catalog_tsv
+  ON itsm.catalog_item USING gin (content_tsv);

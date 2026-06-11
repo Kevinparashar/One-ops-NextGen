@@ -87,6 +87,15 @@ EMBED_TIMEOUT_S = float(os.environ.get("UC08_CATALOG_EMBED_TIMEOUT_S", "60"))
 # to leave headroom and avoid borderline truncations.
 MAX_QUERY_CHARS = int(os.environ.get("UC08_CATALOG_MAX_QUERY_CHARS", "6000"))
 
+# ── Hybrid lexical (FTS) branch — RRF-fused with the dense (cosine) branch ──
+# k=60 is the robust RRF default (rank-only fusion sidesteps the ts_rank-vs-
+# cosine scale mismatch). The FTS query is built entirely by Postgres' `english`
+# text-search dictionary (see the OR-tsquery in find_closest_catalog_items):
+# the dictionary strips stopwords and stems — no hand-maintained word list — and
+# the resulting lexemes are OR-joined for recall (RRF + the LLM reranker refine
+# precision).
+_RRF_K = 60
+
 
 class CatalogSearchError(Exception):
     """Typed boundary error for catalog search. Wraps gateway/network
@@ -208,6 +217,16 @@ async def find_closest_catalog_items(
     # user_roles is accepted (for future per-row RBAC) but unused today.
     _ = user_roles
 
+    # Re-read the tunable floors per-call from the env. The module-level
+    # COSINE_FLOOR / AUTO_PICK_THRESHOLD are import-time defaults, read BEFORE
+    # the app loads .env — so without this re-read, UC08_CATALOG_* env changes
+    # never take effect (parity with uc03's per-call _search_kb_config). Falls
+    # back to whatever the caller passed (or the module default).
+    cosine_floor = float(
+        os.environ.get("UC08_CATALOG_COSINE_FLOOR", str(cosine_floor)))
+    auto_pick_threshold = float(
+        os.environ.get("UC08_CATALOG_AUTO_PICK_THRESHOLD", str(auto_pick_threshold)))
+
     # Edge case 1+5: empty/whitespace/oversized input. Don't waste an
     # embedding call on garbage; return empty result so the caller can
     # render "no match" instead of a noisy top-K.
@@ -258,10 +277,16 @@ async def find_closest_catalog_items(
         # Production-grade tenant isolation: WHERE binds caller's tenant
         # (defence-in-depth) PLUS JOIN binds vector-to-source consistency
         # (catches schema-drift bugs).
-        rows = await conn.fetch(
+        # Retrieve a wider pool per branch than the final top_k, fuse, then
+        # narrow — the standard hybrid-retrieval shape (cf. uc03 KB search).
+        fetch_k = max(top_k, 20)
+
+        # ── Dense (semantic) branch — cosine over the anchor embedding ──────
+        # Deterministic tie-break on catalog_item_id: HNSW's secondary sort
+        # isn't stable across runs, so same input yields same pool (cache/audit).
+        dense_rows = await conn.fetch(
             f"""
-            SELECT  c.catalog_item_id,
-                    c.name,
+            SELECT  c.catalog_item_id, c.name,
                     coalesce(c.description, '') AS description,
                     coalesce(c.category, '')    AS category,
                     coalesce(c.owner_group, '') AS owner_group,
@@ -272,18 +297,64 @@ async def find_closest_catalog_items(
                AND  c.tenant_id       = e.tenant_id
              WHERE  e.tenant_id     = $2
                AND  e.chunk_type    = 'catalog_anchor'{form_filter}
-             -- Deterministic ordering for tied scores (edge case 4):
-             -- HNSW's secondary sort isn't guaranteed across runs, so we
-             -- add catalog_item_id as the tie-breaker. Same input always
-             -- yields same top-K — important for chat-cache + audit.
              ORDER BY e.embedding <=> $1::vector ASC, c.catalog_item_id ASC
              LIMIT  $3
             """,
-            vec_literal, tenant_id, top_k,
+            vec_literal, tenant_id, fetch_k,
         )
 
+        # ── Lexical (FTS) branch — ts_rank over content_tsv ────────────────
+        # The query tsquery is derived ENTIRELY by Postgres' `english`
+        # dictionary: to_tsvector strips stopwords + stems, and the lexemes are
+        # OR-joined (recall-first; RRF + the LLM reranker refine precision). No
+        # hand-maintained word list. Injection-safe — the raw query is a bound
+        # param ($4) fed to to_tsvector, never concatenated into SQL. Computes
+        # cosine too so EVERY fused candidate (incl. FTS-only) carries a score
+        # for the floor + reranker. Empty query ⇒ empty tsquery ⇒ no FTS rows.
+        fts_rows = await conn.fetch(
+            f"""
+            WITH q AS (
+                SELECT to_tsquery('english', array_to_string(
+                         tsvector_to_array(to_tsvector('english', $4)), ' | ')) AS query
+            )
+            SELECT  c.catalog_item_id, c.name,
+                    coalesce(c.description, '') AS description,
+                    coalesce(c.category, '')    AS category,
+                    coalesce(c.owner_group, '') AS owner_group,
+                    1 - (e.embedding <=> $1::vector) AS cosine_score
+              FROM  itsm.catalog_item c
+              JOIN  ai.embeddings_catalog_item e
+                ON  e.entity_id = c.catalog_item_id
+               AND  e.tenant_id = c.tenant_id
+               AND  e.chunk_type = 'catalog_anchor'
+             CROSS JOIN q
+             WHERE  c.tenant_id = $2
+               AND  q.query <> ''::tsquery
+               AND  c.content_tsv @@ q.query{form_filter}
+             ORDER BY ts_rank_cd(c.content_tsv, q.query) DESC,
+                      c.catalog_item_id ASC
+             LIMIT  $3
+            """,
+            vec_literal, tenant_id, fetch_k, query_text,
+            )
+
+        # ── RRF fusion (rank-only, k=60) — sidesteps the ts_rank-vs-cosine
+        # scale mismatch; items found by BOTH branches get boosted. ─────────
+        fused: dict[str, dict] = {}
+        for branch in (dense_rows, fts_rows):
+            for rank, r in enumerate(branch, start=1):
+                cid = r["catalog_item_id"]
+                slot = fused.get(cid)
+                if slot is None:
+                    fused[cid] = {"row": r, "rrf": 1.0 / (_RRF_K + rank)}
+                else:
+                    slot["rrf"] += 1.0 / (_RRF_K + rank)
+        ordered = sorted(
+            fused.values(), key=lambda s: s["rrf"], reverse=True)[:top_k]
+
         matches: list[CatalogMatch] = []
-        for r in rows:
+        for slot in ordered:
+            r = slot["row"]
             score = float(r["cosine_score"])
             matches.append(CatalogMatch(
                 catalog_item_id=r["catalog_item_id"],
@@ -297,9 +368,13 @@ async def find_closest_catalog_items(
             ))
 
         above_floor = sum(1 for m in matches if m.above_floor)
-        auto_pick = matches[0] if (
-            matches and matches[0].is_auto_pick
-        ) else None
+        # Auto-pick stays COSINE-confidence based (not RRF rank): only the
+        # single highest-cosine match, and only when it clears the threshold.
+        auto_pick = None
+        if matches:
+            best = max(matches, key=lambda m: m.cosine_score)
+            if best.is_auto_pick:
+                auto_pick = best
 
         span.set_attribute("uc08.matches_total", len(matches))
         span.set_attribute("uc08.matches_above_floor", above_floor)
