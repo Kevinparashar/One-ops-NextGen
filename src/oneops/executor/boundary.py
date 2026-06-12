@@ -315,23 +315,6 @@ class LlmBoundaryResponder:
         self._model = model
         self._fallback = DeterministicBoundaryResponder()
 
-    async def _kb_backstop(self, request: dict[str, Any]) -> str:
-        """Probe the KB corpus as the authoritative domain oracle.
-
-        Returns the composed KB answer when the message genuinely matches
-        authored content (so it IS in-domain), else "". The KB search has
-        its own relevance gate, so a true off-topic query returns nothing
-        and this stays out of the way. Best-effort — never raises into the
-        boundary path."""
-        from oneops.use_cases.uc03_kb_lookup.handlers import kb_backstop_answer
-        ctx = {
-            "tenant_id": request.get("tenant_id") or "",
-            "user_id": request.get("user_id") or "",
-            "role": request.get("role") or "",
-            "request_id": request.get("request_id") or "",
-        }
-        return await kb_backstop_answer(str(request.get("message") or ""), ctx)
-
     async def respond(
         self, *, outcome: str, reason: str, request: dict[str, Any]
     ) -> str:
@@ -402,23 +385,15 @@ class LlmBoundaryResponder:
             request_id=request.get("request_id", "")))
         content = (response.content or "").strip()
         category, reply = _parse_boundary_payload(content)
-        # ── Data-driven domain backstop (2026-06-02 RCA) ─────────────
-        # The LLM scope verdict mis-fires on borderline IT how-to phrasings
-        # ("configure a VPN client?" → out_of_scope while "configure a VPN
-        # client" → in-scope), and an `in_scope_kb_search` verdict only
-        # PROPOSES a search rather than running one. Both fail the user. Use
-        # the KB CORPUS ITSELF as the authoritative domain oracle: if the
-        # message matches authored IT content, surface that content. Data-
-        # driven (the published KB defines the domain), deterministic, no
-        # keyword catalog. Genuinely off-topic queries ("pizza") match nothing
-        # and fall through to OUT_OF_SCOPE_REPLY unchanged — so this never
-        # flips a real out-of-scope, only rescues real IT questions the scope
-        # LLM or the router mishandled.
-        if category in ("out_of_scope", "in_scope_kb_search",
-                        "in_scope_unclear"):
-            kb_answer = await self._kb_backstop(request)
-            if kb_answer:
-                return kb_answer
+        # KB domain-backstop REMOVED 2026-06-13. It ran a full search_kb (embed +
+        # hybrid retrieve + LLM rerank) after the scope classifier rejected/
+        # flagged a turn, as a "domain oracle". A 40-query borderline-IT
+        # measurement showed it rescued only ~1 in 40 wrongly-refused queries
+        # (2.5%) and 0% on confident off-domain, while adding ~2 LLM calls + 4-7s
+        # to EVERY refused/ambiguous turn. The control gate carries the scope
+        # decision on its own (97.5% on 200 unseen); A/B confirmed removal causes
+        # no off-domain leak and no IT-query refusals — only that a rare router-
+        # missed KB query gets "I can help you search…" instead of the answer.
         # Server-side enforcement of the out-of-scope literal. The LLM is asked
         # to produce this verbatim; we ignore its actual reply if
         # classification says out_of_scope, so a hallucination of the text

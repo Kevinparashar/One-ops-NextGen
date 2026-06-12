@@ -34,6 +34,10 @@ from oneops.use_cases.uc03_kb_lookup.answer_composer import (
     get_kb_answer_composer,
 )
 from oneops.use_cases.uc03_kb_lookup.kb_embed import get_kb_embed_fn
+from oneops.use_cases.uc03_kb_lookup.kb_rerank import (
+    get_kb_reranker,
+    rerank_min_relevance,
+)
 
 _log = get_logger("oneops.use_cases.uc03.handlers")
 
@@ -270,11 +274,19 @@ async def _compose_kb_answer(
     #     honor the LLM's no-match and surface CASE B rather than junk (precision).
     if _composer_wrongly_said_no_match(grounded):
         top_cosine = float(hits[0].get("cosine_full", 0.0))
+        # The reranker already judged the (query, article) pair jointly — far
+        # more reliable than cosine. If the top hit cleared the rerank floor,
+        # it IS relevant; an LLM-composer no-match is then simply wrong → force
+        # render. Only fall back to the cosine-band heuristic when no reranker
+        # verdict is present (degraded path).
+        top_rerank = float(hits[0].get("_rerank_relevance", -1.0))
         force_floor = _force_render_min_score()
-        if force_deterministic or top_cosine >= force_floor:
+        rerank_ok = top_rerank >= 0.0 and top_rerank >= rerank_min_relevance()
+        if (force_deterministic or rerank_ok
+                or (top_rerank < 0.0 and top_cosine >= force_floor)):
             _log.warning("uc03.search_kb.composer_no_match_override",
                          articles=len(hits), top_cosine=round(top_cosine, 4),
-                         force_floor=force_floor)
+                         top_rerank=round(top_rerank, 4), force_floor=force_floor)
             grounded = await _render_present_articles(query, hits, context)
         else:
             _log.info("uc03.search_kb.honor_composer_no_match",
@@ -373,6 +385,70 @@ async def _relevance_gate(
     return out, False
 
 
+async def _rerank_and_gate(
+    hits: list[dict[str, Any]], query_vec: list[float], store: Any, *,
+    query: str, context: dict[str, Any], tenant_id: str,
+    min_score: float, top_k: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Precision stage → (hits, force_deterministic_composer).
+
+    Prefer the LLM listwise reranker: it reads the (query, shortlist) jointly
+    and labels each candidate's relevance, which orders far more reliably than
+    the bi-encoder cosine (cosine only separates in-domain IT text inside a
+    narrow ~0.30-0.40 band — see kb_rerank.py). Keep the candidates whose
+    NORMALISED rerank score clears the calibrated floor, ordered by that score,
+    top-K; an empty result = genuine no_match.
+
+    Degraded fallback: when no reranker is wired OR the reranker errors / can't
+    be parsed, fall through to the legacy cosine relevance gate — never worse
+    than the prior behaviour, and still no silent no-match on an LLM outage."""
+    reranker = get_kb_reranker()
+    if reranker is not None and hits:
+        try:
+            verdicts = await reranker.rerank(
+                query=query, articles=hits, tenant_id=tenant_id,
+                user_id=str(context.get("user_id") or ""),
+                request_id=str(context.get("request_id") or ""))
+        except Exception as exc:                          # noqa: BLE001 — boundary
+            _log.warning("uc03.search_kb.rerank_error", error=str(exc)[:160])
+            verdicts = None
+        if verdicts is not None:
+            floor = rerank_min_relevance()
+            by_id = {v.kb_id: v for v in verdicts}
+            for h in hits:
+                v = by_id.get(h.get("kb_id", ""))
+                h["_rerank_relevance"] = float(v.relevance) if v else 0.0
+                h["_rerank_label"] = int(v.raw_label) if v else 0
+            ranked = sorted(hits, key=lambda d: d.get("_rerank_relevance", 0.0),
+                            reverse=True)
+            passing = [h for h in ranked
+                       if h.get("_rerank_relevance", 0.0) >= floor][:max(1, top_k)]
+            per_candidate = [
+                {"kb_id": h.get("kb_id"),
+                 "relevance": round(float(h.get("_rerank_relevance", 0.0)), 3),
+                 "label": h.get("_rerank_label", 0),
+                 "passed": float(h.get("_rerank_relevance", 0.0)) >= floor}
+                for h in ranked
+            ]
+            _log.info("uc03.search_kb.rerank_gate",
+                      tenant_id=tenant_id, floor=floor, top_k=top_k,
+                      retrieved=len(hits), passed=len(passing),
+                      candidates=per_candidate)
+            if not passing:
+                return [], False
+            out: list[dict[str, Any]] = []
+            for h in passing:
+                row = dict(h)
+                row["relevance_score"] = max(
+                    1, min(100, int(h["_rerank_relevance"] * 100)))
+                out.append(row)
+            return out, False
+    # No reranker / reranker unavailable → legacy cosine gate (degraded).
+    return await _relevance_gate(
+        hits, query_vec, store, tenant_id=tenant_id,
+        min_score=min_score, top_k=top_k)
+
+
 async def _embed_query(
     embed_fn: Any, query: str, *, tenant_id: str, user_id: str,
 ) -> list[float]:
@@ -451,7 +527,11 @@ async def search_kb(
     # the gate + top_k still narrow the final answer set.
     PER_SIDE, min_score, top_k = _search_kb_config()
     MIN_FUSED_SCORE = 0.012
-    FUSE_TOP_K = 5
+    # Hand the reranker a broad shortlist (recall), then it narrows to top_k by
+    # joint query-document relevance. Bigger than the old 5 because reranking
+    # is one LLM call regardless of list length, and a thin pool can drop the
+    # right article before the precision stage ever sees it.
+    FUSE_TOP_K = 8
 
     # Embed the query ONCE. The same vector serves the semantic branch
     # (step 2b) AND the relevance gate (step 4, for FTS-only
@@ -506,8 +586,8 @@ async def search_kb(
     # honest list-style fallback instead of a silent CASE B on every
     # query. The fix for "LiteLLM outage silently turns every KB query
     # into 'no match found'" found during code review 2026-05-27.
-    hits, force_deterministic_composer = await _relevance_gate(
-        hits, query_vec, store,
+    hits, force_deterministic_composer = await _rerank_and_gate(
+        hits, query_vec, store, query=query, context=context,
         tenant_id=tenant_id, min_score=min_score, top_k=top_k)
     if not hits:
         return _search(

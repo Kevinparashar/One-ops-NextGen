@@ -122,6 +122,25 @@ async def test_cache_control_emits_content_blocks(standard_payload):
     assert body["messages"][1] == {"role": "user", "content": "do thing"}
 
 
+async def test_cache_control_stays_flat_for_openai(standard_payload):
+    """cache_control is an ANTHROPIC mechanism. For an OpenAI model the body
+    must be FLAT strings with NO content-block / cache_control field — OpenAI
+    caches the stable prefix automatically and the marker must never reach it
+    (with LiteLLM drop_params=false it would otherwise be passed through)."""
+    from oneops.llm.transport import LiteLLMTransport
+    t = LiteLLMTransport(base_url="http://x", api_key="k")
+    t._client = _FakeAsyncClient(standard_payload)               # type: ignore[assignment]
+    await t.complete(LlmRequest(
+        messages=(LlmMessage("system", "policy text", cache_control=True),
+                  LlmMessage("user", "do thing")),
+        model="gpt-4o-mini",
+        tenant_id="T001",
+    ))
+    body = t._client.last_call["body"]                            # type: ignore[union-attr]
+    assert body["messages"][0] == {"role": "system", "content": "policy text"}
+    assert body["messages"][1] == {"role": "user", "content": "do thing"}
+
+
 # ── cache-token round-trip from usage ──────────────────────────────────
 
 

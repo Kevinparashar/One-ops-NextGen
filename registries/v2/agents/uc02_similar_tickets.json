@@ -107,7 +107,7 @@
             "the user asks for similar incidents or similar requests, not for a general solution article or record summary"
           ],
           "not_when": [
-            "the user wants the focused record's own facts, fields, status, priority, assignee, SLA, comments, work notes, timeline, or stored details; route to uc01_summarization",
+            "the user wants the focused record's own facts, fields, status, priority, assignee, SLA, comments, work notes, timeline, stored details, or anything that belongs to the record itself — including the records it links to; that is a read of the record, not a search for separate records that merely resemble it; route to uc01_summarization",
             "the user wants KB articles, documentation, troubleshooting steps, how-to instructions, runbooks, SOPs, playbooks, known-issue write-ups, or authored guidance; route to uc03_kb_lookup",
             "the user wants a root-cause conclusion, known-error explanation, long-term remediation analysis, or problem-management answer rather than a list of matching tickets; route to uc03_kb_lookup for documented guidance",
             "the user wants to create, update, assign, approve, fulfil, or modify a ticket/request/service; route to the relevant action or fulfilment agent",

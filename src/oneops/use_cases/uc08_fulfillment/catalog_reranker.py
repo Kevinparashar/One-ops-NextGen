@@ -578,9 +578,75 @@ async def rerank(
         )
 
 
+_KEEP_RELEVANT_INSTRUCTION = """You filter a shortlist of catalog items down to
+only those that genuinely fulfil the user's request.
+
+Return STRICT JSON: {"relevant": ["CAT_ID", ...]}
+
+Keep a catalog item ONLY when it directly provides what the user asked for, or
+is a close, reasonable alternative a requester would actually consider. DROP an
+item that merely sits in the same broad category, or shares a word, but does not
+fulfil the request. Always keep the single best match. Choose only from the
+[CAT_ID]s shown — never invent one. If nothing is a good fit, return the single
+best candidate alone."""
+
+
+async def keep_relevant(
+    *, tenant_id: str, sr_text: str,
+    candidates: tuple[CatalogMatch, ...],
+    gateway: LlmGateway, user_id: str = "",
+) -> set[str]:
+    """Cross-encoder-style precision pass over the embedding shortlist.
+
+    The embedding retriever is recall-first: a strong query still drags in items
+    that share a word or category but do not fulfil the request (e.g. "Application
+    Access" under "order a headset"). This trims the shortlist to the items a
+    requester would actually consider, judged by an LLM that reads each card
+    against the request — the listwise analogue of a cross-encoder reranker.
+
+    Returns the kept catalog ids (a subset of the candidate ids). FAIL-OPEN: on
+    any error, or an empty/invalid response, returns ALL candidate ids — the
+    filter can only ever remove noise, never make the shortlist worse.
+    """
+    ids = {m.catalog_item_id for m in candidates}
+    if len(candidates) <= 1:
+        return ids
+
+    with _tracer.start_as_current_span(
+        "uc08.rerank.keep_relevant",
+        attributes={"oneops.tenant_id": tenant_id,
+                    "uc08.candidate_count": len(candidates)},
+    ) as span:
+        try:
+            resp = await gateway.call(LlmRequest(
+                messages=(
+                    LlmMessage(role="system", content=compose(
+                        Profile.FEATURE_AGENT_JSON,
+                        extra_sections=[_KEEP_RELEVANT_INSTRUCTION])),
+                    LlmMessage(role="user", content=_build_user_prompt(
+                        sr_text=sr_text, candidates=candidates)),
+                ),
+                model=RERANK_MODEL, tenant_id=tenant_id, user_id=user_id,
+                temperature=0.0, max_tokens=120,
+                response_format=ResponseFormat.JSON,
+            ))
+            text = (resp.content or "").strip().lstrip("`").rstrip("`")
+            if text.startswith("json"):
+                text = text[4:].strip()
+            kept = {i for i in (json.loads(text).get("relevant") or [])
+                    if i in ids}
+            span.set_attribute("uc08.keep_relevant.kept", len(kept))
+            return kept or ids                       # fail-open on empty
+        except Exception as exc:                     # noqa: BLE001
+            _log.warning("uc08.keep_relevant.failed",
+                         tenant_id=tenant_id, error=str(exc)[:120])
+            return ids                               # fail-open on error
+
+
 __all__ = [
     "RerankResult",
     "rerank",
+    "keep_relevant",
     "should_rerank",
     "RERANK_FLOOR",
     "RERANK_CEILING",

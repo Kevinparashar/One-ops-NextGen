@@ -940,6 +940,18 @@
         resumeInterrupt({ fields: values }, bubble);
       });
       bubble.appendChild(btn);
+      // Close/Cancel — backend marks the form cancelable; resuming with
+      // {cancelled:true} makes uc08 stop gracefully without submitting.
+      if (intr.cancelable) {
+        const close = document.createElement("button");
+        close.className = "interrupt-option interrupt-skip";
+        close.textContent = "Close";
+        close.addEventListener("click", () => {
+          turn.remove();
+          resumeInterrupt({ cancelled: true }, bubble);
+        });
+        bubble.appendChild(close);
+      }
 
     } else if (kind === "user_confirmation") {
       const summary = intr.summary || {};

@@ -210,7 +210,8 @@ class LiteLLMTransport:
         # support prompt caching see flat-string content (the non-cached
         # path below). The mixed-shape branching keeps the simple case
         # token-identical with the pre-caching behaviour.
-        messages_payload = _build_messages_payload(request.messages)
+        messages_payload = _build_messages_payload(
+            request.messages, model=request.model)
         body: dict[str, Any] = {
             "model": request.model,
             "messages": messages_payload,
@@ -254,7 +255,8 @@ class LiteLLMTransport:
         client = await self._get_client()
         body: dict[str, Any] = {
             "model": request.model,
-            "messages": _build_messages_payload(request.messages),
+            "messages": _build_messages_payload(
+                request.messages, model=request.model),
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "stream": True,
@@ -265,6 +267,8 @@ class LiteLLMTransport:
 
         prompt_tokens = 0
         completion_tokens = 0
+        cache_read = 0
+        cache_creation = 0
         finish_reason = "stop"
         actual_model = request.model
         try:
@@ -293,6 +297,18 @@ class LiteLLMTransport:
                         prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
                         completion_tokens = int(
                             usage.get("completion_tokens", 0) or 0)
+                        # Cache counters surface differently per provider
+                        # (Anthropic via LiteLLM: cache_read_input_tokens;
+                        # OpenAI: prompt_tokens_details.cached_tokens) — mirror
+                        # the non-streaming parser so streamed calls aren't
+                        # silently reported as 0% cached.
+                        cache_read = int(
+                            usage.get("cache_read_input_tokens")
+                            or ((usage.get("prompt_tokens_details") or {})
+                                .get("cached_tokens"))
+                            or 0)
+                        cache_creation = int(
+                            usage.get("cache_creation_input_tokens") or 0)
                     for ch in chunk.get("choices", []):
                         if ch.get("finish_reason"):
                             finish_reason = ch["finish_reason"]
@@ -315,7 +331,9 @@ class LiteLLMTransport:
         yield StreamDelta(
             final=True, prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens, finish_reason=finish_reason,
-            actual_model=actual_model)
+            actual_model=actual_model,
+            cache_read_input_tokens=cache_read,
+            cache_creation_input_tokens=cache_creation)
 
     async def _post_chat(self, client: Any, body: dict[str, Any]) -> dict[str, Any]:
         """POST /chat/completions, mapping transport failures to typed errors
@@ -359,11 +377,29 @@ class LiteLLMTransport:
         return [list(map(float, row.get("embedding") or [])) for row in data]
 
 
-def _build_messages_payload(messages: Any) -> list[dict[str, Any]]:
-    """Anthropic prompt-cache content-block shape for messages flagged
-    cache_control=True (LiteLLM passes it through to Anthropic); flat-string
-    content otherwise — token-identical with the pre-caching path."""
-    if not any(getattr(m, "cache_control", False) for m in messages):
+def _is_anthropic_model(model: str) -> bool:
+    """The content-block `cache_control` shape is an ANTHROPIC prompt-cache
+    mechanism. Only Anthropic models read it; emitting it to any other provider
+    is at best dead weight and at worst (with LiteLLM `drop_params: false`) an
+    unknown field on the request. Detect by the LiteLLM model alias/target."""
+    m = (model or "").lower()
+    return "claude" in m or "anthropic" in m
+
+
+def _build_messages_payload(
+    messages: Any, *, model: str,
+) -> list[dict[str, Any]]:
+    """Messages payload for /chat/completions.
+
+    For ANTHROPIC models, messages flagged `cache_control=True` are emitted in
+    the content-block shape LiteLLM forwards as a prompt-cache breakpoint. For
+    every OTHER provider (e.g. OpenAI), send FLAT-STRING content and DROP the
+    `cache_control` marker entirely: OpenAI caches the stable prefix
+    automatically and the Anthropic-only marker must never reach it. Flat
+    strings are also byte-identical call-to-call, which is exactly what OpenAI's
+    automatic prefix cache keys on."""
+    if not _is_anthropic_model(model) or not any(
+            getattr(m, "cache_control", False) for m in messages):
         return [{"role": m.role, "content": m.content} for m in messages]
     payload: list[dict[str, Any]] = []
     for m in messages:

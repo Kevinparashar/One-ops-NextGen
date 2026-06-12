@@ -71,6 +71,10 @@ def make_result(
     return {
         "step_id": step.get("step_id"),
         "agent_id": step.get("agent_id"),
+        # turn_id (= the planning turn's request_id) lets `aggregate` keep only
+        # the current turn's results on a checkpointed/interrupt-held session,
+        # where the step_results channel persists across turns.
+        "turn_id": step.get("turn_id"),
         "status": status,
         "output": output,
         "error": error,

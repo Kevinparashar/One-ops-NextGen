@@ -75,7 +75,10 @@ VALUES
   ('itsm.catalog_item', 'catalog_anchor', 'name',        'name',        true, 1),
   ('itsm.catalog_item', 'catalog_anchor', 'description', 'description', true, 2),
   ('itsm.catalog_item', 'catalog_anchor', 'category',    'category',    true, 3),
-  ('itsm.catalog_item', 'catalog_anchor', 'owner',       'owner_group', true, 4)
+  ('itsm.catalog_item', 'catalog_anchor', 'owner',       'owner_group', true, 4),
+  -- 2026-06-12: derived discriminative phrasings (derive_intent_keywords.py).
+  -- Sharpens the anchor so a query matches the item a user actually means.
+  ('itsm.catalog_item', 'catalog_anchor', 'intent_keywords', 'intent_keywords', true, 5)
 ON CONFLICT (source_table, chunk_type, field_role, embedding_version) DO NOTHING;
 
 DO $$

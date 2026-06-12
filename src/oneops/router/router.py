@@ -615,7 +615,8 @@ class Router:
         # the rewritten text. Target agent must be a registered active agent
         # AND must have survived stages 1-3 (post-authz / post-activation).
         preroute_outcome = self._try_preroute(
-            survivors, signals, text, normalized, original_text, sq_id, diag)
+            survivors, signals, text, normalized, original_text, sq_id, diag,
+            has_focus=bool((request_ctx.get("focus_entity_id") or "").strip()))
         if preroute_outcome is not None:
             return preroute_outcome
 
@@ -750,6 +751,7 @@ class Router:
         original_text: str | None,
         sq_id: str,
         diag: list[str],
+        has_focus: bool = False,
     ) -> _FunnelOutcome | None:
         """Stage 3.4 — deterministic preroute (X6, 2026-05-28).
 
@@ -777,7 +779,8 @@ class Router:
                 "oneops.router.survivor_ids": ",".join(sorted(survivor_ids)),
             },
         ) as pre_span:
-            pre_target = _deterministic_preroute(preroute_text, survivor_ids)
+            pre_target = _deterministic_preroute(
+                preroute_text, survivor_ids, has_focus=has_focus)
             pre_span.set_attribute(
                 "oneops.router.preroute.fired", pre_target is not None)
             set_langfuse_io(

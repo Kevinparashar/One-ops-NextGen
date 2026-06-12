@@ -760,7 +760,8 @@ class ExecutorNodes:
                 "entity_clarification": entity_clarification,
             }
             if result.outcome is RouteOutcome.ROUTED and result.plan is not None:
-                update["plan"] = serialise_plan(result.plan)
+                update["plan"] = serialise_plan(
+                    result.plan, state.get("request_id", "") or "")
             else:
                 update["plan"] = []
                 update["boundary_reason"] = result.boundary_reason
@@ -816,7 +817,7 @@ class ExecutorNodes:
                   tenant_id=state.get("tenant_id", ""))
         return {
             "route_outcome": "routed",
-            "plan": serialise_plan(plan),
+            "plan": serialise_plan(plan, state.get("request_id", "") or ""),
             "route_diagnostics": [f"forced dispatch: {forced}"],
             "unrouted": [], "entity_clarification": "", "time_filter": {},
         }
@@ -1162,8 +1163,22 @@ class ExecutorNodes:
         the LLM gateway exhausted retries. The terse `"- agent_id: status"`
         debug shape is gone (Phase A+B of the UC-1 contract).
         """
-        results = state.get("step_results") or []
-        plan = state.get("plan") or []
+        # Multi-turn consistency (2026-06-13 RCA): `step_results` and `plan` use
+        # accumulating reducers and PERSIST across turns on a checkpointed /
+        # interrupt-held session — so without scoping, a new turn re-renders the
+        # PREVIOUS turn's results (the "server keep dropping re-showed the VPN
+        # KBs" bug). Keep only THIS turn's plan + results, identified by the
+        # turn_id stamped at plan time (= the turn's request_id). Untagged rows
+        # (legacy / pre-stamp) are treated as current, so behaviour is unchanged
+        # for any single-turn or non-checkpointed path.
+        turn_id = state.get("request_id", "") or ""
+
+        def _this_turn(row: dict[str, Any]) -> bool:
+            rid = row.get("turn_id")
+            return (not turn_id) or (rid in (None, "", turn_id))
+
+        results = [r for r in (state.get("step_results") or []) if _this_turn(r)]
+        plan = [s for s in (state.get("plan") or []) if _this_turn(s)]
         unrouted = state.get("unrouted") or []
 
         # No-silent-skip (thumb rule #11): any plan step that never produced a
@@ -1236,10 +1251,14 @@ class ExecutorNodes:
         # Always set the marker so the graph's conditional edge sees it.
         update: dict[str, Any] = {"control_gate_outcome": result.control_type}
         if result.is_control and result.response_text:
-            if result.control_type == "out_of_scope":
-                backstop = await self._kb_backstop(state)
-                if backstop is not None:
-                    return backstop
+            # KB domain-backstop REMOVED 2026-06-13. It ran a full search_kb
+            # (embed + hybrid retrieve + LLM rerank) on every `out_of_scope`
+            # verdict before refusing — the main cause of the ~4-7s latency on
+            # off-domain queries (e.g. "hows the weather" fired
+            # search_kb.hybrid_fused + rerank_gate). A 40-query borderline-IT
+            # measurement showed it rescued only ~1 in 40 wrongly-refused
+            # queries (2.5%) and 0% on confident off-domain; the control gate
+            # carries scope on its own (97.5% on 200 unseen). Refuse directly.
             # Short-circuit. final_status mirrors the boundary's
             # `clarification` for non-task replies so the UI renders the
             # same way it does today for greetings/OOS.
@@ -1248,36 +1267,6 @@ class ExecutorNodes:
                 "final_response": result.response_text,
             })
         return update
-
-    async def _kb_backstop(
-        self, state: ExecutorState,
-    ) -> dict[str, Any] | None:
-        """Data-driven domain backstop (2026-06-02 RCA). The control gate's
-        `out_of_scope` verdict is occasionally wrong — and not perfectly
-        deterministic even at temperature 0 — for borderline IT how-to
-        phrasings ("how do I configure a VPN client?" refused while
-        "...client" answered). Before refusing, probe the KB CORPUS itself,
-        the authoritative + deterministic domain signal: if it has a real
-        answer the query IS in-domain, so return that answer instead of "out
-        of scope". A genuine off-topic query ("recommend a pizza place")
-        matches nothing (search_kb's relevance gate) and refuses exactly as
-        before — this only rescues real IT questions the scope LLM mishandled.
-
-        Returns a short-circuit update carrying the KB answer, or None to
-        refuse as the gate decided."""
-        from oneops.use_cases.uc03_kb_lookup.handlers import kb_backstop_answer
-        ctx = {
-            "tenant_id": state.get("tenant_id", "") or "",
-            "user_id": state.get("user_id", "") or "",
-            "role": state.get("role", "") or "",
-            "request_id": state.get("request_id", "") or "",
-        }
-        kb = await kb_backstop_answer(state.get("message", "") or "", ctx)
-        if kb:
-            return {"control_gate_outcome": "kb_backstop",
-                    "final_status": "executed",
-                    "final_response": kb}
-        return None
 
     # ── boundary ─────────────────────────────────────────────────────────
 
@@ -1462,16 +1451,23 @@ def interrupt_for_selection(
 def interrupt_for_input(
     prompt: str,
     fields: list[dict[str, Any]],
+    *,
+    cancelable: bool = True,
 ) -> Any:
     """Pause execution and ask the user to fill in one or more fields.
 
     Each field dict must have `name` (str) and `required` (bool); `label`,
     `placeholder`, and `type` (text/date/number) are optional.
+    `cancelable` (default True) tells the frontend to render a Close/Cancel
+    control alongside Submit — mirrors `allow_none` on user_selection. On
+    cancel the frontend resumes with `{"cancelled": true}`; the caller checks
+    for it and stops gracefully instead of submitting.
     Returns the user-submitted dict keyed by field name."""
     return interrupt({
         "kind": "user_input",
         "prompt": prompt,
         "fields": fields,
+        "cancelable": cancelable,
     })
 
 

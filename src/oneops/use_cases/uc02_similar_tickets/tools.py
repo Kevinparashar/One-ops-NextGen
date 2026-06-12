@@ -261,10 +261,11 @@ async def find_similar_entities(
     tenant_id = str(context.get("tenant_id") or arguments.get("tenant_id") or "").strip()
     user_id = str(context.get("user_id") or arguments.get("user_id") or "").strip()
     role = str(context.get("role") or arguments.get("role") or "").strip()
-    ticket_id_raw = str(
-        arguments.get("ticket_id") or context.get("focus_entity_id") or "").strip()
-    service_id = str(
-        arguments.get("service_id") or context.get("focus_service_id") or "").strip().lower() or None
+    explicit_ticket = str(arguments.get("ticket_id") or "").strip()
+    focus_ticket = str(context.get("focus_entity_id") or "").strip()
+    explicit_service = str(arguments.get("service_id") or "").strip().lower() or None
+    focus_service = str(context.get("focus_service_id") or "").strip().lower() or None
+    text_query = _text_query_from(arguments)
     if not tenant_id:
         raise ValueError("tenant_id missing from context and arguments")
 
@@ -279,12 +280,38 @@ async def find_similar_entities(
     time_filter = _coerce_time_filter(
         context.get("time_filter") or arguments.get("time_filter"))
 
-    # No ticket in scope → same-by-text (or the friendly "need an id/text" error).
-    if not ticket_id_raw:
-        return await _find_similar_by_text(
-            arguments=arguments, tenant_id=tenant_id,
-            user_id=user_id, role=role, service_id=service_id,
+    # ── source resolution: stale-focus guard (multi-turn) ──────────────────
+    # `focus_entity_id` is conversational state carried over from a PRIOR turn.
+    # It must SCOPE a referential follow-up ("any similar ones?"), never HIJACK a
+    # turn whose message introduces its OWN symptom ("...other tickets for
+    # database issues"). Precedence:
+    #   1. an explicit ticket id named in THIS message → that ticket (id path).
+    #   2. a carried focus + a free-text symptom in THIS message → try the
+    #      message's own topic first (text path, NOT scoped to the focus's
+    #      service); only when it is contentless (a bare reference that matches
+    #      nothing) fall back to the focused ticket. The corpus is the judge — no
+    #      keyword test of "is this a topic".
+    #   3. a carried focus alone (no symptom text) → the focused ticket (id path).
+    #   4. symptom text alone (or nothing) → text path / friendly error.
+    if explicit_ticket:
+        ticket_id_raw = explicit_ticket
+        service_id = explicit_service or focus_service
+    elif focus_ticket and text_query:
+        text_payload = await _find_similar_by_text(
+            arguments=arguments, tenant_id=tenant_id, user_id=user_id, role=role,
+            service_id=explicit_service,  # new topic → search all, not focus's svc
             time_filter=time_filter, cp=cp)
+        if text_payload.get("results"):
+            return text_payload                       # the message's own topic won
+        ticket_id_raw = focus_ticket                  # bare reference → focused ticket
+        service_id = focus_service
+    elif focus_ticket:
+        ticket_id_raw = focus_ticket
+        service_id = focus_service
+    else:
+        return await _find_similar_by_text(
+            arguments=arguments, tenant_id=tenant_id, user_id=user_id, role=role,
+            service_id=explicit_service, time_filter=time_filter, cp=cp)
 
     # Canonicalise + (when missing) auto-derive service_id from the prefix.
     try:

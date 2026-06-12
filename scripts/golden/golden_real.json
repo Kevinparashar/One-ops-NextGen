@@ -1,0 +1,786 @@
+[
+  {
+    "id": "g001",
+    "query": "summarize INC0001001",
+    "expected": "uc01",
+    "grounded_on": "INC0001001",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g002",
+    "query": "what is the priority of INC0001002",
+    "expected": "uc01",
+    "grounded_on": "INC0001002",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g003",
+    "query": "who is assigned to INC0001003",
+    "expected": "uc01",
+    "grounded_on": "INC0001003",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g004",
+    "query": "what is the status of INC0001004",
+    "expected": "uc01",
+    "grounded_on": "INC0001004",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g005",
+    "query": "give me the full details of INC0001005",
+    "expected": "uc01",
+    "grounded_on": "INC0001005",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g006",
+    "query": "tell me about INC0001006",
+    "expected": "uc01",
+    "grounded_on": "INC0001006",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g007",
+    "query": "summarize INC0001007",
+    "expected": "uc01",
+    "grounded_on": "INC0001007",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g008",
+    "query": "what is the priority of INC0001008",
+    "expected": "uc01",
+    "grounded_on": "INC0001008",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g009",
+    "query": "who is assigned to INC0001009",
+    "expected": "uc01",
+    "grounded_on": "INC0001009",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g010",
+    "query": "what is the status of INC0001010",
+    "expected": "uc01",
+    "grounded_on": "INC0001010",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g011",
+    "query": "give me the full details of REQ0A0734EB6B",
+    "expected": "uc01",
+    "grounded_on": "REQ0A0734EB6B",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g012",
+    "query": "tell me about REQ0FD2DA72D1",
+    "expected": "uc01",
+    "grounded_on": "REQ0FD2DA72D1",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g013",
+    "query": "summarize REQ24A8A99805",
+    "expected": "uc01",
+    "grounded_on": "REQ24A8A99805",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g014",
+    "query": "what is the priority of REQ487681E552",
+    "expected": "uc01",
+    "grounded_on": "REQ487681E552",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g015",
+    "query": "who is assigned to REQ64AD18D9CA",
+    "expected": "uc01",
+    "grounded_on": "REQ64AD18D9CA",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g016",
+    "query": "what is the status of REQ66C65D016C",
+    "expected": "uc01",
+    "grounded_on": "REQ66C65D016C",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g017",
+    "query": "give me the full details of PBM0003001",
+    "expected": "uc01",
+    "grounded_on": "PBM0003001",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g018",
+    "query": "tell me about PBM0003002",
+    "expected": "uc01",
+    "grounded_on": "PBM0003002",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g019",
+    "query": "summarize PBM0003003",
+    "expected": "uc01",
+    "grounded_on": "PBM0003003",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g020",
+    "query": "what is the priority of PBM0003004",
+    "expected": "uc01",
+    "grounded_on": "PBM0003004",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g021",
+    "query": "who is assigned to CHG0004001",
+    "expected": "uc01",
+    "grounded_on": "CHG0004001",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g022",
+    "query": "what is the status of CHG0004002",
+    "expected": "uc01",
+    "grounded_on": "CHG0004002",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g023",
+    "query": "give me the full details of CHG0004003",
+    "expected": "uc01",
+    "grounded_on": "CHG0004003",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g024",
+    "query": "tell me about CHG0004004",
+    "expected": "uc01",
+    "grounded_on": "CHG0004004",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "g025",
+    "query": "any tickets similar to INC0001001",
+    "expected": "uc02",
+    "grounded_on": "INC0001001",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "g026",
+    "query": "is INC0001002 a recurring problem",
+    "expected": "uc02",
+    "grounded_on": "INC0001002",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "g027",
+    "query": "any tickets similar to INC0001003",
+    "expected": "uc02",
+    "grounded_on": "INC0001003",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "g028",
+    "query": "is INC0001004 a recurring problem",
+    "expected": "uc02",
+    "grounded_on": "INC0001004",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "g029",
+    "query": "any tickets similar to INC0001005",
+    "expected": "uc02",
+    "grounded_on": "INC0001005",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "g030",
+    "query": "is INC0001006 a recurring problem",
+    "expected": "uc02",
+    "grounded_on": "INC0001006",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "g031",
+    "query": "any tickets similar to INC0001007",
+    "expected": "uc02",
+    "grounded_on": "INC0001007",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "g032",
+    "query": "is INC0001008 a recurring problem",
+    "expected": "uc02",
+    "grounded_on": "INC0001008",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "g033",
+    "query": "any tickets similar to INC0001009",
+    "expected": "uc02",
+    "grounded_on": "INC0001009",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "g034",
+    "query": "is INC0001010 a recurring problem",
+    "expected": "uc02",
+    "grounded_on": "INC0001010",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "g035",
+    "query": "any tickets similar to INC0001011",
+    "expected": "uc02",
+    "grounded_on": "INC0001011",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "g036",
+    "query": "is INC0001012 a recurring problem",
+    "expected": "uc02",
+    "grounded_on": "INC0001012",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "g037",
+    "query": "how do i fix vpn disconnects on wi-fi handoff",
+    "expected": "uc03",
+    "grounded_on": "KB0005001",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g038",
+    "query": "how do i troubleshoot vpn error 809",
+    "expected": "uc03",
+    "grounded_on": "KB0005002",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g039",
+    "query": "is there a guide for outlook sync delay checklist",
+    "expected": "uc03",
+    "grounded_on": "KB0005003",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g040",
+    "query": "is there a guide for hr portal 500 error first response",
+    "expected": "uc03",
+    "grounded_on": "KB0005004",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g041",
+    "query": "is there a guide for payroll db deadlock mitigation",
+    "expected": "uc03",
+    "grounded_on": "KB0005005",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g042",
+    "query": "is there a guide for salesforce sync lag troubleshooting",
+    "expected": "uc03",
+    "grounded_on": "KB0005006",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g043",
+    "query": "is there a guide for wi-fi floor outage triage",
+    "expected": "uc03",
+    "grounded_on": "KB0005007",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g044",
+    "query": "is there a guide for itsm portal slowness quick checks",
+    "expected": "uc03",
+    "grounded_on": "KB0005009",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g045",
+    "query": "is there a guide for monitoring alert delay playbook",
+    "expected": "uc03",
+    "grounded_on": "KB0005010",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g046",
+    "query": "is there a guide for laptop patch failure remediation",
+    "expected": "uc03",
+    "grounded_on": "KB0005011",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g047",
+    "query": "is there a guide for erp export memory incident response",
+    "expected": "uc03",
+    "grounded_on": "KB0005012",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g048",
+    "query": "is there a guide for change calendar outage fallback",
+    "expected": "uc03",
+    "grounded_on": "KB0005013",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g049",
+    "query": "is there a guide for cmdb probe certificate renewal",
+    "expected": "uc03",
+    "grounded_on": "KB0005014",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g050",
+    "query": "is there a guide for knowledge search ranking tuning",
+    "expected": "uc03",
+    "grounded_on": "KB0005015",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g051",
+    "query": "is there a guide for vpn duplicate incident detection tips",
+    "expected": "uc03",
+    "grounded_on": "KB0005016",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g052",
+    "query": "is there a guide for erp login slow known issue",
+    "expected": "uc03",
+    "grounded_on": "KB0005018",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g053",
+    "query": "is there a guide for kb authoring standards",
+    "expected": "uc03",
+    "grounded_on": "KB0005020",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g054",
+    "query": "how do i handle replication lag",
+    "expected": "uc03",
+    "grounded_on": "KB9010001",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g055",
+    "query": "how do i clean up duplicate ci records",
+    "expected": "uc03",
+    "grounded_on": "KB9010002",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g056",
+    "query": "how do i clean up duplicate ci records",
+    "expected": "uc03",
+    "grounded_on": "KB9010003",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "g057",
+    "query": "request privileged / admin access",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_ADMIN",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g058",
+    "query": "i need application access",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_APP",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g059",
+    "query": "order cloud sandbox environment",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_CLOUD_SANDBOX",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g060",
+    "query": "can i get database access",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_DB",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g061",
+    "query": "request new user account creation",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_NEW_USER",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g062",
+    "query": "i need source code repository access",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_REPO",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g063",
+    "query": "order shared drive / folder access",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_SHARED_DRIVE",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g064",
+    "query": "can i get vpn / remote access",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_VPN",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g065",
+    "query": "request video conferencing license",
+    "expected": "uc08",
+    "grounded_on": "CAT_CO_MEETING_TOOL",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g066",
+    "query": "i need distribution list / group email",
+    "expected": "uc08",
+    "grounded_on": "CAT_EM_DISTRIBUTION",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g067",
+    "query": "order new mailbox / email account",
+    "expected": "uc08",
+    "grounded_on": "CAT_EM_MAILBOX",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g068",
+    "query": "can i get mailbox quota increase",
+    "expected": "uc08",
+    "grounded_on": "CAT_EM_QUOTA",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g069",
+    "query": "request desk / workspace allocation",
+    "expected": "uc08",
+    "grounded_on": "CAT_FC_DESK",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g070",
+    "query": "i need parking permit",
+    "expected": "uc08",
+    "grounded_on": "CAT_FC_PARKING",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g071",
+    "query": "order meeting room / facility booking",
+    "expected": "uc08",
+    "grounded_on": "CAT_FC_ROOM",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g072",
+    "query": "can i get expense claim",
+    "expected": "uc08",
+    "grounded_on": "CAT_FN_EXPENSE",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g073",
+    "query": "request procurement / purchase order",
+    "expected": "uc08",
+    "grounded_on": "CAT_FN_PROCURE",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g074",
+    "query": "i need travel reimbursement",
+    "expected": "uc08",
+    "grounded_on": "CAT_FN_TRAVEL",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g075",
+    "query": "order id card / access badge",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_ID_CARD",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g076",
+    "query": "can i get leave / time-off request",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_LEAVE",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g077",
+    "query": "request manpower / hiring requisition",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_MANPOWER",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g078",
+    "query": "i need employee offboarding",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_OFFBOARD",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g079",
+    "query": "order hr portal report access",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_PORTAL_ACCESS",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g080",
+    "query": "can i get training enrollment",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_TRAINING",
+    "family": "uc08",
+    "note": ""
+  },
+  {
+    "id": "g081",
+    "query": "set up my mfa",
+    "expected": "kb_then_sr",
+    "grounded_on": "CAT_SE_MFA|KB0005008",
+    "family": "kb_then_sr",
+    "note": "catalog CAT_SE_MFA ~ KB KB0005008 (MFA reset propagation guide)"
+  },
+  {
+    "id": "g082",
+    "query": "i need to set up my mfa",
+    "expected": "kb_then_sr",
+    "grounded_on": "CAT_SE_MFA|KB0005008",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "g083",
+    "query": "reset my password",
+    "expected": "kb_then_sr",
+    "grounded_on": "CAT_SE_PASSWORD|KB0005021",
+    "family": "kb_then_sr",
+    "note": "catalog CAT_SE_PASSWORD ~ KB KB0005021 (Password reset procedure)"
+  },
+  {
+    "id": "g084",
+    "query": "i need to reset my password",
+    "expected": "kb_then_sr",
+    "grounded_on": "CAT_SE_PASSWORD|KB0005021",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "g085",
+    "query": "triage INC0001013",
+    "expected": "uc05",
+    "grounded_on": "INC0001013",
+    "family": "uc05",
+    "note": "operator role required"
+  },
+  {
+    "id": "g086",
+    "query": "what category and priority should INC0001014 be",
+    "expected": "uc05",
+    "grounded_on": "INC0001014",
+    "family": "uc05",
+    "note": "operator role required"
+  },
+  {
+    "id": "g087",
+    "query": "triage INC0001015",
+    "expected": "uc05",
+    "grounded_on": "INC0001015",
+    "family": "uc05",
+    "note": "operator role required"
+  },
+  {
+    "id": "g088",
+    "query": "what category and priority should INC0001016 be",
+    "expected": "uc05",
+    "grounded_on": "INC0001016",
+    "family": "uc05",
+    "note": "operator role required"
+  },
+  {
+    "id": "g089",
+    "query": "triage INC0001017",
+    "expected": "uc05",
+    "grounded_on": "INC0001017",
+    "family": "uc05",
+    "note": "operator role required"
+  },
+  {
+    "id": "g090",
+    "query": "what category and priority should INC0001018 be",
+    "expected": "uc05",
+    "grounded_on": "INC0001018",
+    "family": "uc05",
+    "note": "operator role required"
+  },
+  {
+    "id": "g091",
+    "query": "triage INC0001019",
+    "expected": "uc05",
+    "grounded_on": "INC0001019",
+    "family": "uc05",
+    "note": "operator role required"
+  },
+  {
+    "id": "g092",
+    "query": "what category and priority should INC0001020 be",
+    "expected": "uc05",
+    "grounded_on": "INC0001020",
+    "family": "uc05",
+    "note": "operator role required"
+  },
+  {
+    "id": "g093",
+    "query": "what's the weather tomorrow",
+    "expected": "off_domain",
+    "grounded_on": "-",
+    "family": "off_domain",
+    "note": ""
+  },
+  {
+    "id": "g094",
+    "query": "recommend a good restaurant",
+    "expected": "off_domain",
+    "grounded_on": "-",
+    "family": "off_domain",
+    "note": ""
+  },
+  {
+    "id": "g095",
+    "query": "what's my leave balance",
+    "expected": "off_domain",
+    "grounded_on": "-",
+    "family": "off_domain",
+    "note": ""
+  },
+  {
+    "id": "g096",
+    "query": "book me a flight",
+    "expected": "off_domain",
+    "grounded_on": "-",
+    "family": "off_domain",
+    "note": ""
+  },
+  {
+    "id": "g097",
+    "query": "who won the match",
+    "expected": "off_domain",
+    "grounded_on": "-",
+    "family": "off_domain",
+    "note": ""
+  },
+  {
+    "id": "g098",
+    "query": "how do i file my personal taxes",
+    "expected": "off_domain",
+    "grounded_on": "-",
+    "family": "off_domain",
+    "note": ""
+  }
+]

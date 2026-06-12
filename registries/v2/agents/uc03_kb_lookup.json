@@ -78,7 +78,7 @@
             "the user reports a symptom, error, or that something is broken, slow, failing, or not working with no explicit how-to verb, and wants it understood or resolved"
           ],
           "not_when": [
-            "the user wants the stored facts, field values, status, priority, owner, SLA, comments, work notes, timeline, or linked records of a specific record; route to uc01_summarization",
+            "the user wants the stored facts, field values, status, priority, owner, SLA, comments, work notes, timeline, or anything that belongs to a specific record — including the records it links to; that is a read of the record, not a request for authored knowledge; route to uc01_summarization",
             "the user wants other existing tickets, duplicates, peer records, historical cases, or similar incidents/requests; route to uc02_similar_tickets",
             "the user wants the organization, system, or service desk to perform fulfilment on their behalf, including granting access, provisioning an account, installing software, assigning a license, ordering hardware, increasing quota, creating a mailbox, onboarding a user, configuring a service, or creating a service request; route to uc08_fulfillment",
             "the user explicitly asks to create, update, modify, approve, fulfil, assign, close, reopen, or mutate a record; route to the relevant action agent",

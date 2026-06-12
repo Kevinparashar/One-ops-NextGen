@@ -129,7 +129,9 @@ async def test_list_no_match_when_best_below_floor(monkeypatch):
     out = await tools.get_service_request_list({"query": "pizza party"}, _CTX)
     assert out["ok"] is True
     assert out["matches"] == []
-    assert "incident" in out["display_text"].lower()
+    # No-match message (2026-06-13): "No relevant catalog found. Please contact
+    # the IT Team." — replaces the prior incident-path offer.
+    assert "no relevant catalog" in out["display_text"].lower()
 
 
 async def test_list_no_match_offers_incident_path():
@@ -138,7 +140,9 @@ async def test_list_no_match_offers_incident_path():
     out = await tools.get_service_request_list({"query": "pizza party"}, _CTX)
     assert out["ok"] is True
     assert out["matches"] == []
-    assert "incident" in out["display_text"].lower()
+    # No-match message (2026-06-13): "No relevant catalog found. Please contact
+    # the IT Team." — replaces the prior incident-path offer.
+    assert "no relevant catalog" in out["display_text"].lower()
 
 
 async def test_list_degrades_without_gateway():
@@ -476,8 +480,8 @@ async def test_conductor_no_match_declines_without_interrupting(monkeypatch):
     assert out["outcome"] == "no_match"
     assert calls["interrupts"] == []          # never paused
     assert calls["created"] is None           # never created
-    assert "incident isn't available" in out["display_text"].lower() or \
-           "follow up" in out["display_text"].lower()
+    # No-match message (2026-06-13): declines with the contact-IT message.
+    assert "no relevant catalog" in out["display_text"].lower()
 
 
 async def test_conductor_user_declines_selection(monkeypatch):
