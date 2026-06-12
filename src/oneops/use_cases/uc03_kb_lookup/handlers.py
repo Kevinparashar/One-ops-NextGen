@@ -217,6 +217,22 @@ def _search_kb_config() -> tuple[int, float, int]:
     return per_side, min_score, top_k
 
 
+def _force_render_min_score() -> float:
+    """Confidence floor for the no-match override (2026-06-12).
+
+    The relevance gate (UC03_MIN_ANSWER_RELEVANCE_SCORE, ~0.35) is tuned for
+    RECALL, so it admits a borderline band just above it where a generically-
+    similar but off-topic article can pass (text-embedding-3-large gives any two
+    enterprise-IT texts ~0.30-0.40 cosine). When the LLM composer then emits a
+    no-match, we trust it ONLY in that borderline band — at/above this floor the
+    hit is confident enough that the gate wins and we force-render (the original
+    recall protection). Read per-call so .env tuning takes effect."""
+    try:
+        return float(os.getenv("UC03_FORCE_RENDER_MIN_SCORE", "0.45"))
+    except ValueError:
+        return 0.45
+
+
 async def _compose_kb_answer(
     query: str, hits: list[dict[str, Any]], context: dict[str, Any], *,
     tenant_id: str, force_deterministic: bool, found_fallback: str | None = None,
@@ -244,12 +260,30 @@ async def _compose_kb_answer(
             "no_match",
             grounded or ("No published knowledge-base article matched "
                          "that query."))
-    # The LLM composer writes phrasing only; if it emitted a false no-match
-    # despite present articles, render them deterministically.
+    # The LLM composer writes phrasing only. When it emits a no-match despite
+    # gate-passing articles, decide by the TOP article's confidence:
+    #   • confident hit (top cosine >= force-render floor, or degraded mode with
+    #     no cosine to judge) → the gate is trustworthy, the LLM is wrong →
+    #     force-render the articles (original recall protection); or
+    #   • BORDERLINE hit (top cosine in the noise band just over the gate) → the
+    #     gate likely admitted a generically-similar but off-topic article →
+    #     honor the LLM's no-match and surface CASE B rather than junk (precision).
     if _composer_wrongly_said_no_match(grounded):
-        _log.warning("uc03.search_kb.composer_no_match_override",
-                     articles=len(hits))
-        grounded = await _render_present_articles(query, hits, context)
+        top_cosine = float(hits[0].get("cosine_full", 0.0))
+        force_floor = _force_render_min_score()
+        if force_deterministic or top_cosine >= force_floor:
+            _log.warning("uc03.search_kb.composer_no_match_override",
+                         articles=len(hits), top_cosine=round(top_cosine, 4),
+                         force_floor=force_floor)
+            grounded = await _render_present_articles(query, hits, context)
+        else:
+            _log.info("uc03.search_kb.honor_composer_no_match",
+                      articles=len(hits), top_cosine=round(top_cosine, 4),
+                      force_floor=force_floor)
+            return _search(
+                "no_match",
+                grounded or ("No published knowledge-base article matched "
+                             "that query."))
 
     articles = tuple(_preview(h) for h in hits)
     return _search(
