@@ -45,6 +45,11 @@ class CapabilityTaxonomy:
                 "id": cid,
                 "priority": int(e["priority"]),
                 "principle": str(e["principle"]).strip(),
+                # Embedded EXEMPLAR utterances (not keywords — used for cosine
+                # similarity, never string-matched) that form this kind's
+                # classifier centroid. Falls back to the principle if absent.
+                "anchors": [str(a).strip() for a in (e.get("anchors") or [])
+                            if str(a).strip()],
             }
         # Highest priority first — the deterministic cross-kind tie order.
         self._order = sorted(

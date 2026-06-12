@@ -1,31 +1,68 @@
 {
   "version": 1,
-  "description": "Capability classes — the bounded, scale-invariant set of NEED KINDS the router classifies a query into BEFORE picking an agent. This set does NOT grow with the agent count: 5 agents or 500, a query is still one of these kinds. Each agent declares which kind(s) it serves via `capabilities` on its card; the router admits only agents whose capabilities include the classified kind. `priority` breaks a CROSS-KIND tie deterministically (higher wins) so a genuinely ambiguous query resolves the same way every time. `principle` is a semantic definition (NOT a keyword list, per §2.1) used to classify a query into this kind.",
+  "description": "Capability classes — the bounded, scale-invariant set of NEED KINDS the router classifies a query into BEFORE picking an agent. This set does NOT grow with the agent count: 5 agents or 500, a query is still one of these kinds. Each agent declares which kind(s) it serves via `capabilities` on its card; the router admits only agents whose capabilities include the classified kind. `principle` is a semantic definition (NOT a keyword list, §2.1); `anchors` are embedded EXEMPLAR utterances (used for cosine similarity, never string-matched) that form the kind's classifier centroid. `priority` ONLY fires on a genuine tie (the classifier cannot separate the kinds) and is DEFINED by RECOVERABILITY-OF-MIS-DEFAULT: when forced to guess, default to the kind where being wrong is most gracefully recoverable. Answer/read kinds rank ABOVE obtain/write kinds — knowledge highest (a wrong KB default says 'no match — want to raise a request?', recoverable and useful); record_action lowest (never default an ambiguous query to a WRITE/mutation). At scale these hand-set ranks are replaced by LEARNED win-rates from production outcomes (plan P5).",
   "capabilities": [
     {
       "id": "record_summary",
-      "priority": 60,
-      "principle": "the user wants the facts, status, fields, or timeline of ONE specific record they have identified (by id or active focus)"
+      "priority": 55,
+      "principle": "the user wants the facts, status, fields, or timeline of ONE specific record they have identified (by id or active focus)",
+      "anchors": [
+        "summarize incident INC0001234",
+        "what is the status of this request",
+        "who is this ticket assigned to",
+        "give me the details of this record",
+        "when was this incident opened"
+      ]
     },
     {
       "id": "fulfilment",
-      "priority": 55,
-      "principle": "the user wants to OBTAIN, order, provision, request, or get access to something new"
+      "priority": 45,
+      "principle": "the user wants to OBTAIN, order, provision, request, or get access to something new",
+      "anchors": [
+        "I need a new laptop",
+        "request access to the finance drive",
+        "can I order a second monitor",
+        "provision a vpn account for me",
+        "please set up a mailbox for a new joiner"
+      ]
     },
     {
       "id": "knowledge",
-      "priority": 50,
-      "principle": "the user wants an ANSWER, how-to, explanation, or fix — including a bare problem or symptom stated with no other ask; the safe default when intent is unclear"
+      "priority": 60,
+      "principle": "the user wants an ANSWER, how-to, explanation, or fix — including a bare problem or symptom stated with no other ask; the safe default when intent is unclear",
+      "anchors": [
+        "how do I reset my password",
+        "my printer is not working how do I fix it",
+        "what is the procedure for requesting time off",
+        "steps to configure outlook on a new phone",
+        "wifi keeps disconnecting",
+        "database is running slow",
+        "vpn error 809"
+      ]
     },
     {
       "id": "record_action",
-      "priority": 45,
-      "principle": "the user wants to triage, classify, prioritise, assign, or otherwise MODIFY a record"
+      "priority": 40,
+      "principle": "the user wants to triage, classify, prioritise, assign, or otherwise MODIFY a record",
+      "anchors": [
+        "triage this incident",
+        "reassign the ticket to another team",
+        "set this ticket priority to high",
+        "classify and route this case"
+      ]
     },
     {
       "id": "record_retrieval",
-      "priority": 40,
-      "principle": "the user explicitly wants a SET of existing records handed back that resemble a described problem or a named record — the records themselves are the deliverable, not an answer or a fix"
+      "priority": 50,
+      "principle": "the user explicitly wants a SET of existing records handed back that resemble a described problem or a named record — the records themselves are the deliverable, not an answer or a fix",
+      "anchors": [
+        "find tickets similar to this incident",
+        "have we seen this problem before",
+        "show me past cases like this one",
+        "are there duplicate tickets for this",
+        "other incidents matching this error",
+        "find other tickets about vpn drops"
+      ]
     }
   ]
 }

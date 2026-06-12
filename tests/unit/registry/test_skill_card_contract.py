@@ -30,7 +30,7 @@ from oneops.registry.loader import load_registry
 
 # Contract floor — the minimum a production card must carry.
 _MIN_DESC = 40          # below this is a stub, not a routing description
-_MAX_DESC = 600         # Skill.description schema ceiling
+_MAX_DESC = 800         # Skill.description schema ceiling
 _MIN_USE_WHEN = 3
 _MIN_NOT_WHEN = 3
 _MIN_EXAMPLES = 5

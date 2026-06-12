@@ -40,6 +40,7 @@ from oneops.authz.service import AuthzService
 from oneops.observability import get_logger, get_tracer, set_langfuse_io
 from oneops.observability.metrics import increment
 from oneops.registry.service import RegistryService
+from oneops.router.capability_classifier import capability_filter_enabled
 from oneops.router.conditions import evaluate, survives_filter
 from oneops.router.decompose import Decomposer, PassthroughDecomposer
 from oneops.router.disambiguation import Disambiguator
@@ -131,12 +132,18 @@ class Router:
         unified_splitter: Any | None = None,
         top_k: int = DEFAULT_TOP_K,
         route_cache: Any | None = None,
+        capability_classifier: Any | None = None,
     ) -> None:
         self._registry = registry
         self._glossary = glossary
         self._retriever = retriever
         self._disambiguator = disambiguator
         self._authz = authz
+        # Stage 2.5 capability-class filter (flag-gated). None ⇒ stage skipped
+        # (today's behaviour). When set, classifies the query's need-kind and
+        # narrows the retrieved shortlist to agents of that kind BEFORE the LLM
+        # disambiguator, so cross-kind overlaps never reach a coin-flip.
+        self._capability_classifier = capability_classifier
         # Decomposer/rewriter default to the deterministic passthrough — a
         # single self-contained sub-query, the common case, needing no LLM.
         self._decomposer = decomposer or PassthroughDecomposer()
@@ -555,6 +562,22 @@ class Router:
         if not candidates:
             return _FunnelOutcome([], {}, "no candidates retrieved", False)
 
+        # Structural chat-routing exclusion (defence-in-depth): an agent whose
+        # card declares chat_router_eligible=false (e.g. uc05 triage, API/
+        # operator-only) is NEVER a conversational candidate, regardless of
+        # retrieval/activation. Cheap registry lookup; no LLM.
+        candidates = [c for c in candidates if self._chat_eligible(c.agent_id)]
+        if not candidates:
+            return _FunnelOutcome([], {}, "no chat-eligible candidates", False)
+
+        # Stage 2.5 — capability-class filter (flag-gated, deterministic).
+        # Classify the query's need-kind and keep only candidates whose agent
+        # serves it, collapsing cross-kind overlaps (uc02 vs uc03) before the
+        # LLM disambiguator. A PRIORITY, not a hard gate: if it would empty the
+        # set it leaves candidates untouched (never orphans an agent).
+        candidates = await self._capability_filter(
+            candidates, normalized, principal, sq_id, diag)
+
         # Stage 3 — condition + ABAC filter.
         # Routing admission is decided by the agent's activation_condition,
         # using three-valued logic (PASS / INDETERMINATE / FAIL). The
@@ -675,6 +698,69 @@ class Router:
         increment("oneops.router.confidence_skip")
         bound = self._chat_bind(top.agent_id, signals, text)
         return _FunnelOutcome([top.agent_id], {top.agent_id: bound}, "", False)
+
+    async def _capability_filter(
+        self, candidates: list, normalized: str, principal: Principal,
+        sq_id: str, diag: list[str],
+    ) -> list:
+        """Stage 2.5 — narrow the retrieved candidates to the classified
+        need-kind. Flag OFF or no classifier ⇒ returns candidates unchanged.
+
+        A PRIORITY, never a hard gate: if the kind filter would empty the
+        candidate set, the unfiltered set is kept (an agent is never orphaned
+        by a mis-classification — the failure that killed the old axis)."""
+        if not capability_filter_enabled() or self._capability_classifier is None:
+            return candidates
+        with _tracer.start_as_current_span(
+            "router.stage2_5.capability_filter",
+            attributes={"oneops.tenant_id": principal.tenant_id,
+                        "router.candidates_in": len(candidates)},
+        ) as span:
+            result = await self._capability_classifier.classify(
+                normalized, tenant_id=principal.tenant_id)
+            if result is None:
+                span.set_attribute("router.kind", "")
+                return candidates
+            # Keep candidates whose agent serves ANY kept kind (top + close
+            # kinds); drop the clearly-far ones. Genuine ambiguity keeps
+            # multiple kinds, so the existing disambiguator/offer flow decides.
+            kept = [
+                c for c in candidates
+                if self._agent_capabilities(c.agent_id) & result.kept_kinds]
+            span.set_attribute("router.kind", result.top_kind)
+            span.set_attribute("router.kept_kinds", ",".join(sorted(result.kept_kinds)))
+            span.set_attribute("router.kind_margin", round(result.margin, 4))
+            span.set_attribute("router.candidates_kept", len(kept))
+            increment("oneops.router.capability_filter",
+                      top_kind=result.top_kind,
+                      n_kinds=str(len(result.kept_kinds)),
+                      emptied=str(not kept).lower())
+            set_langfuse_io(
+                span, input={"query": normalized},
+                output={"top_kind": result.top_kind,
+                        "kept_kinds": sorted(result.kept_kinds),
+                        "margin": round(result.margin, 4),
+                        "kept": [c.agent_id for c in kept],
+                        "dropped": [c.agent_id for c in candidates
+                                    if c not in kept]})
+            if not kept:
+                # Never orphan: a kind nobody serves (or a mis-classification)
+                # falls back to the full set so downstream stages still decide.
+                diag.append(f"[{sq_id}] stage2.5: kinds={sorted(result.kept_kinds)} "
+                            "matched no candidate — keeping unfiltered set")
+                return candidates
+            diag.append(f"[{sq_id}] stage2.5: top={result.top_kind} "
+                        f"kept={sorted(result.kept_kinds)} → "
+                        f"{[c.agent_id for c in kept]}")
+            return kept
+
+    def _agent_capabilities(self, agent_id: str) -> frozenset[str]:
+        agent = self._registry.agents.get_optional(agent_id)
+        return frozenset(getattr(agent, "capabilities", ()) or ()) if agent else frozenset()
+
+    def _chat_eligible(self, agent_id: str) -> bool:
+        agent = self._registry.agents.get_optional(agent_id)
+        return bool(getattr(agent, "chat_router_eligible", True)) if agent else True
 
     async def _stage3_filter(
         self,

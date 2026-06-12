@@ -553,6 +553,7 @@ async def _lifespan(app: FastAPI):
     from oneops.router.glossary import Glossary
     from oneops.router.retrieval import LexicalRetriever
     retriever = LexicalRetriever(registry)
+    _router_embedder: Any = None   # set when the pgvector retriever is wired
     # Stage-2 retriever selection. Default = lexical (reads the file registry,
     # zero infra). Flag ONEOPS_ROUTER_RETRIEVER=pgvector switches to DB-backed
     # kNN over ai.embeddings_agent (retrieve-then-decide). Additive + reversible:
@@ -582,10 +583,12 @@ async def _lifespan(app: FastAPI):
             app.state.router_retriever_pool = _emb_pool
             from oneops.router.route_cache import build_query_embedding_cache
             _emb_cache = build_query_embedding_cache()
+            # One embedder instance, shared by the retriever AND the capability
+            # classifier (Stage 2.5) so the classifier's query embed is a warm
+            # cache hit — it was just embedded for retrieval.
+            _router_embedder = GatewayEmbedder(gateway, cache=_emb_cache)
             retriever = PgVectorRetriever(
-                registry,
-                embedder=GatewayEmbedder(gateway, cache=_emb_cache),
-                pool=_emb_pool)
+                registry, embedder=_router_embedder, pool=_emb_pool)
             _log.info("oneops.api.router_retriever", kind="pgvector",
                       table="ai.embeddings_agent")
         except Exception as exc:                                   # noqa: BLE001
@@ -641,12 +644,20 @@ async def _lifespan(app: FastAPI):
         unified_splitter = None
     from oneops.router.route_cache import build_route_decision_cache
     _route_cache = build_route_decision_cache()
+    # Stage 2.5 capability classifier — shares the retriever's embedder (warm
+    # query-vector cache). None when no embedder is wired (lexical retriever) ⇒
+    # the filter is inert. Flag ONEOPS_ROUTER_CAPABILITY_FILTER gates the stage.
+    from oneops.router.capability_classifier import CapabilityClassifier
+    capability_classifier = (
+        CapabilityClassifier(embedder=_router_embedder, registry=registry)
+        if _router_embedder is not None else None)
     router = Router(
         registry=registry, glossary=glossary, retriever=retriever,
         disambiguator=disambiguator, authz=authz,
         rewriter=rewriter, decomposer=decomposer,
         unified_splitter=unified_splitter,
-        route_cache=_route_cache)
+        route_cache=_route_cache,
+        capability_classifier=capability_classifier)
     _log.info("oneops.api.route_cache_wired",
               backend=(type(_route_cache).__name__ if _route_cache else "off"),
               unified_split=(unified_splitter is not None))
@@ -774,6 +785,20 @@ async def _lifespan(app: FastAPI):
             set_kb_answer_composer,
         )
         set_kb_answer_composer(LlmAnswerComposer(gateway, model=chosen_model))
+        # UC-3 listwise reranker (precision stage) — re-orders the hybrid+RRF
+        # shortlist by joint query-document relevance before the abstain gate,
+        # the role every ITSM RAG vendor fills with a cross-encoder. One gateway
+        # call (same egress → OTel + cost + policy + retries). Stronger model
+        # than the mini default: relevance judging is nuanced and the call is
+        # tiny (≤400 tok). Override via ONEOPS_KB_RERANK_MODEL.
+        from oneops.use_cases.uc03_kb_lookup.kb_rerank import (
+            LlmListwiseReranker,
+            set_kb_reranker,
+        )
+        _kb_rerank_model = (
+            os.getenv("ONEOPS_KB_RERANK_MODEL", "gpt-4o").strip()
+            or chosen_model)
+        set_kb_reranker(LlmListwiseReranker(gateway, model=_kb_rerank_model))
         # Stage-1 conversation-control gate (pre-router). Same gateway
         # egress → OTel + cost tracking + retries + LiteLLM proxy. The
         # gate caches verdicts in Dragonfly so repeat greetings/thanks

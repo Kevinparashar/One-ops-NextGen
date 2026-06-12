@@ -32,7 +32,7 @@
       "compound_of": [],
       "created_at": "2026-05-29T16:30:00.000000+00:00",
       "depends_on": [],
-      "description": "API-only triage agent. Fills the seven UC-5-owned fields on an open incident or the four UC-5-owned fields on an open service request: category, subcategory (incident only), impact (incident only), urgency (incident only), priority, assignment_group, assigned_to. Bound to the operator-driven /api/uc05/{queue-summary,queue,propose,decide} surface and the NATS subjects oneops.uc05.triage.{propose,decide,applied}; not reachable from the conversational router (no chat intent maps to it).",
+      "description": "API-only operator triage agent for proposing controlled field updates on open incidents or service requests. It classifies and recommends values for UC-5-owned triage fields: category, subcategory for incidents, impact for incidents, urgency for incidents, priority, assignment_group, and assigned_to. This agent is only reachable from authenticated operator workflows, queue surfaces, or NATS/API triage subjects. It is not eligible for general conversational routing. It produces triage proposals that require operator review/confirmation before application. It does not summarize records, retrieve KB guidance, find similar tickets as the final output, create requests, fulfil catalog items, or provide end-user troubleshooting.",
       "determinism_level": "medium",
       "excludes": [],
       "hooks": {
@@ -43,7 +43,9 @@
       },
       "id": "uc05_triage",
       "intent_family": "triage_write",
-      "capabilities": ["record_action"],
+      "capabilities": [
+        "record_action"
+      ],
       "journey": null,
       "owner": "team-itsm",
       "policy_refs": [
@@ -54,21 +56,22 @@
         {
           "id": "triage_ticket",
           "name": "Triage a ticket",
-          "description": "Classify, prioritize, near-duplicate-check, and recommend assignment for an open incident or request - proposing values for the UC-5-owned fields (category, subcategory, impact, urgency, priority, assignment_group, assigned_to). Action-tier: proposals require operator confirmation before they are applied. Operator-/API-driven only (queue surface and NATS subjects); not reachable from the conversational chat router. NOT for summarizing the ticket, fetching KB/how-to articles, or finding similar tickets as an end goal.",
+          "description": "Assemble an operator-reviewed triage proposal for an open incident or request by recommending category, subcategory where applicable, impact, urgency, priority, assignment group, and assignee. Use only in API/operator triage workflows where the user is explicitly acting as a triage operator. The output is a proposed classification/assignment decision, not a record summary, KB article, similar-ticket result set, service fulfilment action, or end-user answer.",
           "use_when": [
-            "the operator wants a ticket classified, categorized, or sub-categorized",
-            "the operator wants impact, urgency, or priority assessed for a ticket",
+            "the request originates from an authenticated operator/API triage workflow, queue screen, or approved triage endpoint",
+            "the operator wants a ticket categorized, classified, or subcategorized",
+            "the operator wants impact, urgency, or priority assessed for an open incident or request",
             "the operator wants a recommended assignment group or assignee for a ticket",
-            "the operator wants a triage proposal assembled for review and decision",
-            "the operator wants a near-duplicate check as part of triaging a ticket"
+            "the operator wants a triage proposal assembled for review before applying field updates",
+            "the operator wants near-duplicate context only as supporting evidence inside a triage proposal, not as the final user-facing result"
           ],
           "not_when": [
-            "the user wants the ticket's existing facts, fields, or timeline (route to uc01_summarization)",
-            "the user wants knowledge, documentation, how-to, or KB articles (route to uc03_kb_lookup)",
-            "the user wants other tickets similar to or duplicates of this one as an end goal (route to uc02_similar_tickets)",
-            "the user wants to create or fulfil a new request (route to an action/fulfilment agent)",
-            "the request arrives from the conversational chat router (this agent is API/operator-only)",
-            "the user seeks guidance or solutions for resolving an incident or request (route to uc03_kb_lookup)"
+            "the request comes from general conversational chat without an authenticated operator/API triage workflow context; do not select this agent",
+            "the user wants the ticket's existing stored facts, status, priority, assignee, SLA, comments, work notes, or timeline; route to uc01_summarization",
+            "the user wants knowledge, documentation, troubleshooting steps, how-to guidance, runbooks, SOPs, playbooks, or KB articles; route to uc03_kb_lookup",
+            "the user wants other existing tickets, duplicate candidates, peer records, or historical similar cases as the final output; route to uc02_similar_tickets",
+            "the user wants to create, submit, provision, order, approve, fulfil, or execute a service request or catalog item; route to uc08_fulfillment",
+            "the user is asking for end-user help to resolve their own issue rather than operator triage recommendations; route to uc03_kb_lookup or clarification"
           ],
           "tags": [
             "triage",
@@ -80,12 +83,20 @@
             "request"
           ],
           "examples": [
-            "triage INC0001001",
-            "what category and priority should this incident be",
-            "recommend an assignment group for this request",
-            "assemble a triage proposal for INC0001021",
-            "who should this incident be assigned to",
-            "assess impact and urgency for this ticket"
+            "operator triage proposal for INC0001001",
+            "recommend category, impact, urgency, priority, assignment group, and assignee for this open incident",
+            "assemble a triage proposal for this request in the queue",
+            "classify and route this ticket for operator review",
+            "recommend assignment group and priority for this ticket before applying changes",
+            "prepare triage fields for approval in the queue workflow"
+          ],
+          "negative_examples": [
+            "what is the current assignee of this incident",
+            "show the KB article for resolving this issue",
+            "find duplicate tickets as the final answer",
+            "create a service request for access",
+            "how do I troubleshoot this problem",
+            "summarize the ticket timeline"
           ]
         }
       ],
@@ -110,7 +121,8 @@
         }
       ],
       "updated_at": "2026-05-29T16:30:00.000000+00:00",
-      "version": 1
+      "version": 1,
+      "chat_router_eligible": false
     }
   }
 }

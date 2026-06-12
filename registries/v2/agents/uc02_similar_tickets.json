@@ -46,9 +46,29 @@
             "operator": "any_of",
             "negate": false,
             "clauses": [
-              {"clauses": [], "negate": false, "operator": "leaf", "signal": "entity_present", "values": []},
-              {"clauses": [], "negate": false, "operator": "leaf", "signal": "focus_required", "values": []},
-              {"clauses": [], "negate": false, "operator": "leaf", "signal": "intent_in", "values": ["similar_search"]}
+              {
+                "clauses": [],
+                "negate": false,
+                "operator": "leaf",
+                "signal": "entity_present",
+                "values": []
+              },
+              {
+                "clauses": [],
+                "negate": false,
+                "operator": "leaf",
+                "signal": "focus_required",
+                "values": []
+              },
+              {
+                "clauses": [],
+                "negate": false,
+                "operator": "leaf",
+                "signal": "intent_in",
+                "values": [
+                  "similar_search"
+                ]
+              }
             ]
           }
         ]
@@ -56,7 +76,7 @@
       "compound_of": [],
       "created_at": "2026-05-30T14:30:00.000000+00:00",
       "depends_on": [],
-      "description": "Read-only similarity over incident and request embeddings. Surfaces semantically and metadata-aligned peer tickets for pattern discovery, duplicate awareness, and resolution reuse. The search is anchored either by a specific record already in scope (a record id, or the active focus record) or, when no record is identified, by the problem the user describes — the described symptoms become the anchor and both incident and request are searched. The deliverable is always a set of existing peer or historical tickets, not authored guidance. Also reachable from the operator button at /api/uc02/similar-tickets. Every entry point dispatches to the same find_similar() core via the registered tool find_similar_entities. Tenant isolation is enforced as a SQL pre-filter on ai.embeddings_<service>.tenant_id and itsm.<service>.tenant_id; RBAC predicates omit candidates the caller cannot view (UC-2.7) so cross-tenant or out-of-permission rows never appear.",
+      "description": "Read-only peer-ticket discovery over existing incident and request records. This agent finds other historical or current tickets that are semantically, symptomatically, or metadata-similar to a specific record, active focus record, or described issue. It is used for duplicate awareness, peer-case discovery, pattern exploration, and resolution reuse by returning matching existing tickets. The deliverable is always a list or explanation of other existing incident/request records. This agent does not summarize the focused record itself, does not retrieve KB/how-to guidance, does not provide root-cause conclusions as the final answer, does not triage a ticket, and does not create or modify records.",
       "determinism_level": "high",
       "excludes": [],
       "hooks": {
@@ -67,7 +87,9 @@
       },
       "id": "uc02_similar_tickets",
       "intent_family": "similar_read",
-      "capabilities": ["record_retrieval"],
+      "capabilities": [
+        "record_retrieval"
+      ],
       "journey": null,
       "owner": "team-itsm",
       "policy_refs": [
@@ -78,26 +100,22 @@
         {
           "id": "find_similar_tickets",
           "name": "Find similar tickets",
-          "description": "Find past incidents or requests that are semantically and metadata-similar, for duplicate detection, pattern discovery, and resolution reuse. The search is anchored either by a specific record in scope (a record id or the active focus record) or, when no record is identified, by the problem the user describes - the described symptoms become the anchor. The deliverable is always a set of OTHER existing tickets, never the focused record's own facts, authored KB/how-to guidance, or a record modification.",
+          "description": "Find other existing incidents or requests that are similar to a given record, active focus ticket, or described issue. Similarity may use symptoms, CI, service, category, requester context, metadata, time window, and textual semantics. Use this skill when the user's goal is to surface peer tickets, duplicate candidates, historical cases, or prior records that resemble the current situation. The output must be existing tickets, not KB articles, not the focused record's own fields, not triage recommendations, and not authored troubleshooting guidance.",
           "use_when": [
-            "the user asks for tickets like a given record id (e.g. similar to INC0001001)",
-            "a contextual follow-up asking for similar or related items about the active focus record",
-            "the user describes a problem or symptoms and wants to surface other existing tickets that match it, without naming a record id",
-            "the user wants to identify other incidents that share characteristics with the current ticket",
-            "the user is looking for historical cases that resemble the current issue",
-            "the user seeks to uncover patterns by finding previous requests that are alike",
-            "the user inquires about past occurrences that are similar to the ongoing ticket",
-            "the user is interested in discovering previously reported issues that match the current situation"
+            "the user asks for tickets, incidents, requests, cases, duplicates, peer records, or historical records similar to a specific record id",
+            "the user asks for other existing tickets matching the symptoms, service, CI, category, metadata, or context of the active focus record",
+            "the user describes an issue and explicitly wants to find previous tickets, matching cases, duplicate candidates, or related historical records",
+            "the user wants duplicate awareness or peer-ticket discovery as the end goal",
+            "the user wants examples of past incident/request records that resemble the current record or described situation",
+            "the user asks for similar incidents or similar requests, not for a general solution article or record summary"
           ],
           "not_when": [
-            "the user wants facts, fields, status, or timeline of the record itself (route to uc01_summarization)",
-            "the user wants external knowledge, documentation, how-to, or KB articles (route to uc03_kb_lookup)",
-            "the user wants to create, update, assign, or modify a record (route to an action/fulfilment agent)",
-            "the user wants to triage, prioritise, or route a single ticket (route to uc05_triage)",
-            "the user asks a general IT question seeking an answer, fix, or guidance for their own problem rather than asking to surface other existing tickets (route to uc03_kb_lookup)",
-            "the user wants to understand the details or status of a specific record (route to uc01_summarization)",
-            "the user seeks external knowledge or solutions related to a specific record (route to uc03_kb_lookup)",
-            "the user is asking for classification or assignment recommendations for a specific ticket (route to uc05_triage)"
+            "the user wants the focused record's own facts, fields, status, priority, assignee, SLA, comments, work notes, timeline, or stored details; route to uc01_summarization",
+            "the user wants KB articles, documentation, troubleshooting steps, how-to instructions, runbooks, SOPs, playbooks, known-issue write-ups, or authored guidance; route to uc03_kb_lookup",
+            "the user wants a root-cause conclusion, known-error explanation, long-term remediation analysis, or problem-management answer rather than a list of matching tickets; route to uc03_kb_lookup for documented guidance",
+            "the user wants to create, update, assign, approve, fulfil, or modify a ticket/request/service; route to the relevant action or fulfilment agent",
+            "the user wants category, priority, impact, urgency, assignment group, or assignee recommendations in an operator triage workflow; route to uc05_triage",
+            "the user asks a general IT question seeking an answer, fix, or procedure for their own issue rather than asking to surface existing tickets; route to uc03_kb_lookup"
           ],
           "tags": [
             "similarity",
@@ -108,18 +126,23 @@
             "duplicate"
           ],
           "examples": [
-            "show tickets similar to INC0001001",
-            "any duplicates of this incident?",
-            "have we seen this issue before?",
-            "find related incidents to INC0001021",
-            "other tickets with the same problem",
-            "is this a known recurring issue?",
-            "are there any past tickets like this one?",
-            "can you find incidents that are similar to this?",
-            "what other requests have we had that are like this?",
-            "show me previous cases that match this issue",
-            "have we dealt with something like this in the past?",
-            "list any related tickets to the current incident"
+            "find tickets similar to INC0001001",
+            "show duplicate candidates for this incident",
+            "list historical incidents with the same symptoms and CI",
+            "find previous requests similar to REQ0002004",
+            "show peer tickets that match the active ticket metadata",
+            "find existing tickets related to this described VPN disconnect pattern",
+            "show other incidents with similar service, category, and symptom text",
+            "list prior cases that resemble the current request"
+          ],
+          "negative_examples": [
+            "summarize this incident",
+            "what is the priority of this ticket",
+            "show the KB article for this error",
+            "how do I fix this issue",
+            "what is the root cause of this recurring problem",
+            "recommend who should own this ticket",
+            "create a request to provision access"
           ]
         }
       ],

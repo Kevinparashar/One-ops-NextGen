@@ -60,8 +60,20 @@
             "operator": "any_of",
             "negate": false,
             "clauses": [
-              {"clauses": [], "negate": false, "operator": "leaf", "signal": "entity_present", "values": []},
-              {"clauses": [], "negate": false, "operator": "leaf", "signal": "focus_required", "values": []}
+              {
+                "clauses": [],
+                "negate": false,
+                "operator": "leaf",
+                "signal": "entity_present",
+                "values": []
+              },
+              {
+                "clauses": [],
+                "negate": false,
+                "operator": "leaf",
+                "signal": "focus_required",
+                "values": []
+              }
             ]
           }
         ]
@@ -69,7 +81,7 @@
       "compound_of": [],
       "created_at": "2026-05-20T10:49:43.471534+00:00",
       "depends_on": [],
-      "description": "Retrieves and renders facts about an ITSM/ITOM work record itself (INC, REQ, PBM, CHG, AST, CI). Returns the record's own attributes: summary, status, priority, severity, owner, assignee, SLA, work notes, comments, linked-record ids (related problem, related changes, affected CI), and current known state. Use this agent when the user wants to UNDERSTAND THE ENTITY — its facts, its history, what it is, what is going on with it. Capability is bounded to the record's own stored fields; this agent does NOT retrieve external knowledge content (articles, runbooks, troubleshooting guides).",
+      "description": "Retrieves and explains the stored facts of one specific existing ITSM/ITOM record. Supported records include incident, request, problem, change, asset, and CMDB CI records. This agent answers what the record is, what happened inside that record, its current state, and its stored fields such as status, priority, severity, owner, assignee, requester, SLA, comments, work notes, timeline, affected CI, linked problem, linked changes, attachments, and other on-record attributes. This agent is strictly a record-facts reader. It does not retrieve external knowledge articles, does not find other similar records, does not perform triage recommendations, and does not create, update, approve, fulfil, or modify records.",
       "determinism_level": "low",
       "excludes": [],
       "hooks": {
@@ -80,7 +92,9 @@
       },
       "id": "uc01_summarization",
       "intent_family": "entity_summary",
-      "capabilities": ["record_summary"],
+      "capabilities": [
+        "record_summary"
+      ],
       "journey": null,
       "owner": "team-itsm",
       "policy_refs": [
@@ -91,23 +105,21 @@
         {
           "id": "summarize_ticket",
           "name": "Summarize a ticket",
-          "description": "Retrieves and renders facts about an ITSM/ITOM work record itself (INC, REQ, PBM, CHG, AST, CI). Returns the record's own attributes: summary, status, priority, severity, owner, assignee, SLA, work notes, comments, linked-record ids (related problem, related changes, affected CI), and current known state. Use this agent when the user wants to UNDERSTAND THE ENTITY — its facts, its history, what it is, what is going on with it. Capability is bounded to the record's own stored fields; this agent does NOT retrieve external knowledge content (articles, runbooks, troubleshooting guides).",
+          "description": "Read and summarize the stored facts of a specific existing record such as INC, REQ, PBM, CHG, AST, or CI. Use this skill when the user wants the record's own details, lifecycle, timeline, status, ownership, SLA, comments, work notes, linked records, or field values. The output must stay grounded in the selected record's stored data. Do not use this skill for external KB guidance, troubleshooting instructions, similar-ticket discovery, triage recommendations, fulfilment actions, or cross-record analytics.",
           "use_when": [
-            "the user gives a record id (INC/REQ/PRB/CHG/AST/CI) and asks what it is, what happened, or its current state",
-            "the user asks for a summary, explanation, walkthrough, or timeline of a specific record",
-            "a field-level follow-up on the active record (priority, status, owner, assignee, severity, SLA, requester, affected CI, linked problem or change, comments, work notes)",
-            "a bare canonical record id with no other intent",
-            "a contextual follow-up about the active focus record (e.g. 'this ticket', 'its priority', 'who owns it', 'any update')"
+            "the user provides a specific record id or active focus record and asks what it is, what happened, what is going on, or what its current state is",
+            "the user asks for stored fields of a specific record, including status, priority, severity, impact, urgency, owner, assignee, requester, assignment group, SLA, category, affected CI, linked problem, linked change, comments, work notes, attachments, or timestamps",
+            "the user asks for a summary, timeline, walkthrough, history, or explanation of one specific record's stored facts",
+            "the user gives a bare canonical record id with no other explicit intent",
+            "the user asks a contextual follow-up about the active focus record, such as its priority, owner, status, update, requester, affected CI, related problem, or comments"
           ],
           "not_when": [
-            "the user wants external knowledge, documentation, how-to, troubleshooting, runbooks, or KB articles (route to uc03_kb_lookup)",
-            "the user wants other tickets similar to this one, duplicates, or related incidents (route to uc02_similar_tickets)",
-            "the user wants to create, update, assign, approve, close, reopen, or escalate a record (route to an action/fulfilment agent)",
-            "the user wants to search, filter, count, compare, or report across multiple records",
-            "the user wants root-cause analysis or remediation guidance beyond the record's stored fields",
-            "the user asks a general IT question with no specific record or active focus record",
-            "the user wants to find past incidents or requests that are similar to the focused ticket (route to uc02_similar_tickets)",
-            "the user seeks external knowledge or guidance on resolving the issue related to the record (route to uc03_kb_lookup)"
+            "the user asks for external knowledge, documentation, how-to steps, troubleshooting guidance, runbooks, SOPs, playbooks, workaround instructions, or resolution guidance beyond the record's stored fields; route to uc03_kb_lookup",
+            "the user asks to find other tickets, duplicate tickets, peer records, similar cases, related historical tickets, or previous occurrences matching the record or symptoms; route to uc02_similar_tickets",
+            "the user asks to create, update, assign, approve, close, reopen, escalate, fulfil, provision, or mutate a record or service; route to the relevant action or fulfilment agent",
+            "the user asks for classification, prioritization, impact, urgency, category, assignment group, or assignee recommendations in an operator triage workflow; route to uc05_triage",
+            "the user asks a general IT question without a specific record id or active focus record; route based on knowledge, fulfilment, or clarification intent",
+            "the user asks for root-cause analysis, known-error interpretation, or remediation advice that is not explicitly stored as a field on the selected record; route to uc03_kb_lookup or the appropriate problem-analysis capability"
           ],
           "tags": [
             "summarization",
@@ -121,12 +133,21 @@
           ],
           "examples": [
             "summarize INC0001001",
-            "INC0001001",
-            "what's going on with this ticket?",
-            "walk me through PRB0002",
-            "what is the priority of this incident?",
-            "who is assigned to it?",
-            "show the timeline for this problem"
+            "what is the current status of REQ0002004",
+            "show the timeline for PBM0003001",
+            "who is assigned to this incident",
+            "what SLA and priority are stored on this ticket",
+            "show comments and work notes for the active record",
+            "what affected CI is linked to CHG0004001",
+            "explain what happened in this request based on its record history"
+          ],
+          "negative_examples": [
+            "show troubleshooting steps for this issue",
+            "find other tickets like this one",
+            "recommend the priority and assignment group",
+            "provision access for this user",
+            "create a service request for this item",
+            "what is the best workaround for this error"
           ]
         }
       ],

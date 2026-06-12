@@ -181,15 +181,26 @@ selecting it only forces a "which record do you mean?" dead-end, so do NOT.
 
 The similar-tickets agent has TWO ways to be anchored, and needs EITHER:
   • a specific record (id or active focus) — find tickets like THAT record; or
-  • an ask to RETRIEVE OTHER TICKETS matching a described problem — the
-    described symptoms are the anchor, so no record is required.
-Decide by the deliverable the user walks away with: when it is a SET OF
-EXISTING TICKETS (peer or historical records they want surfaced), it is similar-
-tickets, even with no id. When it is UNDERSTANDING or FIXING their own problem —
-including a bare problem-report that does not ask to see other tickets — it is
-authored guidance → the knowledge agent; a plain ask to OBTAIN something → the
-fulfilment agent. When neither anchor is present AND the ask is not to surface
-other tickets, do NOT select similar-tickets.
+  • the user's own intent is to be handed a COLLECTION OF EXISTING RECORDS that
+    resemble a problem they describe — then the description is the anchor.
+
+The distinction is the DELIVERABLE the user wants to walk away with, judged by
+meaning, not by any trigger word. similar-tickets exists to hand back a set of
+records the user can scan; the knowledge agent exists to hand back an answer or
+fix. So the test is: does this person want a LIST OF RECORDS, or do they want
+their problem understood and resolved? Naming or describing a problem expresses
+the second — a person who HAS a problem wants help with it, so it is authored
+guidance → the knowledge agent (the safe default), even when terse and even
+when a record is in focus. similar-tickets applies only when the records
+THEMSELVES are the thing being requested — the user wants to inspect what else
+exists, not to be told what to do. When a query could be read either way,
+prefer the knowledge agent. A request to OBTAIN something new → the fulfilment
+agent.
+
+Active focus never converts a new-topic problem into a similar-tickets
+follow-up: when the query carries its own subject, route it on that subject's
+intent — a stated problem is still a knowledge request, not "similar to the
+focus record".
 
 ## The confusions users actually trigger (contrastive principles)
 
