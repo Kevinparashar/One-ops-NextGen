@@ -26,7 +26,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from oneops.observability import get_logger
+from oneops.observability import get_logger, get_tracer, set_langfuse_io
+from oneops.observability.metrics import increment as _metric_inc
 from oneops.use_cases._shared.field_policy import get_field_policy
 from oneops.use_cases._shared.kb_store import get_kb_store
 from oneops.use_cases.uc03_kb_lookup.answer_composer import (
@@ -36,6 +37,7 @@ from oneops.use_cases.uc03_kb_lookup.answer_composer import (
 from oneops.use_cases.uc03_kb_lookup.kb_embed import get_kb_embed_fn
 
 _log = get_logger("oneops.use_cases.uc03.handlers")
+_tracer = get_tracer("oneops.uc03.handlers")
 
 # Repeated literals → constants (sonar S1192).
 _NO_TENANT_SCOPE_WAS_SUPPLIED_FOR_THIS_REQUEST = "No tenant scope was supplied for this request."
@@ -432,6 +434,30 @@ async def search_kb(
         return _search("invalid_request",
                        _NO_TENANT_SCOPE_WAS_SUPPLIED_FOR_THIS_REQUEST)
 
+    with _tracer.start_as_current_span(
+        "uc03.search_kb",
+        attributes={"oneops.tenant_id": tenant_id,
+                    "uc03.query_chars": len(query)},
+    ) as span:
+        result = await _search_kb_impl(query, tenant_id, context)
+        outcome = str(result.get("outcome", "unknown"))
+        _metric_inc("ai.uc03.search.outcome.total", 1,
+                    tenant_id=tenant_id, outcome=outcome)
+        span.set_attribute("uc03.outcome", outcome)
+        set_langfuse_io(
+            span,
+            input={"query": query},
+            output={"outcome": outcome, "message": result.get("message"),
+                    "articles": [a.get("article_id") or a.get("id")
+                                 for a in (result.get("articles") or [])]})
+        return result
+
+
+async def _search_kb_impl(
+    query: str, tenant_id: str, context: dict[str, Any],
+) -> dict[str, Any]:
+    """Hybrid retrieve → RRF → relevance gate → compose. Split from `search_kb`
+    so the latter owns the span/IO/metric and this owns the pipeline."""
     audiences = _audiences_for(context)
     store = get_kb_store()
     # ── Hybrid retrieval (Phase 5a) ───────────────────────────────────
@@ -587,6 +613,26 @@ async def get_kb_article(
         return _article("invalid_request", article_id,
                         _NO_TENANT_SCOPE_WAS_SUPPLIED_FOR_THIS_REQUEST)
 
+    with _tracer.start_as_current_span(
+        "uc03.get_kb_article",
+        attributes={"oneops.tenant_id": tenant_id, "uc03.article_id": article_id},
+    ) as span:
+        result = await _get_kb_article_impl(article_id, tenant_id, context)
+        outcome = str(result.get("outcome", "unknown"))
+        _metric_inc("ai.uc03.get_article.outcome.total", 1,
+                    tenant_id=tenant_id, outcome=outcome)
+        span.set_attribute("uc03.outcome", outcome)
+        set_langfuse_io(
+            span, input={"article_id": article_id},
+            output={"outcome": outcome, "message": result.get("message")})
+        return result
+
+
+async def _get_kb_article_impl(
+    article_id: str, tenant_id: str, context: dict[str, Any],
+) -> dict[str, Any]:
+    """Existence/RBAC check → full fetch → compose. Split from `get_kb_article`
+    so the latter owns the span/IO/metric."""
     store = get_kb_store()
     audiences = _audiences_for(context)
 
@@ -787,6 +833,29 @@ async def search_kb_by_ticket(
         return _search("invalid_request",
                        _NO_TENANT_SCOPE_WAS_SUPPLIED_FOR_THIS_REQUEST)
 
+    with _tracer.start_as_current_span(
+        "uc03.search_kb_by_ticket",
+        attributes={"oneops.tenant_id": tenant_id, "uc03.ticket_id": ticket_id},
+    ) as span:
+        result = await _search_kb_by_ticket_impl(
+            ticket_id, tenant_id, user_query, context)
+        outcome = str(result.get("outcome", "unknown"))
+        _metric_inc("ai.uc03.by_ticket.outcome.total", 1,
+                    tenant_id=tenant_id, outcome=outcome)
+        span.set_attribute("uc03.outcome", outcome)
+        set_langfuse_io(
+            span, input={"ticket_id": ticket_id, "query": user_query},
+            output={"outcome": outcome, "message": result.get("message"),
+                    "articles": [a.get("article_id") or a.get("id")
+                                 for a in (result.get("articles") or [])]})
+        return result
+
+
+async def _search_kb_by_ticket_impl(
+    ticket_id: str, tenant_id: str, user_query: str, context: dict[str, Any],
+) -> dict[str, Any]:
+    """Linked-tag join → semantic gate → compose (or symptom fallback). Split
+    from `search_kb_by_ticket` so the latter owns the span/IO/metric."""
     hits = await get_kb_store().linked_to(
         entity_id=ticket_id, tenant_id=tenant_id, audiences=_audiences_for(context))
     if not hits:

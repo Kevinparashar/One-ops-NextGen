@@ -170,8 +170,18 @@ async def test_auto_pick_set_when_top1_above_threshold(conn, gateway):
 
 
 @pytest.mark.asyncio
-async def test_pizza_query_rejected_below_floor(conn, gateway):
-    """Off-domain query must have above_floor_count=0 → 'no match'."""
+async def test_pizza_query_rejected_below_floor(conn, gateway, monkeypatch):
+    """Off-domain query must have above_floor_count=0 → 'no match'.
+
+    Pin the cosine floor for a DETERMINISTIC test of the floor-rejection
+    mechanism. Production runs UC08_CATALOG_COSINE_FLOOR=0.30 (recall net) with
+    the LLM listwise reranker as the precision authority — at 0.30, "pizza"
+    clears the floor on shared "order/purchase" vocabulary and is rejected
+    downstream by the reranker (covered in test_catalog_reranker). Here we
+    isolate the floor: at 0.50, off-domain pizza (~0.40) stays below it.
+    `find_closest_catalog_items` re-reads the floor from env per call, so the
+    floor must be pinned via the env var, not the module constant."""
+    monkeypatch.setenv("UC08_CATALOG_COSINE_FLOOR", "0.50")
     r = await find_closest_catalog_items(
         tenant_id=TEST_TENANT,
         sr_title="I want to order pizza for the team lunch",
@@ -426,11 +436,14 @@ async def test_search_does_not_create_request_item_rows(conn, gateway):
 
 
 @pytest.mark.asyncio
-async def test_thresholds_correctly_classify_known_queries(conn, gateway):
-    """Verify the empirically-calibrated thresholds work end-to-end:
+async def test_thresholds_correctly_classify_known_queries(conn, gateway, monkeypatch):
+    """Verify the threshold-classification logic deterministically:
        • realistic VPN query → auto_pick set
        • off-domain pizza query → above_floor_count == 0
+    Floor pinned (see test_pizza_query_rejected_below_floor): production runs
+    0.30 + reranker for precision; this isolates the floor at 0.50.
     """
+    monkeypatch.setenv("UC08_CATALOG_COSINE_FLOOR", "0.50")
     vpn = await find_closest_catalog_items(
         tenant_id=TEST_TENANT,
         sr_title="I need VPN access for a new contractor",

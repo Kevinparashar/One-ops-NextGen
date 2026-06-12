@@ -325,14 +325,24 @@ class LlmGateway:
                         "oneops.user_id": user_id,
                         "llm.model": model,
                         "llm.embed_count": len(texts)},
-        ):
+        ) as span:
             if self._quota is not None:
                 self._quota.check_and_charge(tenant_id)
             vectors = await self._transport.embed(
                 texts, model=model, dimensions=dimensions)
-            # Embedding cost is input-token only.
+            # Embedding cost is input-token only. `record` returns the USD cost
+            # and emits the per-tenant cost/token metrics.
             total_tokens = sum(max(1, len(t) // 4) for t in texts)
-            self._cost.record(tenant_id, model, total_tokens, 0)
+            cost = self._cost.record(tenant_id, model, total_tokens, 0)
+            # Langfuse: mark the embed span a "generation" so it renders in the
+            # trace tree with model + input tokens + cost (parity with `call`).
+            # The query text is the prompt (redacted + content-gated); the output
+            # is the vector geometry, not text — surface dims/count, never floats.
+            set_langfuse_generation(
+                span, model=model, prompt=texts,
+                completion={"vectors": len(vectors),
+                            "dimensions": (len(vectors[0]) if vectors else 0)},
+                input_tokens=total_tokens, output_tokens=0, cost_usd=cost)
             return vectors
 
 

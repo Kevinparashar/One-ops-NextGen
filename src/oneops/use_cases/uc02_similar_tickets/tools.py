@@ -18,11 +18,14 @@ import asyncio
 import os
 from typing import Any
 
+from oneops.observability import get_tracer, set_langfuse_io
 from oneops.uc_common import TimeFilter
 from oneops.use_cases.uc02_similar_tickets.contracts import (
     ServiceId,
     SimilarTicketsResponse,
 )
+
+_tracer = get_tracer("oneops.uc02.tools")
 from oneops.use_cases.uc02_similar_tickets.core import find_similar
 from oneops.use_cases.uc02_similar_tickets.id_resolver import (
     ResolveError,
@@ -229,12 +232,28 @@ async def _find_similar_by_text(
             embedding_gateway=_discriminator_gateway,
         )
 
-    responses: list[SimilarTicketsResponse] = list(
-        await asyncio.gather(*(_search(svc) for svc in services)))
+    # Span the text fan-out so the concurrent multi-service search + merge is a
+    # visible stage in the trace (each per-service find_similar nests under it).
+    with _tracer.start_as_current_span(
+        "uc02.similar_by_text",
+        attributes={"oneops.tenant_id": tenant_id,
+                    "uc02.services": ",".join(services),
+                    "uc02.text_min_score": min_score},
+    ) as span:
+        responses: list[SimilarTicketsResponse] = list(
+            await asyncio.gather(*(_search(svc) for svc in services)))
 
-    resp = _merge_text_responses(
-        responses, tenant_id=tenant_id, max_results=max_results,
-        time_filter=time_filter)
+        resp = _merge_text_responses(
+            responses, tenant_id=tenant_id, max_results=max_results,
+            time_filter=time_filter)
+        set_langfuse_io(
+            span,
+            input={"query_text": query_text, "services": list(services),
+                   "max_results": max_results, "min_similarity_score": min_score},
+            output={"returned": len(resp.results),
+                    "results": [{"id": r.ticket_id, "service_id": r.service_id,
+                                 "match_pct": r.match_pct}
+                                for r in resp.results]})
     payload = resp.model_dump(mode="json")
     payload["display_text"] = _render(
         resp, time_filter_label=(time_filter.label if time_filter else None))
