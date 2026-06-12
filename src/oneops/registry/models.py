@@ -339,6 +339,16 @@ class AgentRecord(_VersionedRecord):
 
     description: str = Field(min_length=1, max_length=MAX_DESCRIPTION_CHARS)
     intent_family: str = Field(min_length=1, max_length=64)   # docs/BEHAVIOR_CORPUS §1
+    # Capability CLASS(es) — the bounded, scale-invariant "kind of need" this
+    # agent serves, from registries/v2/platform/capabilities.json. The router
+    # classifies a query into ONE kind, then admits only agents whose
+    # `capabilities` include it (capability-class routing). A LIST because a few
+    # agents genuinely serve two kinds; almost always length 1. Distinct from
+    # `intent_family` (granular, per-agent): `capabilities` is the COARSE shared
+    # taxonomy (~5 values) the classifier targets — it stays bounded at 500
+    # agents where intent_family would not. Default empty keeps existing cards
+    # valid until every agent declares it (validated ⊆ taxonomy at load).
+    capabilities: tuple[str, ...] = ()
     # Routing scope: itsm | itom[.subdomain]. Default keeps existing cards valid;
     # the skill-card contract requires NEW cards to declare it explicitly so an
     # ITOM agent can't silently default to 'itsm' and get mis-scoped at retrieval.

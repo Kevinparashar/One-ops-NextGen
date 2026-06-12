@@ -63,6 +63,7 @@
       },
       "id": "uc08_fulfillment",
       "intent_family": "fulfillment_orchestrate",
+      "capabilities": ["fulfilment"],
       "journey": null,
       "owner": "team-itsm",
       "policy_refs": [
