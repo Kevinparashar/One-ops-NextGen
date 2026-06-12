@@ -92,9 +92,6 @@
       },
       "id": "uc01_summarization",
       "intent_family": "entity_summary",
-      "capabilities": [
-        "record_summary"
-      ],
       "journey": null,
       "owner": "team-itsm",
       "policy_refs": [

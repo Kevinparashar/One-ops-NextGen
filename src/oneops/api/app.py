@@ -644,20 +644,12 @@ async def _lifespan(app: FastAPI):
         unified_splitter = None
     from oneops.router.route_cache import build_route_decision_cache
     _route_cache = build_route_decision_cache()
-    # Stage 2.5 capability classifier — shares the retriever's embedder (warm
-    # query-vector cache). None when no embedder is wired (lexical retriever) ⇒
-    # the filter is inert. Flag ONEOPS_ROUTER_CAPABILITY_FILTER gates the stage.
-    from oneops.router.capability_classifier import CapabilityClassifier
-    capability_classifier = (
-        CapabilityClassifier(embedder=_router_embedder, registry=registry)
-        if _router_embedder is not None else None)
     router = Router(
         registry=registry, glossary=glossary, retriever=retriever,
         disambiguator=disambiguator, authz=authz,
         rewriter=rewriter, decomposer=decomposer,
         unified_splitter=unified_splitter,
-        route_cache=_route_cache,
-        capability_classifier=capability_classifier)
+        route_cache=_route_cache)
     _log.info("oneops.api.route_cache_wired",
               backend=(type(_route_cache).__name__ if _route_cache else "off"),
               unified_split=(unified_splitter is not None))

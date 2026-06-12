@@ -43,9 +43,6 @@
       },
       "id": "uc05_triage",
       "intent_family": "triage_write",
-      "capabilities": [
-        "record_action"
-      ],
       "journey": null,
       "owner": "team-itsm",
       "policy_refs": [

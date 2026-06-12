@@ -57,9 +57,6 @@
       },
       "id": "uc03_kb_lookup",
       "intent_family": "knowledge_base",
-      "capabilities": [
-        "knowledge"
-      ],
       "journey": null,
       "owner": "team-itsm",
       "policy_refs": [

@@ -328,10 +328,10 @@ class Skill(BaseModel):
     tags: tuple[str, ...] = ()
     # Illustrative queries — applied as PRINCIPLE, never a string-match list.
     examples: tuple[str, ...] = ()
-    # CONTRASTIVE negative exemplars — queries this skill must NOT win. Used by
-    # the capability classifier to push a query AWAY from this kind (what it is
-    # NOT, not just what it is) and as a disambiguation signal. Never embedded
-    # for retrieval (a query must not retrieve an agent by its negatives).
+    # Contrastive negative exemplars — queries this skill must NOT win (what it
+    # is NOT, complementing use_when). Card-boundary documentation, available as
+    # a disambiguation signal. Never embedded for retrieval (a query must not
+    # retrieve an agent by its negatives).
     negative_examples: tuple[str, ...] = ()
 
 
@@ -344,16 +344,6 @@ class AgentRecord(_VersionedRecord):
 
     description: str = Field(min_length=1, max_length=MAX_DESCRIPTION_CHARS)
     intent_family: str = Field(min_length=1, max_length=64)   # docs/BEHAVIOR_CORPUS §1
-    # Capability CLASS(es) — the bounded, scale-invariant "kind of need" this
-    # agent serves, from registries/v2/platform/capabilities.json. The router
-    # classifies a query into ONE kind, then admits only agents whose
-    # `capabilities` include it (capability-class routing). A LIST because a few
-    # agents genuinely serve two kinds; almost always length 1. Distinct from
-    # `intent_family` (granular, per-agent): `capabilities` is the COARSE shared
-    # taxonomy (~5 values) the classifier targets — it stays bounded at 500
-    # agents where intent_family would not. Default empty keeps existing cards
-    # valid until every agent declares it (validated ⊆ taxonomy at load).
-    capabilities: tuple[str, ...] = ()
     # Structural chat-routing eligibility (defence-in-depth, not prompt hope).
     # False ⇒ the agent is NEVER a conversational-router candidate (e.g. uc05
     # triage is API/operator-only); the router drops it from the chat funnel

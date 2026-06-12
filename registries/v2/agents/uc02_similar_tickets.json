@@ -87,9 +87,6 @@
       },
       "id": "uc02_similar_tickets",
       "intent_family": "similar_read",
-      "capabilities": [
-        "record_retrieval"
-      ],
       "journey": null,
       "owner": "team-itsm",
       "policy_refs": [

@@ -131,24 +131,6 @@ class RegistryService:
             violations.extend(
                 _agent_violations(agent, active_agents, active_tools))
 
-        # Capability-class routing: every declared capability must be a known
-        # kind in the taxonomy (closed vocabulary). A typo or a stale kind would
-        # silently drop the agent from its class at routing time, so it is a
-        # fatal load-time violation. Empty `capabilities` is allowed (an agent
-        # mid-migration that has not declared its kind yet).
-        try:
-            from oneops.registry.capabilities import get_capability_taxonomy
-            known_kinds = get_capability_taxonomy().ids
-            for agent in active_agents.values():
-                for cap in getattr(agent, "capabilities", ()) or ():
-                    if cap not in known_kinds:
-                        violations.append(
-                            f"agent '{agent.id}' declares unknown capability "
-                            f"'{cap}' (not in capabilities.json: "
-                            f"{sorted(known_kinds)})")
-        except Exception as exc:                                   # noqa: BLE001
-            violations.append(f"capability taxonomy unloadable: {exc}")
-
         # 4. the depends_on graph must be acyclic.
         cycle = _find_dependency_cycle(active_agents)
         if cycle:
