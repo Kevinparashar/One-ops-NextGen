@@ -151,9 +151,15 @@ class ExecutorState(TypedDict, total=False):
     entry_mode: str
 
 
-def serialise_plan(plan_steps: Any) -> list[dict[str, Any]]:
+def serialise_plan(plan_steps: Any, turn_id: str = "") -> list[dict[str, Any]]:
     """Turn a router `RoutePlan`'s steps into the JSON-shaped list the state
     holds. Accepts the `RoutePlan` object or its `.steps`.
+
+    `turn_id` stamps each step with the request_id of the turn that planned it.
+    On a checkpointed / interrupt-held session the `plan` and `step_results`
+    channels PERSIST across turns (accumulating reducers), so `aggregate` would
+    otherwise re-render a prior turn's results. The turn stamp lets `aggregate`
+    keep only the current turn's plan + results — the multi-turn consistency fix.
 
     Data-flow fields (`parameter_bindings`, `dependency_types`) are emitted
     only when present, so existing plans serialise byte-identically to before.
@@ -167,6 +173,8 @@ def serialise_plan(plan_steps: Any) -> list[dict[str, Any]]:
             "parameters": dict(s.parameters),
             "depends_on": list(s.depends_on),
         }
+        if turn_id:
+            d["turn_id"] = turn_id
         bindings = getattr(s, "parameter_bindings", ()) or ()
         if bindings:
             d["parameter_bindings"] = [

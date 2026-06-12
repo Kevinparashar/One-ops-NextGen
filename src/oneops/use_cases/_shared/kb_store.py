@@ -373,17 +373,37 @@ class PostgresKbStore:
         # grounded-answer composer can quote from the article body (not
         # just the title+summary). Body length is capped composer-side
         # so attention budget is bounded regardless of article size.
+        #
+        # Lexical recall — OR-of-terms, NOT plainto's AND-of-terms.
+        # `plainto_tsquery('english', 'having login issues')` yields
+        # `'login' & 'issu'`, which requires EVERY content term to appear in
+        # one article — so a natural-language query ("not able to access my
+        # database", "mailbox quota reached") matched ZERO articles and the
+        # hybrid silently collapsed to vector-only (the lexical half of RRF
+        # contributed nothing). Relax AND→OR by rewriting the parsed query's
+        # `&` operators to `|`: a document matching ANY salient term is a
+        # candidate, and `ts_rank_cd` still ranks documents matching MORE
+        # terms higher. plainto_tsquery already normalises/stems and drops
+        # stopwords, so the rewrite is safe (no phrase operators to corrupt);
+        # an all-stopword query yields an empty tsquery that matches nothing.
+        # Precision is restored downstream by the reranker, not by starving
+        # recall here (industry pattern: BM25/OR recall → cross-encoder rerank).
         sql = """
+            WITH q AS (
+                SELECT replace(
+                    plainto_tsquery('english', $2)::text, '&', '|'
+                )::tsquery AS tsq
+            )
             SELECT
                 kb_id, title, summary, content, category, tags, audience,
                 state, helpful_votes, views, related_incidents,
                 related_ci_ids, created_at, updated_at,
-                ts_rank_cd(content_tsv, plainto_tsquery('english', $2)) AS rank
-            FROM itsm.kb_knowledge
+                ts_rank_cd(content_tsv, q.tsq) AS rank
+            FROM itsm.kb_knowledge, q
             WHERE tenant_id = $1
               AND state = 'published'
               AND audience = ANY($3)
-              AND content_tsv @@ plainto_tsquery('english', $2)
+              AND content_tsv @@ q.tsq
             ORDER BY rank DESC, helpful_votes DESC, kb_id ASC
             LIMIT $4
         """

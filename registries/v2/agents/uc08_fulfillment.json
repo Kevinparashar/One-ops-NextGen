@@ -52,7 +52,7 @@
       "compound_of": [],
       "created_at": "2026-05-31T08:30:00.000000+00:00",
       "depends_on": [],
-      "description": "Catalog item fulfillment orchestrator (DOC-09 §UC-8). Generic engine that fulfils ANY catalog item by reading its template from itsm.catalog_item, decomposing the request into a task DAG via a single LLM call, and orchestrating execution through LangGraph (parallel waves via Send, approval gates via interrupt(), retry with backoff, saga compensation on cancel). Both portal-submit and chat paths land in the same handler — parity guaranteed by `tools.fulfill_request`. Mock integration adapters (AD / email / VPN / GitHub / license / procurement) swap to real APIs via the IntegrationAdapter Protocol without handler changes. Tracks SR → RITM → tasks → approvals in itsm.* substrate; emits per-task OTel spans + per-tenant cost; lifecycle-gated by step-1 state machine (ships as draft, activated by quality gate).",
+      "description": "Catalog and service-request fulfilment orchestrator. Handles user or operator intent to obtain, request, order, provision, enable, assign, install, configure, increase, create, onboard, or fulfil a service/resource on behalf of a requester. This includes catalog item execution, service request creation or fulfilment, access provisioning, software/license assignment, hardware ordering, mailbox or account creation, quota increase, VPN/Wi-Fi/application access, group membership, onboarding, approval gates, task DAG creation, fulfilment tracking, and rollback/compensation where applicable. This agent owns fulfilment outcomes. It does not provide self-help guidance, does not retrieve KB articles, does not summarize existing records, does not find similar tickets, does not triage tickets, and does not handle break-fix incident creation unless the request is explicitly a catalog/service fulfilment flow.",
       "determinism_level": "medium",
       "excludes": [],
       "hooks": {
@@ -73,22 +73,22 @@
         {
           "id": "fulfill_catalog_request",
           "name": "Fulfill a catalog request",
-          "description": "Decompose and carry out fulfillment of a catalog item, service request, or onboarding - provisioning accounts, mailboxes, licenses, group/VPN access, and ordering hardware, including approval gates and rollback. Use when the user wants to OBTAIN or PROVISION something, or have an existing catalog request executed. Action-tier: mutations require confirmation/approval. NOT for summarizing a record, fetching KB/how-to articles, finding similar tickets, or triaging an existing incident.",
+          "description": "Create, execute, or track fulfilment of a catalog item or service request when the user wants the organization, system, or service desk to do something on their behalf. Use for provisioning access, assigning licenses, installing software, ordering hardware, increasing quotas, creating accounts/mailboxes, onboarding users, setting up service entitlements, or carrying out an existing approved service request. Mutating actions require confirmation or approval. Do not use for how-to guidance, troubleshooting articles, record summaries, similar-ticket lookup, triage proposals, or active break-fix issue investigation.",
           "use_when": [
-            "the user asks to get, request, order, or provision an item, software, license, hardware, or access",
-            "the user wants a new hire onboarded or an environment/account set up",
-            "the user wants an existing catalog request or service request carried out or its tasks created",
-            "the user wants to set up a mailbox, group membership, VPN, or directory account for a request",
-            "the user wants the status of an in-flight fulfillment request",
-            "the user wants to obtain or provision a specific item or service from the catalog"
+            "the user wants the organization, service desk, automation system, or fulfilment workflow to provide, grant, enable, assign, install, order, provision, increase, create, configure, or deliver something on their behalf",
+            "the user wants to submit, start, create, execute, fulfil, or track a catalog item or service request",
+            "the user wants access to an application, system, folder, dashboard, network, VPN, Wi-Fi, mailbox, database, repository, group, or environment provisioned for a user",
+            "the user wants software, license, hardware, laptop, monitor, phone, account, mailbox, cloud environment, or onboarding/offboarding service provisioned",
+            "the user wants an existing service request or catalog request carried out, tasked, approved, fulfilled, or checked for fulfilment progress",
+            "the user expresses a fulfilment outcome rather than asking for instructions to perform the task themselves"
           ],
           "not_when": [
-            "the user wants the facts, fields, or timeline of an existing record (route to uc01_summarization)",
-            "the user wants knowledge, documentation, or how-to on doing something themselves (route to uc03_kb_lookup)",
-            "the user wants other tickets similar to or duplicates of a record (route to uc02_similar_tickets)",
-            "the user wants an existing incident classified, prioritized, or assigned (route to uc05_triage)",
-            "the user is reporting a brand-new problem/outage (that is incident creation, not catalog fulfillment)",
-            "the user seeks guidance on how to resolve an existing incident (route to uc03_kb_lookup)"
+            "the user asks how to perform a task themselves, wants documentation, wants a process explanation, wants troubleshooting steps, wants a runbook/SOP/playbook, wants a KB article, or wants guidance without asking the system/service desk to fulfil anything; route to uc03_kb_lookup",
+            "the user asks for facts, fields, status, timeline, comments, work notes, priority, SLA, requester, assignee, owner, or linked records of an existing record; route to uc01_summarization",
+            "the user asks for other existing tickets, duplicate candidates, peer records, historical cases, similar incidents, or similar requests; route to uc02_similar_tickets",
+            "the user asks for classification, prioritization, impact, urgency, assignment group, or assignee recommendations in an authenticated operator triage workflow; route to uc05_triage",
+            "the user reports a broken service, outage, error, degradation, or active failure and wants investigation or break-fix handling rather than fulfilment of a catalog/service entitlement; route to uc03_kb_lookup",
+            "the user asks about an existing incident's resolution guidance rather than requesting a service/resource to be provided; route to uc03_kb_lookup"
           ],
           "tags": [
             "fulfillment",
@@ -99,16 +99,22 @@
             "action"
           ],
           "examples": [
-            "fulfill REQ0005001",
-            "I need a new laptop",
-            "request an Adobe Photoshop license",
-            "onboard new employee John Smith starting March 15",
-            "I need access to the finance share",
-            "set up a new AWS account for me",
-            "order a second monitor for my desk",
-            "please provision a new email account for me",
-            "request access to the marketing folder",
-            "can you fulfill my request for a new phone?"
+            "submit a catalog request to provision application access for a user",
+            "start a service request for a mailbox quota increase",
+            "order approved hardware for an employee",
+            "create an onboarding request for a new hire",
+            "assign VPN entitlement to a named user",
+            "provision a software license through the catalog",
+            "create a mailbox for a new employee",
+            "track the fulfilment progress of this service request"
+          ],
+          "negative_examples": [
+            "show me the guide for setting up VPN myself",
+            "how do I troubleshoot mailbox sync issues",
+            "summarize REQ0002004",
+            "find previous tickets similar to this access issue",
+            "recommend category and priority for this request",
+            "what is the documented workaround for this error"
           ]
         }
       ],

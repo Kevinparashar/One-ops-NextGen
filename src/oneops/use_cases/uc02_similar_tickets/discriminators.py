@@ -144,4 +144,86 @@ async def generate_discriminators(
             return {}
 
 
+_RELEVANCE_FILTER_INSTRUCTIONS = """You filter a list of candidate tickets to
+only those that genuinely describe the SAME kind of problem as the user's query.
+
+The candidates came from a recall-first vector search, so some are only loosely
+related — a shared word, the same product, the same service — without being the
+same issue. Keep a ticket ONLY when a support analyst would agree it is about the
+same underlying problem / failure mode the user is describing. Drop the rest.
+
+Return strictly JSON: {"relevant": ["TICKET_ID", ...]}. Use the exact ticket_id
+strings supplied. If NONE genuinely match, return an empty list — "no similar
+tickets" is a correct, expected answer, better than listing unrelated ones."""
+
+
+async def filter_relevant_by_text(
+    *,
+    gateway: LlmGateway,
+    model: str,
+    query_text: str,
+    candidates: list[dict[str, Any]],
+    tenant_id: str,
+    user_id: str = "",
+    request_id: str = "",
+) -> set[str]:
+    """Cross-encoder-style relevance filter for the same-by-TEXT path.
+
+    The symptom-anchor ANN is recall-first, so a free-text query ("database
+    issue") surfaces loosely-related tickets ("CI relationships out of sync") at
+    low cosine. This is the precision authority for the text path: an LLM reads
+    each candidate against the user's described problem and keeps only the ones
+    that genuinely match — by MEANING, not a hand-tuned score floor.
+
+    Returns the kept ticket_ids (a subset of the candidate ids). Semantics differ
+    from the catalog filter on purpose:
+      • a VALID empty verdict ⇒ keep NONE (honest "no similar tickets"); the
+        whole point is to be able to drop an all-noise recall set.
+      • only an LLM ERROR fails OPEN (returns ALL ids) — an infra failure must
+        not silently empty a real result list.
+    `candidates` items must carry `ticket_id`, `title`, `description`.
+    """
+    ids = {str(c.get("ticket_id") or "") for c in candidates if c.get("ticket_id")}
+    if len(candidates) <= 1:
+        return ids
+    with _tracer.start_as_current_span(
+        "uc02.relevance_filter",
+        attributes={"oneops.uc02.relevance_filter.count": len(candidates)},
+    ) as span:
+        try:
+            system_prompt = compose(
+                Profile.INTERNAL_AGENT,
+                extra_sections=[_RELEVANCE_FILTER_INSTRUCTIONS])
+            user_block = json.dumps({
+                "query": _trim(query_text, 280),
+                "candidates": [
+                    {
+                        "ticket_id": str(c.get("ticket_id") or ""),
+                        "title": _trim(c.get("title"), 180),
+                        "first_sentence": _first_sentence(c.get("description")),
+                    }
+                    for c in candidates
+                ],
+            }, ensure_ascii=False)
+            resp = await gateway.call(LlmRequest(
+                messages=(
+                    LlmMessage("system", system_prompt, cache_control=True),
+                    LlmMessage("user", user_block),
+                ),
+                model=model, tenant_id=tenant_id, user_id=user_id,
+                request_id=request_id, response_format=ResponseFormat.JSON,
+                temperature=0.0, max_tokens=200,
+            ))
+            doc = json.loads(resp.content or "{}")
+            kept = {str(t).strip() for t in (doc.get("relevant") or [])
+                    if str(t).strip() in ids}
+            span.set_attribute("uc02.relevance_filter.kept", len(kept))
+            return kept                              # empty = honest "none match"
+        except Exception as exc:                                       # noqa: BLE001
+            _log.warning("uc02.relevance_filter.failed",
+                         error=str(exc)[:200], count=len(candidates))
+            span.set_attribute("uc02.relevance_filter.outcome", "failed")
+            return ids                               # fail-OPEN on error only
+
+
 __all__ = ["generate_discriminators"]

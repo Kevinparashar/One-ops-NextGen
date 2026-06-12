@@ -147,6 +147,7 @@
       "service_id": "cmdb_ci",
       "id_prefix": "CI",
       "alias_prefixes": ["CMDB"],
+      "nl_terms": ["configuration item", "configuration"],
       "ownership_enforced": true,
       "owner_fields": ["owner", "assigned_to"]
     },

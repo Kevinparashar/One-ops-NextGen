@@ -350,8 +350,9 @@ async def resume_turn(
     thread_id=session_id so the checkpointer finds the persisted state.
 
     answer shape per interrupt kind:
-      user_selection    → {"selected": <option dict>}
-      user_input        → {"fields": {name: value, ...}}
+      user_selection    → {"selected": <option dict>}  (or decline if allow_none)
+      user_input        → {"fields": {name: value, ...}}  OR {"cancelled": true}
+                          when the user closes a cancelable form
       user_confirmation → {"confirmed": True|False}
       user_clarification → {"answer": <str>}
     """

@@ -555,6 +555,14 @@ class Router:
         if not candidates:
             return _FunnelOutcome([], {}, "no candidates retrieved", False)
 
+        # Structural chat-routing exclusion (defence-in-depth): an agent whose
+        # card declares chat_router_eligible=false (e.g. uc05 triage, API/
+        # operator-only) is NEVER a conversational candidate, regardless of
+        # retrieval/activation. Cheap registry lookup; no LLM.
+        candidates = [c for c in candidates if self._chat_eligible(c.agent_id)]
+        if not candidates:
+            return _FunnelOutcome([], {}, "no chat-eligible candidates", False)
+
         # Stage 3 — condition + ABAC filter.
         # Routing admission is decided by the agent's activation_condition,
         # using three-valued logic (PASS / INDETERMINATE / FAIL). The
@@ -607,7 +615,8 @@ class Router:
         # the rewritten text. Target agent must be a registered active agent
         # AND must have survived stages 1-3 (post-authz / post-activation).
         preroute_outcome = self._try_preroute(
-            survivors, signals, text, normalized, original_text, sq_id, diag)
+            survivors, signals, text, normalized, original_text, sq_id, diag,
+            has_focus=bool((request_ctx.get("focus_entity_id") or "").strip()))
         if preroute_outcome is not None:
             return preroute_outcome
 
@@ -676,6 +685,10 @@ class Router:
         bound = self._chat_bind(top.agent_id, signals, text)
         return _FunnelOutcome([top.agent_id], {top.agent_id: bound}, "", False)
 
+    def _chat_eligible(self, agent_id: str) -> bool:
+        agent = self._registry.agents.get_optional(agent_id)
+        return bool(getattr(agent, "chat_router_eligible", True)) if agent else True
+
     async def _stage3_filter(
         self,
         candidates: list,
@@ -738,6 +751,7 @@ class Router:
         original_text: str | None,
         sq_id: str,
         diag: list[str],
+        has_focus: bool = False,
     ) -> _FunnelOutcome | None:
         """Stage 3.4 — deterministic preroute (X6, 2026-05-28).
 
@@ -765,7 +779,8 @@ class Router:
                 "oneops.router.survivor_ids": ",".join(sorted(survivor_ids)),
             },
         ) as pre_span:
-            pre_target = _deterministic_preroute(preroute_text, survivor_ids)
+            pre_target = _deterministic_preroute(
+                preroute_text, survivor_ids, has_focus=has_focus)
             pre_span.set_attribute(
                 "oneops.router.preroute.fired", pre_target is not None)
             set_langfuse_io(

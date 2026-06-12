@@ -38,6 +38,7 @@ import structlog
 from opentelemetry import trace
 
 from oneops.use_cases.uc08_fulfillment import approval as _approval
+from oneops.use_cases.uc08_fulfillment import catalog_reranker as _catalog_reranker
 from oneops.use_cases.uc08_fulfillment import catalog_search as _catalog_search
 from oneops.use_cases.uc08_fulfillment import core as _core
 from oneops.use_cases.uc08_fulfillment import db as _db
@@ -140,7 +141,7 @@ async def get_service_request_list(
     has-form rule). Above-floor matches only — an empty list tells the
     caller to offer the incident path instead.
     """
-    tenant_id, _, role = _principal_from_context(context)
+    tenant_id, user_id, role = _principal_from_context(context)
     raw = arguments.get("service_catalogs")
     if raw is None:
         raw = arguments.get("query") or ""
@@ -181,17 +182,28 @@ async def get_service_request_list(
                     "display_text": "I couldn't search the catalog just now."}
         finally:
             await conn.close()
-        # Show the top-K for the USER to choose from when the search is
-        # relevant (the best match cleared the floor). We return the whole
-        # top-K — not just the items over the floor — so the user always has a
-        # few candidates to pick from; they are the relevance judge. A search
-        # whose best match is below the floor is a genuine no-match.
-        relevant = bool(result.matches) and result.matches[0].above_floor
+        # Build the candidate list shown to the user. Two precision passes over
+        # the recall-first embedding top-K (2026-06-12, RAG quality):
+        #   #1 floor  — show ONLY items that cleared the calibrated relevance
+        #               floor (0.50). Below-floor items are noise, not choices —
+        #               the old "show the whole top-K so the user judges" rule
+        #               is what surfaced "Application Access" under "headset".
+        #   #2 rerank — an LLM relevance filter (cross-encoder-style, by MEANING,
+        #               no hand-tuned score margin) trims the remaining shortlist
+        #               to items that genuinely fulfil the request. FAIL-OPEN: on
+        #               any error it returns the full above-floor set, so the
+        #               filter can only remove noise, never make things worse.
+        above = [m for m in result.matches if m.above_floor]
+        if len(above) >= 2 and _gateway is not None:
+            keep = await _catalog_reranker.keep_relevant(
+                tenant_id=tenant_id, sr_text=query, candidates=tuple(above),
+                gateway=_gateway, user_id=user_id or "")
+            above = [m for m in above if m.catalog_item_id in keep] or above
         matches = [
             {"catalog_id": m.catalog_item_id, "name": m.name,
              "description": m.description, "category": m.category,
              "score": round(m.cosine_score, 4)}
-            for m in (result.matches if relevant else ())
+            for m in above
         ]
         if matches:
             lines = "\n".join(
@@ -199,8 +211,7 @@ async def get_service_request_list(
                 for i, m in enumerate(matches, start=1))
             display = f"I found these catalog items:\n{lines}\nWhich one?"
         else:
-            display = ("No matching catalog item. Would you like me to raise "
-                       "an incident instead?")
+            display = "No relevant catalog found. Please contact the IT Team."
         return {"ok": True, "matches": matches, "count": len(matches),
                 "display_text": display}
 
@@ -813,14 +824,11 @@ async def request_catalog_item(
             _memo_put(_search_memo, _skey, listing)
         matches = listing.get("matches") or []
 
-        # ── Fallback: no catalog match → graceful decline (no incident) ───
+        # ── Fallback: no catalog match → simple decline ───────────────────
         if not listing.get("ok") or not matches:
             return {"ok": True, "outcome": "no_match",
-                    "display_text": (
-                        f"I couldn't find a catalog item matching “{query}”. "
-                        "You could try different wording, or I can flag this to "
-                        "the IT team to follow up. (Raising a formal incident "
-                        "isn't available from here yet.)")}
+                    "display_text":
+                        "No relevant catalog found. Please contact the IT Team."}
 
         # ── Step 2: user picks an item ────────────────────────────────────
         selection = interrupt_for_selection(
@@ -902,6 +910,10 @@ async def request_catalog_item(
                     prompt = (f"Almost there — “{catalog_label}” still needs: "
                               f"{names}. Please complete and send:")
                 answer = interrupt_for_input(prompt, _form(current))
+                # User closed the form (Cancel/Close) → stop here, don't submit.
+                if isinstance(answer, dict) and answer.get("cancelled"):
+                    return {"ok": True, "outcome": "cancelled", "display_text":
+                            f"Okay, I've closed the request for “{catalog_label}”."}
                 current = {**current, **(dict(_unwrap(answer, "fields") or {}))}
             values = current
 

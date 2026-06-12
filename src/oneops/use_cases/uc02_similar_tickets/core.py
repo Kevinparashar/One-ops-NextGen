@@ -369,6 +369,20 @@ async def find_similar(
             scored.sort(key=lambda x: x["_composite"], reverse=True)
             top = scored[:max_results]
 
+            # Stage 5.4 (TEXT MODE only) — semantic relevance filter. The
+            # symptom-anchor ANN is recall-first, so a free-text query
+            # ("database issue") surfaces loosely-related tickets at low cosine
+            # ("CI relationships out of sync"). This LLM pass is the precision
+            # authority for the text path — it keeps only tickets that genuinely
+            # match the described problem, by MEANING (the composite floor stays
+            # recall-first; no hand-tuned precision threshold). An honest empty
+            # result is allowed: better "no similar tickets" than unrelated ones.
+            # The id path is unchanged (the source ticket already anchors it).
+            if text_mode and top:
+                top = await _filter_relevant_text(
+                    conn, cols, tenant_id, text_query, top,
+                    discriminator_gateway, discriminator_model, user_id)
+
             # Stage 5.5 — per-result discriminator labels.
             discriminators = await _label_discriminators(
                 conn, cols, tenant_id, ticket_id, src, top,
@@ -768,6 +782,41 @@ async def _confirm_with_diagnosis(
         if t is not None and t >= _DIAG_THRESHOLD:
             d["_composite"] += _DIAG_BOOST * d.get("_sem_trust", 1.0)
             d["_why"].append("diagnosis_match")
+
+
+async def _filter_relevant_text(
+    conn: asyncpg.Connection, cols: _Cols, tenant_id: str, query_text: str,
+    top: list[dict[str, Any]], gateway: Any, model: str | None, user_id: str,
+) -> list[dict[str, Any]]:
+    """Text-path precision filter (Stage 5.4): drop top-K tickets that do not
+    genuinely match the free-text query's problem. Fetches title+description for
+    the candidates and asks `filter_relevant_by_text` for the relevant subset.
+    No-op (returns `top` unchanged) when the gateway is unwired or there is <=1
+    result. On an LLM error the filter fails OPEN, so this never empties a real
+    result list because of infra."""
+    if gateway is None or len(top) <= 1:
+        return top
+    top_ids = [d["id"] for d in top]
+    desc_rows = await conn.fetch(
+        f"SELECT {cols.id_col} AS id, description "
+        f"FROM {cols.base_tbl} "
+        f"WHERE tenant_id = $1 AND {cols.id_col} = ANY($2::text[])",
+        tenant_id, top_ids,
+    )
+    desc_by_id = {r["id"]: (r["description"] or "") for r in desc_rows}
+    from oneops.use_cases.uc02_similar_tickets.discriminators import (
+        filter_relevant_by_text,
+    )
+    keep = await filter_relevant_by_text(
+        gateway=gateway, model=model or "gpt-4o-mini", query_text=query_text,
+        candidates=[
+            {"ticket_id": str(d["id"]), "title": str(d.get("title") or ""),
+             "description": desc_by_id.get(d["id"], "")}
+            for d in top
+        ],
+        tenant_id=tenant_id, user_id=user_id,
+    )
+    return [d for d in top if str(d["id"]) in keep]
 
 
 async def _label_discriminators(

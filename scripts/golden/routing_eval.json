@@ -1,0 +1,1594 @@
+[
+  {
+    "id": "r001",
+    "query": "what's the current status of INC9010049",
+    "expected": "uc01",
+    "grounded_on": "INC9010049",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r002",
+    "query": "summarise INC9010052 for me",
+    "expected": "uc01",
+    "grounded_on": "INC9010052",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r003",
+    "query": "where do things stand on INC9010053",
+    "expected": "uc01",
+    "grounded_on": "INC9010053",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r004",
+    "query": "give me the details on INC9010054",
+    "expected": "uc01",
+    "grounded_on": "INC9010054",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r005",
+    "query": "what's the priority on INC9010057",
+    "expected": "uc01",
+    "grounded_on": "INC9010057",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r006",
+    "query": "who's handling INC9010058",
+    "expected": "uc01",
+    "grounded_on": "INC9010058",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r007",
+    "query": "break down INC9010062 for me",
+    "expected": "uc01",
+    "grounded_on": "INC9010062",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r008",
+    "query": "fill me in on INC9010064",
+    "expected": "uc01",
+    "grounded_on": "INC9010064",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r009",
+    "query": "what's the impact of INC9010067",
+    "expected": "uc01",
+    "grounded_on": "INC9010067",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r010",
+    "query": "read me INC9010069",
+    "expected": "uc01",
+    "grounded_on": "INC9010069",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r011",
+    "query": "what's the current status of INC9010070",
+    "expected": "uc01",
+    "grounded_on": "INC9010070",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r012",
+    "query": "summarise INC9010072 for me",
+    "expected": "uc01",
+    "grounded_on": "INC9010072",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r013",
+    "query": "where do things stand on INC9010073",
+    "expected": "uc01",
+    "grounded_on": "INC9010073",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r014",
+    "query": "give me the details on INC9010076",
+    "expected": "uc01",
+    "grounded_on": "INC9010076",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r015",
+    "query": "what's the priority on INC9010077",
+    "expected": "uc01",
+    "grounded_on": "INC9010077",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r016",
+    "query": "who's handling INC9010079",
+    "expected": "uc01",
+    "grounded_on": "INC9010079",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r017",
+    "query": "break down INC9010081 for me",
+    "expected": "uc01",
+    "grounded_on": "INC9010081",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r018",
+    "query": "fill me in on INC9010084",
+    "expected": "uc01",
+    "grounded_on": "INC9010084",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r019",
+    "query": "what's the impact of INC9010085",
+    "expected": "uc01",
+    "grounded_on": "INC9010085",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r020",
+    "query": "read me INC9010086",
+    "expected": "uc01",
+    "grounded_on": "INC9010086",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r021",
+    "query": "what's the current status of INC9010087",
+    "expected": "uc01",
+    "grounded_on": "INC9010087",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r022",
+    "query": "summarise INC9010088 for me",
+    "expected": "uc01",
+    "grounded_on": "INC9010088",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r023",
+    "query": "where do things stand on INC9010089",
+    "expected": "uc01",
+    "grounded_on": "INC9010089",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r024",
+    "query": "give me the details on INC9010091",
+    "expected": "uc01",
+    "grounded_on": "INC9010091",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r025",
+    "query": "what's the priority on INC9010092",
+    "expected": "uc01",
+    "grounded_on": "INC9010092",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r026",
+    "query": "who's handling INC9010093",
+    "expected": "uc01",
+    "grounded_on": "INC9010093",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r027",
+    "query": "break down INC9010095 for me",
+    "expected": "uc01",
+    "grounded_on": "INC9010095",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r028",
+    "query": "fill me in on INC9010096",
+    "expected": "uc01",
+    "grounded_on": "INC9010096",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r029",
+    "query": "what's the impact of INC9010097",
+    "expected": "uc01",
+    "grounded_on": "INC9010097",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r030",
+    "query": "read me INC9010099",
+    "expected": "uc01",
+    "grounded_on": "INC9010099",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r031",
+    "query": "what's the current status of SR9010009",
+    "expected": "uc01",
+    "grounded_on": "SR9010009",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r032",
+    "query": "summarise SR9010010 for me",
+    "expected": "uc01",
+    "grounded_on": "SR9010010",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r033",
+    "query": "where do things stand on SR9010011",
+    "expected": "uc01",
+    "grounded_on": "SR9010011",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r034",
+    "query": "give me the details on SR9010013",
+    "expected": "uc01",
+    "grounded_on": "SR9010013",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r035",
+    "query": "what's the priority on SR9010015",
+    "expected": "uc01",
+    "grounded_on": "SR9010015",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r036",
+    "query": "who's handling SR9010016",
+    "expected": "uc01",
+    "grounded_on": "SR9010016",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r037",
+    "query": "break down SR9010017 for me",
+    "expected": "uc01",
+    "grounded_on": "SR9010017",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r038",
+    "query": "fill me in on SR9010018",
+    "expected": "uc01",
+    "grounded_on": "SR9010018",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r039",
+    "query": "what's the impact of SR9010024",
+    "expected": "uc01",
+    "grounded_on": "SR9010024",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r040",
+    "query": "read me SR9010025",
+    "expected": "uc01",
+    "grounded_on": "SR9010025",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r041",
+    "query": "what's the current status of SR9010027",
+    "expected": "uc01",
+    "grounded_on": "SR9010027",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r042",
+    "query": "summarise SR9010028 for me",
+    "expected": "uc01",
+    "grounded_on": "SR9010028",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r043",
+    "query": "where do things stand on SR9010029",
+    "expected": "uc01",
+    "grounded_on": "SR9010029",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r044",
+    "query": "give me the details on SR9010030",
+    "expected": "uc01",
+    "grounded_on": "SR9010030",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r045",
+    "query": "what's the priority on SR9010031",
+    "expected": "uc01",
+    "grounded_on": "SR9010031",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r046",
+    "query": "who's handling PBM9010038",
+    "expected": "uc01",
+    "grounded_on": "PBM9010038",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r047",
+    "query": "break down PBM9010042 for me",
+    "expected": "uc01",
+    "grounded_on": "PBM9010042",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r048",
+    "query": "fill me in on PBM9010043",
+    "expected": "uc01",
+    "grounded_on": "PBM9010043",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r049",
+    "query": "what's the impact of PBM9010044",
+    "expected": "uc01",
+    "grounded_on": "PBM9010044",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r050",
+    "query": "read me PBM9010045",
+    "expected": "uc01",
+    "grounded_on": "PBM9010045",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r051",
+    "query": "what's the current status of PBM9010046",
+    "expected": "uc01",
+    "grounded_on": "PBM9010046",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r052",
+    "query": "summarise PBM9010051 for me",
+    "expected": "uc01",
+    "grounded_on": "PBM9010051",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r053",
+    "query": "where do things stand on PBM9010053",
+    "expected": "uc01",
+    "grounded_on": "PBM9010053",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r054",
+    "query": "give me the details on CHG9010035",
+    "expected": "uc01",
+    "grounded_on": "CHG9010035",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r055",
+    "query": "what's the priority on CHG9010036",
+    "expected": "uc01",
+    "grounded_on": "CHG9010036",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r056",
+    "query": "who's handling CHG9010040",
+    "expected": "uc01",
+    "grounded_on": "CHG9010040",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r057",
+    "query": "break down CHG9010041 for me",
+    "expected": "uc01",
+    "grounded_on": "CHG9010041",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r058",
+    "query": "fill me in on CHG9010042",
+    "expected": "uc01",
+    "grounded_on": "CHG9010042",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r059",
+    "query": "what's the impact of CHG9010043",
+    "expected": "uc01",
+    "grounded_on": "CHG9010043",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r060",
+    "query": "read me CHG9010044",
+    "expected": "uc01",
+    "grounded_on": "CHG9010044",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r061",
+    "query": "what's the current status of CHG9010047",
+    "expected": "uc01",
+    "grounded_on": "CHG9010047",
+    "family": "uc01",
+    "note": ""
+  },
+  {
+    "id": "r062",
+    "query": "any other tickets like INC0001021",
+    "expected": "uc02",
+    "grounded_on": "INC0001021",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r063",
+    "query": "is INC0001022 a recurring issue",
+    "expected": "uc02",
+    "grounded_on": "INC0001022",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r064",
+    "query": "have we seen something like INC0001023 before",
+    "expected": "uc02",
+    "grounded_on": "INC0001023",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r065",
+    "query": "show me incidents similar to INC0001024",
+    "expected": "uc02",
+    "grounded_on": "INC0001024",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r066",
+    "query": "is INC0001025 part of a recurring pattern",
+    "expected": "uc02",
+    "grounded_on": "INC0001025",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r067",
+    "query": "what else looks like INC0001026",
+    "expected": "uc02",
+    "grounded_on": "INC0001026",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r068",
+    "query": "any other tickets like INC0001027",
+    "expected": "uc02",
+    "grounded_on": "INC0001027",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r069",
+    "query": "is INC0001028 a recurring issue",
+    "expected": "uc02",
+    "grounded_on": "INC0001028",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r070",
+    "query": "have we seen something like INC0001029 before",
+    "expected": "uc02",
+    "grounded_on": "INC0001029",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r071",
+    "query": "show me incidents similar to INC0001030",
+    "expected": "uc02",
+    "grounded_on": "INC0001030",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r072",
+    "query": "is INC0001031 part of a recurring pattern",
+    "expected": "uc02",
+    "grounded_on": "INC0001031",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r073",
+    "query": "what else looks like INC0001032",
+    "expected": "uc02",
+    "grounded_on": "INC0001032",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r074",
+    "query": "any other tickets like INC9010001",
+    "expected": "uc02",
+    "grounded_on": "INC9010001",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r075",
+    "query": "is INC9010002 a recurring issue",
+    "expected": "uc02",
+    "grounded_on": "INC9010002",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r076",
+    "query": "have we seen something like INC9010003 before",
+    "expected": "uc02",
+    "grounded_on": "INC9010003",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r077",
+    "query": "show me incidents similar to INC9010006",
+    "expected": "uc02",
+    "grounded_on": "INC9010006",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r078",
+    "query": "is INC9010007 part of a recurring pattern",
+    "expected": "uc02",
+    "grounded_on": "INC9010007",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r079",
+    "query": "what else looks like INC9010008",
+    "expected": "uc02",
+    "grounded_on": "INC9010008",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r080",
+    "query": "any other tickets like INC9010009",
+    "expected": "uc02",
+    "grounded_on": "INC9010009",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r081",
+    "query": "is INC9010011 a recurring issue",
+    "expected": "uc02",
+    "grounded_on": "INC9010011",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r082",
+    "query": "have we seen something like INC9010012 before",
+    "expected": "uc02",
+    "grounded_on": "INC9010012",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r083",
+    "query": "show me incidents similar to INC9010013",
+    "expected": "uc02",
+    "grounded_on": "INC9010013",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r084",
+    "query": "is INC9010014 part of a recurring pattern",
+    "expected": "uc02",
+    "grounded_on": "INC9010014",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r085",
+    "query": "what else looks like INC9010016",
+    "expected": "uc02",
+    "grounded_on": "INC9010016",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r086",
+    "query": "any other tickets like INC9010023",
+    "expected": "uc02",
+    "grounded_on": "INC9010023",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r087",
+    "query": "is INC9010025 a recurring issue",
+    "expected": "uc02",
+    "grounded_on": "INC9010025",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r088",
+    "query": "have we seen something like INC9010027 before",
+    "expected": "uc02",
+    "grounded_on": "INC9010027",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r089",
+    "query": "show me incidents similar to INC9010028",
+    "expected": "uc02",
+    "grounded_on": "INC9010028",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r090",
+    "query": "is INC9010029 part of a recurring pattern",
+    "expected": "uc02",
+    "grounded_on": "INC9010029",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r091",
+    "query": "what else looks like INC9010033",
+    "expected": "uc02",
+    "grounded_on": "INC9010033",
+    "family": "uc02",
+    "note": ""
+  },
+  {
+    "id": "r092",
+    "query": "how do i m365 mailbox quota policy",
+    "expected": "uc03",
+    "grounded_on": "KB0005017",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r093",
+    "query": "what's the procedure to erp login slow known issue",
+    "expected": "uc03",
+    "grounded_on": "KB0005018",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r094",
+    "query": "is there a runbook for old vpn client troubleshooting v1",
+    "expected": "uc03",
+    "grounded_on": "KB0005019",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r095",
+    "query": "guide me on how to kb authoring standards",
+    "expected": "uc03",
+    "grounded_on": "KB0005020",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r096",
+    "query": "steps to password reset procedure",
+    "expected": "uc03",
+    "grounded_on": "KB0005021",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r097",
+    "query": "what's the recommended way to handle replication lag",
+    "expected": "uc03",
+    "grounded_on": "KB9010001",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r098",
+    "query": "how do i clean up duplicate ci records",
+    "expected": "uc03",
+    "grounded_on": "KB9010002",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r099",
+    "query": "what's the procedure to recover pods from crashloopbackoff",
+    "expected": "uc03",
+    "grounded_on": "KB9010006",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r100",
+    "query": "is there a runbook for replace an expired tls certificate",
+    "expected": "uc03",
+    "grounded_on": "KB9010009",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r101",
+    "query": "guide me on how to handle replication lag",
+    "expected": "uc03",
+    "grounded_on": "KB9010014",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r102",
+    "query": "steps to respond to a suspicious login",
+    "expected": "uc03",
+    "grounded_on": "KB9010017",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r103",
+    "query": "what's the recommended way to improve knowledge search relevance",
+    "expected": "uc03",
+    "grounded_on": "KB9010020",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r104",
+    "query": "how do i clean up duplicate ci records",
+    "expected": "uc03",
+    "grounded_on": "KB9010023",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r105",
+    "query": "what's the procedure to fix missing ticket notifications",
+    "expected": "uc03",
+    "grounded_on": "KB9010025",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r106",
+    "query": "is there a runbook for recover from a failed deployment",
+    "expected": "uc03",
+    "grounded_on": "KB9010026",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r107",
+    "query": "guide me on how to clean up duplicate ci records",
+    "expected": "uc03",
+    "grounded_on": "KB9010033",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r108",
+    "query": "steps to repair an endpoint that fails to boot",
+    "expected": "uc03",
+    "grounded_on": "KB9010036",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r109",
+    "query": "what's the recommended way to reduce database query latency",
+    "expected": "uc03",
+    "grounded_on": "KB9010037",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r110",
+    "query": "how do i recover pods from crashloopbackoff",
+    "expected": "uc03",
+    "grounded_on": "KB9010038",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r111",
+    "query": "what's the procedure to fix missing ticket notifications",
+    "expected": "uc03",
+    "grounded_on": "KB9010039",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r112",
+    "query": "is there a runbook for resolve vpn disconnects when roaming",
+    "expected": "uc03",
+    "grounded_on": "KB9010040",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r113",
+    "query": "guide me on how to recover pods from crashloopbackoff",
+    "expected": "uc03",
+    "grounded_on": "KB9010041",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r114",
+    "query": "steps to fix missing ticket notifications",
+    "expected": "uc03",
+    "grounded_on": "KB9010044",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r115",
+    "query": "what's the recommended way to repair an endpoint that fails to boot",
+    "expected": "uc03",
+    "grounded_on": "KB9010046",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r116",
+    "query": "how do i reduce database query latency",
+    "expected": "uc03",
+    "grounded_on": "KB9010048",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r117",
+    "query": "what's the procedure to clean up duplicate ci records",
+    "expected": "uc03",
+    "grounded_on": "KB9010049",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r118",
+    "query": "is there a runbook for repair an endpoint that fails to boot",
+    "expected": "uc03",
+    "grounded_on": "KB9010051",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r119",
+    "query": "guide me on how to replace an expired tls certificate",
+    "expected": "uc03",
+    "grounded_on": "KB9010053",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r120",
+    "query": "steps to repair an endpoint that fails to boot",
+    "expected": "uc03",
+    "grounded_on": "KB9010056",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r121",
+    "query": "what's the recommended way to improve knowledge search relevance",
+    "expected": "uc03",
+    "grounded_on": "KB9010057",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r122",
+    "query": "how do i diagnose wi-fi dead zones",
+    "expected": "uc03",
+    "grounded_on": "KB9010060",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r123",
+    "query": "what's the procedure to recover failed webhook deliveries",
+    "expected": "uc03",
+    "grounded_on": "KB9010064",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r124",
+    "query": "is there a runbook for fix crm 500 errors",
+    "expected": "uc03",
+    "grounded_on": "KB9010066",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r125",
+    "query": "guide me on how to recover failed webhook deliveries",
+    "expected": "uc03",
+    "grounded_on": "KB9010073",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r126",
+    "query": "steps to fix missing ticket notifications",
+    "expected": "uc03",
+    "grounded_on": "KB9010075",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r127",
+    "query": "what's the recommended way to reduce database query latency",
+    "expected": "uc03",
+    "grounded_on": "KB9010077",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r128",
+    "query": "how do i repair an endpoint that fails to boot",
+    "expected": "uc03",
+    "grounded_on": "KB9010079",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r129",
+    "query": "what's the procedure to recover from a failed deployment",
+    "expected": "uc03",
+    "grounded_on": "KB9010082",
+    "family": "uc03",
+    "note": ""
+  },
+  {
+    "id": "r130",
+    "query": "i need privileged / admin access",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_ADMIN",
+    "family": "uc08",
+    "note": "Privileged / Admin Access"
+  },
+  {
+    "id": "r131",
+    "query": "can i request application access",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_APP",
+    "family": "uc08",
+    "note": "Application Access"
+  },
+  {
+    "id": "r132",
+    "query": "please raise a request for cloud sandbox environment",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_CLOUD_SANDBOX",
+    "family": "uc08",
+    "note": "Cloud Sandbox Environment"
+  },
+  {
+    "id": "r133",
+    "query": "i'd like to get database access",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_DB",
+    "family": "uc08",
+    "note": "Database Access"
+  },
+  {
+    "id": "r134",
+    "query": "set me up with new user account creation",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_NEW_USER",
+    "family": "uc08",
+    "note": "New User Account Creation"
+  },
+  {
+    "id": "r135",
+    "query": "request source code repository access",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_REPO",
+    "family": "uc08",
+    "note": "Source Code Repository Access"
+  },
+  {
+    "id": "r136",
+    "query": "i need shared drive / folder access",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_SHARED_DRIVE",
+    "family": "uc08",
+    "note": "Shared Drive / Folder Access"
+  },
+  {
+    "id": "r137",
+    "query": "can i request vpn / remote access",
+    "expected": "uc08",
+    "grounded_on": "CAT_AC_VPN",
+    "family": "uc08",
+    "note": "VPN / Remote Access"
+  },
+  {
+    "id": "r138",
+    "query": "please raise a request for video conferencing license",
+    "expected": "uc08",
+    "grounded_on": "CAT_CO_MEETING_TOOL",
+    "family": "uc08",
+    "note": "Video Conferencing License"
+  },
+  {
+    "id": "r139",
+    "query": "i'd like to get distribution list / group email",
+    "expected": "uc08",
+    "grounded_on": "CAT_EM_DISTRIBUTION",
+    "family": "uc08",
+    "note": "Distribution List / Group Email"
+  },
+  {
+    "id": "r140",
+    "query": "set me up with new mailbox / email account",
+    "expected": "uc08",
+    "grounded_on": "CAT_EM_MAILBOX",
+    "family": "uc08",
+    "note": "New Mailbox / Email Account"
+  },
+  {
+    "id": "r141",
+    "query": "request mailbox quota increase",
+    "expected": "uc08",
+    "grounded_on": "CAT_EM_QUOTA",
+    "family": "uc08",
+    "note": "Mailbox Quota Increase"
+  },
+  {
+    "id": "r142",
+    "query": "i need desk / workspace allocation",
+    "expected": "uc08",
+    "grounded_on": "CAT_FC_DESK",
+    "family": "uc08",
+    "note": "Desk / Workspace Allocation"
+  },
+  {
+    "id": "r143",
+    "query": "can i request parking permit",
+    "expected": "uc08",
+    "grounded_on": "CAT_FC_PARKING",
+    "family": "uc08",
+    "note": "Parking Permit"
+  },
+  {
+    "id": "r144",
+    "query": "please raise a request for meeting room / facility booking",
+    "expected": "uc08",
+    "grounded_on": "CAT_FC_ROOM",
+    "family": "uc08",
+    "note": "Meeting Room / Facility Booking"
+  },
+  {
+    "id": "r145",
+    "query": "i'd like to get expense claim",
+    "expected": "uc08",
+    "grounded_on": "CAT_FN_EXPENSE",
+    "family": "uc08",
+    "note": "Expense Claim"
+  },
+  {
+    "id": "r146",
+    "query": "set me up with procurement / purchase order",
+    "expected": "uc08",
+    "grounded_on": "CAT_FN_PROCURE",
+    "family": "uc08",
+    "note": "Procurement / Purchase Order"
+  },
+  {
+    "id": "r147",
+    "query": "request travel reimbursement",
+    "expected": "uc08",
+    "grounded_on": "CAT_FN_TRAVEL",
+    "family": "uc08",
+    "note": "Travel Reimbursement"
+  },
+  {
+    "id": "r148",
+    "query": "i need id card / access badge",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_ID_CARD",
+    "family": "uc08",
+    "note": "ID Card / Access Badge"
+  },
+  {
+    "id": "r149",
+    "query": "can i request leave / time-off request",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_LEAVE",
+    "family": "uc08",
+    "note": "Leave / Time-Off Request"
+  },
+  {
+    "id": "r150",
+    "query": "please raise a request for manpower / hiring requisition",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_MANPOWER",
+    "family": "uc08",
+    "note": "Manpower / Hiring Requisition"
+  },
+  {
+    "id": "r151",
+    "query": "i'd like to get employee offboarding",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_OFFBOARD",
+    "family": "uc08",
+    "note": "Employee Offboarding"
+  },
+  {
+    "id": "r152",
+    "query": "set me up with hr portal report access",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_PORTAL_ACCESS",
+    "family": "uc08",
+    "note": "HR portal report access"
+  },
+  {
+    "id": "r153",
+    "query": "request training enrollment",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_TRAINING",
+    "family": "uc08",
+    "note": "Training Enrollment"
+  },
+  {
+    "id": "r154",
+    "query": "i need internal transfer request",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_TRANSFER",
+    "family": "uc08",
+    "note": "Internal Transfer Request"
+  },
+  {
+    "id": "r155",
+    "query": "can i request employment verification letter",
+    "expected": "uc08",
+    "grounded_on": "CAT_HR_VERIFY",
+    "family": "uc08",
+    "note": "Employment Verification Letter"
+  },
+  {
+    "id": "r156",
+    "query": "please raise a request for desktop workstation",
+    "expected": "uc08",
+    "grounded_on": "CAT_HW_DESKTOP",
+    "family": "uc08",
+    "note": "Desktop Workstation"
+  },
+  {
+    "id": "r157",
+    "query": "i'd like to get docking station",
+    "expected": "uc08",
+    "grounded_on": "CAT_HW_DOCK",
+    "family": "uc08",
+    "note": "Docking Station"
+  },
+  {
+    "id": "r158",
+    "query": "set me up with headset",
+    "expected": "uc08",
+    "grounded_on": "CAT_HW_HEADSET",
+    "family": "uc08",
+    "note": "Headset"
+  },
+  {
+    "id": "r159",
+    "query": "request keyboard & mouse set",
+    "expected": "uc08",
+    "grounded_on": "CAT_HW_KEYBOARD_MOUSE",
+    "family": "uc08",
+    "note": "Keyboard & Mouse Set"
+  },
+  {
+    "id": "r160",
+    "query": "i need high-performance developer laptop",
+    "expected": "uc08",
+    "grounded_on": "CAT_HW_LAPTOP_DEV",
+    "family": "uc08",
+    "note": "High-Performance Developer Laptop"
+  },
+  {
+    "id": "r161",
+    "query": "can i request standard business laptop",
+    "expected": "uc08",
+    "grounded_on": "CAT_HW_LAPTOP_STD",
+    "family": "uc08",
+    "note": "Standard Business Laptop"
+  },
+  {
+    "id": "r162",
+    "query": "please raise a request for external monitor",
+    "expected": "uc08",
+    "grounded_on": "CAT_HW_MONITOR",
+    "family": "uc08",
+    "note": "External Monitor"
+  },
+  {
+    "id": "r163",
+    "query": "i'd like to get memory (ram) upgrade",
+    "expected": "uc08",
+    "grounded_on": "CAT_HW_RAM_UPGRADE",
+    "family": "uc08",
+    "note": "Memory (RAM) Upgrade"
+  },
+  {
+    "id": "r164",
+    "query": "set me up with storage (ssd) upgrade",
+    "expected": "uc08",
+    "grounded_on": "CAT_HW_SSD_UPGRADE",
+    "family": "uc08",
+    "note": "Storage (SSD) Upgrade"
+  },
+  {
+    "id": "r165",
+    "query": "request webcam",
+    "expected": "uc08",
+    "grounded_on": "CAT_HW_WEBCAM",
+    "family": "uc08",
+    "note": "Webcam"
+  },
+  {
+    "id": "r166",
+    "query": "i need it change request",
+    "expected": "uc08",
+    "grounded_on": "CAT_IT_CHANGE",
+    "family": "uc08",
+    "note": "IT Change Request"
+  },
+  {
+    "id": "r167",
+    "query": "can i request general it service request",
+    "expected": "uc08",
+    "grounded_on": "CAT_IT_GENERAL",
+    "family": "uc08",
+    "note": "General IT Service Request"
+  },
+  {
+    "id": "r168",
+    "query": "please raise a request for report an it incident",
+    "expected": "uc08",
+    "grounded_on": "CAT_IT_INCIDENT",
+    "family": "uc08",
+    "note": "Report an IT Incident"
+  },
+  {
+    "id": "r169",
+    "query": "i'd like to get standard developer laptop",
+    "expected": "uc08",
+    "grounded_on": "CAT_LAPTOP_STD",
+    "family": "uc08",
+    "note": "Standard developer laptop"
+  },
+  {
+    "id": "r170",
+    "query": "set me up with static ip / firewall rule",
+    "expected": "uc08",
+    "grounded_on": "CAT_NW_STATIC_IP",
+    "family": "uc08",
+    "note": "Static IP / Firewall Rule"
+  },
+  {
+    "id": "r171",
+    "query": "request wi-fi / network access",
+    "expected": "uc08",
+    "grounded_on": "CAT_NW_WIFI",
+    "family": "uc08",
+    "note": "Wi-Fi / Network Access"
+  },
+  {
+    "id": "r172",
+    "query": "i need new employee onboarding",
+    "expected": "uc08",
+    "grounded_on": "CAT_ONBOARDING",
+    "family": "uc08",
+    "note": "New employee onboarding"
+  },
+  {
+    "id": "r173",
+    "query": "can i request digital certificate request",
+    "expected": "uc08",
+    "grounded_on": "CAT_SE_CERT",
+    "family": "uc08",
+    "note": "Digital Certificate Request"
+  },
+  {
+    "id": "r174",
+    "query": "please raise a request for adobe creative cloud license",
+    "expected": "uc08",
+    "grounded_on": "CAT_SW_ADOBE_CC",
+    "family": "uc08",
+    "note": "Adobe Creative Cloud License"
+  },
+  {
+    "id": "r175",
+    "query": "i'd like to get endpoint security / antivirus",
+    "expected": "uc08",
+    "grounded_on": "CAT_SW_ANTIVIRUS",
+    "family": "uc08",
+    "note": "Endpoint Security / Antivirus"
+  },
+  {
+    "id": "r176",
+    "query": "set me up with database client license",
+    "expected": "uc08",
+    "grounded_on": "CAT_SW_DB_CLIENT",
+    "family": "uc08",
+    "note": "Database Client License"
+  },
+  {
+    "id": "r177",
+    "query": "request design tool license",
+    "expected": "uc08",
+    "grounded_on": "CAT_SW_DESIGN",
+    "family": "uc08",
+    "note": "Design Tool License"
+  },
+  {
+    "id": "r178",
+    "query": "i need general software installation",
+    "expected": "uc08",
+    "grounded_on": "CAT_SW_GENERIC",
+    "family": "uc08",
+    "note": "General Software Installation"
+  },
+  {
+    "id": "r179",
+    "query": "can i request developer ide license",
+    "expected": "uc08",
+    "grounded_on": "CAT_SW_IDE",
+    "family": "uc08",
+    "note": "Developer IDE License"
+  },
+  {
+    "id": "r180",
+    "query": "please raise a request for microsoft office license",
+    "expected": "uc08",
+    "grounded_on": "CAT_SW_MS_OFFICE",
+    "family": "uc08",
+    "note": "Microsoft Office License"
+  },
+  {
+    "id": "r181",
+    "query": "i'd like to get project management tool access",
+    "expected": "uc08",
+    "grounded_on": "CAT_SW_PM_TOOL",
+    "family": "uc08",
+    "note": "Project Management Tool Access"
+  },
+  {
+    "id": "r182",
+    "query": "set me up with cloud sandbox request",
+    "expected": "uc08",
+    "grounded_on": "CAT_T001_CLOUD_SANDBOX_21",
+    "family": "uc08",
+    "note": "Cloud Sandbox request"
+  },
+  {
+    "id": "r183",
+    "query": "request database access request",
+    "expected": "uc08",
+    "grounded_on": "CAT_T001_DATABASE_ACCESS_10",
+    "family": "uc08",
+    "note": "Database Access request"
+  },
+  {
+    "id": "r184",
+    "query": "i need gpu workstation request",
+    "expected": "uc08",
+    "grounded_on": "CAT_T001_GPU_WORKSTATION_28",
+    "family": "uc08",
+    "note": "GPU Workstation request"
+  },
+  {
+    "id": "r185",
+    "query": "reset my password",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r186",
+    "query": "i forgot my password and need to reset it",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r187",
+    "query": "how do i reset my password",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r188",
+    "query": "reset my mfa",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r189",
+    "query": "i need to re-enroll my mfa",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r190",
+    "query": "set up mfa on my new phone",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r191",
+    "query": "unlock my account",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r192",
+    "query": "my account is locked, how do i unlock it",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r193",
+    "query": "change my password",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r194",
+    "query": "i can't log in, need a password reset",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r195",
+    "query": "help me reset my multi-factor authentication",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r196",
+    "query": "re-enroll mfa after getting a new device",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r197",
+    "query": "i'm locked out and need to reset my password",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r198",
+    "query": "how do i change my expired password",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  },
+  {
+    "id": "r199",
+    "query": "set up authenticator app for mfa",
+    "expected": "kb_then_sr",
+    "grounded_on": "-",
+    "family": "kb_then_sr",
+    "note": ""
+  }
+]

@@ -316,7 +316,7 @@ class Skill(BaseModel):
     id: str = Field(pattern=_ID_PATTERN)
     name: str = Field(min_length=1, max_length=120)
     # Must state BOTH what the skill does AND when to use it (Anthropic rule).
-    description: str = Field(min_length=1, max_length=600)
+    description: str = Field(min_length=1, max_length=800)
     # Positive routing signals — intents/phrasings this skill should win.
     use_when: tuple[str, ...] = ()
     # Disambiguation-as-data — intents this skill must NOT be chosen for (e.g.
@@ -328,6 +328,11 @@ class Skill(BaseModel):
     tags: tuple[str, ...] = ()
     # Illustrative queries — applied as PRINCIPLE, never a string-match list.
     examples: tuple[str, ...] = ()
+    # Contrastive negative exemplars — queries this skill must NOT win (what it
+    # is NOT, complementing use_when). Card-boundary documentation, available as
+    # a disambiguation signal. Never embedded for retrieval (a query must not
+    # retrieve an agent by its negatives).
+    negative_examples: tuple[str, ...] = ()
 
 
 class AgentRecord(_VersionedRecord):
@@ -339,6 +344,12 @@ class AgentRecord(_VersionedRecord):
 
     description: str = Field(min_length=1, max_length=MAX_DESCRIPTION_CHARS)
     intent_family: str = Field(min_length=1, max_length=64)   # docs/BEHAVIOR_CORPUS §1
+    # Structural chat-routing eligibility (defence-in-depth, not prompt hope).
+    # False ⇒ the agent is NEVER a conversational-router candidate (e.g. uc05
+    # triage is API/operator-only); the router drops it from the chat funnel
+    # regardless of retrieval/activation. Default True keeps every existing
+    # agent chat-eligible.
+    chat_router_eligible: bool = True
     # Routing scope: itsm | itom[.subdomain]. Default keeps existing cards valid;
     # the skill-card contract requires NEW cards to declare it explicitly so an
     # ITOM agent can't silently default to 'itsm' and get mis-scoped at retrieval.

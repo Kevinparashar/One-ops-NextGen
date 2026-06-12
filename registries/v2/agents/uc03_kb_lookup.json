@@ -48,7 +48,7 @@
       "compound_of": [],
       "created_at": "2026-05-20T10:49:43.471561+00:00",
       "depends_on": [],
-      "description": "Retrieves supporting knowledge content from the knowledge corpus — articles, runbooks, playbooks, SOPs, troubleshooting guides, known-issue write-ups, previous resolutions, and reference material. Two modes: TOPIC search (no entity — e.g. 'how do I fix VPN') and ENTITY-SCOPED search (KB articles ABOUT a record / CI / asset). Renders article title + body (Symptom / Cause / Resolution as present) + source citation. Use this agent when the user wants MATERIAL THAT HELPS UNDERSTAND, RESOLVE, OR SUPPORT a topic or record — not the record's own stored field values. Capability is bounded to the KB corpus; this agent does NOT render the record's own fields (status, priority, owner, SLA, root_cause, RCA, linked-record ids, or any other on-record attribute).",
+      "description": "Retrieves supporting knowledge content from the knowledge corpus, including published articles, runbooks, SOPs, troubleshooting guides, how-to instructions, diagnostic checklists, known-issue write-ups, first-response playbooks, reference material, workarounds, and documented resolution guidance. This agent supports both topic search and entity-scoped KB search about a record, CI, asset, service, or issue. Use it when the user wants information, guidance, documentation, or self-help/technician instructions. This agent does not return the record's own stored field values, does not find peer tickets, does not triage tickets, and does not fulfil or provision services on behalf of the user.",
       "determinism_level": "low",
       "excludes": [],
       "hooks": {
@@ -67,21 +67,23 @@
         {
           "id": "search_knowledge_base",
           "name": "Search the knowledge base",
-          "description": "Retrieve ranked knowledge content - articles, runbooks, SOPs, troubleshooting guides, how-tos, known-issue write-ups - that helps understand or resolve a topic or issue. Two modes: topic search (no record) and entity-scoped (KB about a record). Use when the user wants supporting material OUTSIDE the record. NOT for the record's own field values, finding similar tickets, or modifying records.",
+          "description": "Retrieve ranked knowledge content that helps a user or technician understand, troubleshoot, configure, diagnose, validate, or resolve a topic, issue, service, record, CI, or asset. Use this skill when the user wants guidance, documentation, how-to steps, KB articles, runbooks, SOPs, checklists, known-issue write-ups, or workarounds. Do not use this skill when the user wants the system or service desk to perform fulfilment, change access, install software, assign a license, order hardware, increase quota, create a request, summarize record fields, find similar tickets, or triage a ticket.",
           "use_when": [
-            "the user asks how to fix, how to do, or how something was solved",
-            "the user wants documentation, a KB article, runbook, SOP, procedure, or guidance for a topic",
-            "a general IT how-to question with no specific record (e.g. how to reset MFA, VPN error steps, mapping a network drive)",
-            "an everyday end-user workplace-IT task even if it sounds mundane - browser, email client, Wi-Fi, printer, laptop/device setup (e.g. clear browser cache, set up Outlook)",
-            "the user asks what is documented or what guidance exists for an issue or a record",
-            "the user wants troubleshooting steps or a known-issue / known-error write-up"
+            "the user asks how to fix, troubleshoot, diagnose, configure, validate, check, resolve, recover, or understand an IT issue or task",
+            "the user asks for a KB article, guide, documentation, runbook, SOP, procedure, playbook, checklist, workaround, known solution, known-issue write-up, or reference material",
+            "the user describes symptoms and wants guidance, steps, instructions, or what to do from an informational/self-help perspective",
+            "the user asks what guidance, documentation, or knowledge exists for a topic, issue, service, CI, asset, incident, request, problem, or change",
+            "the user asks for general workplace IT help where the expected output is instructions rather than fulfilment, such as email setup, Wi-Fi setup, printer setup, browser cache, MFA reset steps, VPN error troubleshooting, or network drive mapping",
+            "the user wants entity-scoped knowledge about a record without asking for that record's own stored fields",
+            "the user reports a symptom, error, or that something is broken, slow, failing, or not working with no explicit how-to verb, and wants it understood or resolved"
           ],
           "not_when": [
-            "the user wants facts, fields, status, or timeline of a specific record itself (route to uc01_summarization)",
-            "the user wants the value of an on-record field such as root_cause or affected_ci (that is a field-read, route to uc01_summarization)",
-            "the user wants other tickets similar to or duplicates of a record (route to uc02_similar_tickets)",
-            "the user wants to create, update, or modify a record (route to an action/fulfilment agent)",
-            "the user wants to triage, prioritise, or route a ticket (route to uc05_triage)"
+            "the user wants the stored facts, field values, status, priority, owner, SLA, comments, work notes, timeline, or anything that belongs to a specific record — including the records it links to; that is a read of the record, not a request for authored knowledge; route to uc01_summarization",
+            "the user wants other existing tickets, duplicates, peer records, historical cases, or similar incidents/requests; route to uc02_similar_tickets",
+            "the user wants the organization, system, or service desk to perform fulfilment on their behalf, including granting access, provisioning an account, installing software, assigning a license, ordering hardware, increasing quota, creating a mailbox, onboarding a user, configuring a service, or creating a service request; route to uc08_fulfillment",
+            "the user explicitly asks to create, update, modify, approve, fulfil, assign, close, reopen, or mutate a record; route to the relevant action agent",
+            "the user wants category, priority, impact, urgency, assignment group, or assignee recommendations in an operator triage workflow; route to uc05_triage",
+            "the user asks for a root-cause or known-error value that is stored directly on a specific problem record; route to uc01_summarization"
           ],
           "tags": [
             "knowledge",
@@ -93,12 +95,23 @@
             "troubleshooting"
           ],
           "examples": [
-            "how do I reset MFA",
-            "any KB for VPN error 809",
-            "what's the runbook for a stuck job",
-            "documentation on mapping a network drive",
-            "how do I configure Outlook on a new laptop",
-            "is there a guide for SSO login issues"
+            "show the troubleshooting guide for VPN connection failures",
+            "find the KB article for MFA reset steps",
+            "what runbook explains Outlook sync delay",
+            "show documentation for mapping a network drive",
+            "find a known-issue article for SSO login failures",
+            "what steps should a user follow to configure email on a device",
+            "show the checklist for diagnosing printer connectivity",
+            "find the workaround documented for portal login errors"
+          ],
+          "negative_examples": [
+            "provision VPN access for this user",
+            "increase my mailbox quota",
+            "order a laptop for a new employee",
+            "summarize INC0001001",
+            "show tickets similar to this issue",
+            "recommend category and priority for this ticket",
+            "assign a software license to me"
           ]
         }
       ],

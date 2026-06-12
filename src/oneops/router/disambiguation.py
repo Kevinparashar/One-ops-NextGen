@@ -18,6 +18,7 @@ funnel logic is identical regardless of which is wired.
 """
 from __future__ import annotations
 
+import functools
 import re as _re
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -50,6 +51,66 @@ _DOC_PHRASES = (
 )
 _ENTITY_ID_RE = _re.compile(r"\b([A-Za-z]{2,4}\d{6,})\b")
 _BARE_ID_RE = _re.compile(r"^\s*[A-Za-z]{2,4}\d{6,}\s*$")
+
+# Focus-aware linked-component read (P3, 2026-06-12). A follow-up on the ACTIVE
+# focus record that asks for the records LINKED FROM it (its configuration
+# items, its linked change / problem / asset) is a READ of that record — not a
+# search for other records that resemble it (uc02), and not a knowledge lookup
+# (uc03). The disambiguator weights the bare relationship word toward uc02/uc03;
+# this deterministic rule, gated on an active focus AND a non-similar phrasing,
+# corrects it. Record-type nouns are domain enum values and the relationship
+# words a closed linguistic set — both used INSIDE this derivation, never as a
+# free routing keyword catalog.
+_RELATIONSHIP_RE = _re.compile(
+    r"\b(related|linked|associated|connected|dependent|attached|affected)\b")
+# Phrasings that mean "find OTHER records like this" (uc02's job) — these PEEL
+# OUT of P3 so a similar-records request never prereoutes to the record read.
+_SIMILAR_RECORD_RE = _re.compile(
+    r"\b(ticket|tickets|incident|incidents|case|cases|duplicate|duplicates|"
+    r"similar|peer|peers|recurring|resembl\w*)\b")
+# Record types whose records are NOT "linked components you read ON a ticket" —
+# they belong to other agents (knowledge→uc03, catalog/onboarding→uc08) or are
+# the anchor/similar types themselves. Used to subtract from the schema-derived
+# vocabulary so "related knowledge"/"related catalog" don't prereoute to uc01.
+_NON_COMPONENT_SERVICES = frozenset({
+    "incident", "request", "knowledge", "catalog", "onboarding",
+})
+
+
+@functools.lru_cache(maxsize=1)
+def _linked_component_terms() -> frozenset[str]:
+    """P3's linked-component vocabulary, DERIVED from service-schema.json — the
+    record types a ticket links to (its CI / change / problem / asset), with
+    their id-prefixes, aliases, and any `nl_terms` synonyms. Built from the
+    schema at first use so a renamed or newly-added linked record type is picked
+    up with NO code change (answers "will it survive field-name changes"). Only
+    the relationship words stay static (they are language, not domain data).
+    Falls back to an empty set on any error → P3 simply never fires (safe)."""
+    import json
+    import os
+    from pathlib import Path
+    terms: set[str] = set()
+    try:
+        root = os.getenv("REGISTRY_ROOT", "registries/v2")
+        path = Path(root)
+        if not path.is_absolute():
+            path = Path(__file__).resolve().parents[3] / root
+        d = json.loads((path / "platform" / "service-schema.json").read_text())
+        for s in d.get("services", []):
+            sid = (s.get("service_id") or "").lower()
+            if sid in _NON_COMPONENT_SERVICES:
+                continue
+            sources = [sid, s.get("id_prefix", "")]
+            sources += list(s.get("alias_prefixes") or [])
+            sources += list(s.get("nl_terms") or [])
+            for src in sources:
+                for tok in _re.findall(r"[a-z]+", str(src).lower()):
+                    if len(tok) > 1:
+                        terms.add(tok)
+                        terms.add(tok + "s")          # naive plural
+    except Exception:                                  # noqa: BLE001
+        return frozenset()
+    return frozenset(terms)
 
 
 @dataclass(frozen=True)
@@ -145,6 +206,22 @@ the user asks for:
 Reason over the cards, not over a fixed taxonomy. Every candidate is
 first-class; none is a default.
 
+## Read the WHOLE query in context — never a single word
+
+Decide from the complete request together with its conversation context — the
+active focus record and the prior turns — never from one isolated word.
+Different capabilities naturally use the same surface words, so no single word
+can pick an agent. Resolve every query by two things judged TOGETHER: the OBJECT
+the user means, and the JOB they want done with it.
+
+A word that expresses a relationship between things carries no routing meaning on
+its own — only together with the object it qualifies. When that object is an
+attribute or linked item BELONGING TO the focused record, the user is reading
+that record; when it is a set of OTHER records that resemble this one, the user
+is searching for those records. The same surface word can point to opposite
+objects, so comprehend the object and the job from the full sentence before
+choosing — never let one familiar word decide.
+
 ## The job each ask wants done (a lens for reading the cards, not a checklist)
 
 The clarifying question is: **what does the user want DONE with the object,
@@ -181,15 +258,26 @@ selecting it only forces a "which record do you mean?" dead-end, so do NOT.
 
 The similar-tickets agent has TWO ways to be anchored, and needs EITHER:
   • a specific record (id or active focus) — find tickets like THAT record; or
-  • an ask to RETRIEVE OTHER TICKETS matching a described problem — the
-    described symptoms are the anchor, so no record is required.
-Decide by the deliverable the user walks away with: when it is a SET OF
-EXISTING TICKETS (peer or historical records they want surfaced), it is similar-
-tickets, even with no id. When it is UNDERSTANDING or FIXING their own problem —
-including a bare problem-report that does not ask to see other tickets — it is
-authored guidance → the knowledge agent; a plain ask to OBTAIN something → the
-fulfilment agent. When neither anchor is present AND the ask is not to surface
-other tickets, do NOT select similar-tickets.
+  • the user's own intent is to be handed a COLLECTION OF EXISTING RECORDS that
+    resemble a problem they describe — then the description is the anchor.
+
+The distinction is the DELIVERABLE the user wants to walk away with, judged by
+meaning, not by any trigger word. similar-tickets exists to hand back a set of
+records the user can scan; the knowledge agent exists to hand back an answer or
+fix. So the test is: does this person want a LIST OF RECORDS, or do they want
+their problem understood and resolved? Naming or describing a problem expresses
+the second — a person who HAS a problem wants help with it, so it is authored
+guidance → the knowledge agent (the safe default), even when terse and even
+when a record is in focus. similar-tickets applies only when the records
+THEMSELVES are the thing being requested — the user wants to inspect what else
+exists, not to be told what to do. When a query could be read either way,
+prefer the knowledge agent. A request to OBTAIN something new → the fulfilment
+agent.
+
+Active focus never converts a new-topic problem into a similar-tickets
+follow-up: when the query carries its own subject, route it on that subject's
+intent — a stated problem is still a knowledge request, not "similar to the
+focus record".
 
 ## The confusions users actually trigger (contrastive principles)
 
@@ -239,7 +327,7 @@ conversation so far, never from a single trigger verb:
     what they walk away with is work carried out for them.
     → the fulfilment (request) agent.
 
-Three rules settle the hard cases:
+These rules settle the hard cases:
 
   1. Lacking something — not having it, or being unable to access or use it — is
      a PROBLEM STATE, not a request. It is HAVING only when the user actually
@@ -262,12 +350,60 @@ Three rules settle the hard cases:
      the user is asking to be given or granted the thing itself, with no interest
      in the procedure for getting it.
 
+  4. SELF-SERVICE ACTION → deflect-first (knowledge FIRST, fulfilment fallback).
+
+     Definition. A self-service action is one the user could complete THEMSELVES,
+     on their own account or settings, once shown the steps — there is nothing
+     only the service desk can do. The user already owns the thing; they are
+     trying to RE-GAIN or RECONFIGURE access to it, not acquire something new.
+     Examples of the shape (apply the idea, do not match these words): resetting
+     or changing one's own password, unlocking one's own locked account,
+     re-enrolling or re-setting one's own second factor / MFA, recovering one's
+     own sign-in, toggling a setting one already owns.
+
+     The decision test — ask ONE question:
+       "If I handed this user the correct how-to article right now, could THEY
+        finish the task without anyone provisioning or granting anything?"
+       • YES → it is a self-service action → apply this rule (deflect-first).
+       • NO  (something must be created, granted, licensed, shipped, or approved
+              by someone else first) → it is provisioning → rule does not apply;
+              route straight to fulfilment.
+
+     What to do when YES. Select the knowledge (KB) agent FIRST and the
+     fulfilment (request) agent SECOND, in that order — knowledge-first-then-
+     fulfilment. The user is shown the self-service steps immediately; the
+     service request is offered as the fallback only if the how-to does not
+     resolve it. Set intents to ["kb_search","action"] (knowledge precedes
+     action). The KB agent reports its own no-result, so nothing is lost when no
+     article exists — the offered request still stands.
+
+     This OVERRIDES imperative phrasing. "reset my password", "unlock my
+     account", "change my MFA" are commands, but the user can still self-serve,
+     so they are deflect-first — NOT straight-to-catalog. Decide by the test
+     above (could they finish it themselves), never by the command form.
+
+     The boundary — do NOT deflect, route straight to fulfilment, when the ask is
+     to be GIVEN or SET UP WITH something the user cannot produce alone: new
+     hardware, a software license, an access grant to a system/role/drive, a new
+     account or mailbox, added capacity/quota. That is HAVING (rule for "get it")
+     and there is no self-service path, so knowledge-first would only delay it.
+
+     If genuinely unsure whether the action is self-serviceable or true
+     provisioning, prefer deflect-first (rule 2's "teach before you provision"):
+     a KB-first that turns out unnecessary still offers the request, but a
+     straight-to-catalog that skipped an available self-service path wastes the
+     user's time and a ticket.
+
 The guiding heuristic: **when in doubt, teach before you provision.** Defaulting
 to KB is safe because a later step offers to raise a service request after the
 KB answer, so the user is never stranded on the wrong path. This governs ONLY
 the knowledge-vs-fulfilment choice — it never overrides another card whose "Use
 when" plainly fits, and never overrides a request that clearly asks to be given
 or provisioned something.
+
+When the choice is ambiguous, decide by the query's underlying INTENT read from
+its full context — what deliverable the user actually wants to walk away with —
+not the surface verb or imperative phrasing alone.
 
 ## Contrastive examples (apply the PRINCIPLE, do not match strings)
 
@@ -336,6 +472,27 @@ but asks about other tickets, so it goes to the similar-tickets agent.
 When the query asks for more than one of these, return every agent that
 applies, ordered with the record-summary agent first when it is selected.
 
+## Fit check — verify the choice, and handle doubt
+
+The cards tell you which agent a query RESEMBLES. Before committing, check
+yourself: does the query's actual context genuinely FIT the chosen agent's
+capability, or does it only look like it on the surface? Judge fit by meaning,
+not by matching particular words.
+
+  • If you are confident the query fits the chosen agent — its intent is
+    unambiguous — route to that single agent.
+
+  • If you are in DOUBT — in particular when you cannot tell whether the user
+    wants knowledge (guidance to do it themselves) or fulfilment (have the
+    service desk do it for them) — do not force one choice. Select the knowledge
+    agent FIRST and the fulfilment agent as a fallback: the user is shown
+    self-service first, with the service request offered if that does not resolve
+    it. The knowledge agent reports its own no-result, so nothing is lost when no
+    article exists.
+
+Only genuine doubt triggers the knowledge-first-then-fulfilment fallback; a
+clear, unambiguous intent always routes to the single right agent.
+
 ## Dispatch discipline
 
 Returning no agents means the user is refused before any agent runs.
@@ -345,6 +502,14 @@ object — a record, a technology, a service, a symptom, an operational
 topic — at least one in-domain agent should be selected. Each agent
 reports its own no-result when its lookup yields nothing; that is the
 correct place to surface "no match", not the router.
+
+When you DO refuse because the query has no in-domain object (it maps to none
+of the candidate cards' "Use when"), you MUST set intents:["off_domain"]. That
+tag marks a DELIBERATE scope refusal, distinct from a hedge: only an
+off_domain-tagged empty selection blocks routing (the user is told the ask is
+out of scope). An empty selection WITHOUT the off_domain tag is read as a hedge
+on an in-domain query and is still routed by retrieval — so never leave it
+untagged when you genuinely mean "out of scope".
 
 When you are genuinely uncertain between in-domain candidates and the KB
 (knowledge) agent is in the set, prefer it. Its no-result reply is honest and
@@ -383,7 +548,7 @@ right team instead of mis-handling it."""
 
 
 def _deterministic_preroute(
-    query_text: str, valid_ids: set[str]
+    query_text: str, valid_ids: set[str], *, has_focus: bool = False,
 ) -> tuple[str, str, str] | None:
     """Narrow deterministic preroute — only patterns ALL routing specs agree
     on. Case-insensitive. Returns (agent_id, intent_token, rationale) on a
@@ -391,6 +556,10 @@ def _deterministic_preroute(
 
     Rules — first match wins:
       P1. Bare entity id alone ('INC0001001', 'ci0000001') → uc01_summarization
+      P3. Active focus + asks for a record LINKED FROM the focused record (its
+          configuration items / CI / linked change / problem / asset) and NOT a
+          similar/duplicate-records phrasing → uc01_summarization (a read of the
+          focused record's own linked field). Gated on `has_focus`.
       P2. Entity present + explicit DOC NOUN (docs / KB / runbook / playbook /
           SOP / article / knowledge base / troubleshooting guide)
           → uc03_kb_lookup
@@ -399,7 +568,6 @@ def _deterministic_preroute(
       - "what do we know about X" — ambiguous, asks about entity
       - "information / data / details / available" — context-dependent
       - field-read attributes (priority / status / owner / SLA)
-      - linked-field reads ("the related X", "any related X")
       - summary verbs (summarize / describe / overview)
       - off-domain queries
     """
@@ -409,6 +577,16 @@ def _deterministic_preroute(
     if _BARE_ID_RE.match(q) and "uc01_summarization" in valid_ids:
         return ("uc01_summarization", "summary",
                 "P1: bare entity id → entity-summary agent")
+    q_lower = q.lower()
+    # P3 — focus-aware linked-component read. The focus supplies the record; the
+    # ask reads a record LINKED FROM it. Excluded when phrased as a similar /
+    # duplicate-records request (that is uc02's job).
+    if (has_focus and "uc01_summarization" in valid_ids
+            and _RELATIONSHIP_RE.search(q_lower)
+            and (set(_re.findall(r"[a-z]+", q_lower)) & _linked_component_terms())
+            and not _SIMILAR_RECORD_RE.search(q_lower)):
+        return ("uc01_summarization", "field_read",
+                "P3: linked/related component of focused record → record read")
     has_entity = bool(_ENTITY_ID_RE.search(q))
     if not has_entity:
         return None
@@ -481,8 +659,24 @@ def _floor_dispatch(
 
     Returns the dispatch decision, or None when no survivor clears the signal
     floor (the caller then emits no_match — off-domain queries land here).
+
+    §470 compliance (policy: planner/router emits no_match when the query
+    "cannot map to any allowed agent/capability"). Dispatch-by-default protects
+    a *hedge* — the LLM saw an in-domain object but couldn't commit — and must
+    NOT override a *deliberate* off-domain refusal. The two are told apart by
+    the reranker's own signal: an empty selection tagged intents:["off_domain"]
+    is a decisive "maps to no capability" verdict (it read the cards), so we
+    honor it (return None → caller emits no_match). An untagged empty selection
+    is a hedge → dispatch-by-default still applies. The LLM reading the cards is
+    the refuse authority (§2.2), not a retrieval-score threshold.
     """
     if not candidates:
+        return None
+    intents = [str(i).strip().lower() for i in (doc.get("intents") or [])]
+    if "off_domain" in intents:
+        span.set_attribute("oneops.router.off_domain_refused", True)
+        span.set_attribute(
+            "oneops.router.dispatch_reason", "off_domain_refused_no_floor")
         return None
     top = max(candidates, key=lambda c: c.score)
     if top.score < 0.10:        # narrow floor, matches MIN_FUSED_SCORE on retriever side

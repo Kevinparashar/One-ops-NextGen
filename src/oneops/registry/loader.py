@@ -50,17 +50,35 @@ def load_registry(root: str | None = None, *, check_integrity: bool = True) -> R
         RegistryIntegrityError: a cross-record invariant is violated.
         RecordValidationError: a record fails its schema.
     """
-    path = _resolve_root(root)
-    if not path.is_dir():
-        raise ConfigError(
-            f"registry root {path} does not exist — seed it before startup "
-            "(see database/ sync scripts: agent/tool/uc_schema sync.py)"
-        )
+    # Backend selection (2026-06-12). Production runs from the DB — the
+    # itsm.agent/tool/uc_schema tables ARE the registry; the JSON files are a
+    # dev/authoring convenience synced into them by database/<kind>/sync.py.
+    # `ONEOPS_REGISTRY_BACKEND=postgres` makes the disambiguator + every other
+    # registry reader source cards from the DB (no JSON on disk required).
+    # Default `file` keeps dev/test/CI on the file backend with zero change.
+    backend_kind = os.getenv("ONEOPS_REGISTRY_BACKEND", "file").strip().lower()
 
-    service = RegistryService.from_path(str(path))
+    if backend_kind in ("postgres", "db", "pg"):
+        from oneops.config import get_settings
+        from oneops.registry.pg_backend import PostgresBackend
+
+        dsn = get_settings().postgres_url
+        service = RegistryService(PostgresBackend(dsn))
+        source = f"postgres:{dsn.split('@')[-1].split('/')[0]}"
+    else:
+        path = _resolve_root(root)
+        if not path.is_dir():
+            raise ConfigError(
+                f"registry root {path} does not exist — seed it before startup "
+                "(see database/ sync scripts: agent/tool/uc_schema sync.py)"
+            )
+        service = RegistryService.from_path(str(path))
+        source = str(path)
 
     # Force a parse of every active record so a schema violation surfaces here,
-    # at startup, not on the first request that happens to touch it.
+    # at startup, not on the first request that happens to touch it. This runs
+    # identically on either backend — the store reads envelopes through the
+    # RegistryBackend Protocol and validates them against the record schema.
     agent_count = len(service.agents.list_active())
     tool_count = len(service.tools.list_active())
     schema_count = len(service.schemas.list_active())
@@ -70,7 +88,8 @@ def load_registry(root: str | None = None, *, check_integrity: bool = True) -> R
 
     _log.info(
         "registry.loaded",
-        root=str(path),
+        backend=backend_kind,
+        source=source,
         active_agents=agent_count,
         active_tools=tool_count,
         active_schemas=schema_count,
