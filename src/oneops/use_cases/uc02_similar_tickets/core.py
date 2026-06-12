@@ -40,7 +40,7 @@ from typing import Any
 import asyncpg
 
 from oneops.db.pgvector_hnsw import apply_hardening as _apply_hnsw_hardening
-from oneops.observability import get_logger, get_tracer
+from oneops.observability import get_logger, get_tracer, set_langfuse_io
 from oneops.observability.metrics import increment as _metric_inc
 from oneops.uc_common import TimeFilter
 from oneops.use_cases.uc02_similar_tickets.contracts import (
@@ -382,6 +382,20 @@ async def find_similar(
 
             _metric_inc("ai.uc02.results.total", len(results),
                         tenant_id=tenant_id, service_id=service_id)
+            # Langfuse: surface the search intent (input) + the ranked result
+            # set (output) on this stage so the Langfuse trace shows uc02's I/O,
+            # not just the enclosing tool step. Redacted + content-gated by the
+            # helper; counts/ids are non-PII metadata.
+            set_langfuse_io(
+                s,
+                input={"mode": "text" if text_mode else "ticket",
+                       "query": text_query if text_mode else ticket_id,
+                       "service_id": service_id, "max_results": max_results},
+                output={"total_candidates": len(rows),
+                        "returned": len(results),
+                        "message": message,
+                        "results": [{"id": r.ticket_id, "title": r.title,
+                                     "match_pct": r.match_pct} for r in results]})
             return SimilarTicketsResponse(
                 source_ticket_id=ticket_id,
                 service_id=service_id,

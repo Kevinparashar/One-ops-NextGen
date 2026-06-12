@@ -40,6 +40,7 @@ from opentelemetry import trace
 
 from oneops.llm.gateway import LlmGateway
 from oneops.llm.models import LlmMessage, LlmRequest, ResponseFormat
+from oneops.observability import set_langfuse_io
 from oneops.observability.metrics import increment as _metric_inc
 from oneops.policy.composer import Profile, compose
 from oneops.use_cases.uc08_fulfillment.catalog_search import (
@@ -571,6 +572,15 @@ async def rerank(
                   chosen=chosen, top1_cosine=candidates[0].cosine_score,
                   reasoning=reasoning[:120])
 
+        # Langfuse: the listwise rerank decision (input = request + candidates,
+        # output = verdict/chosen/why) as a visible stage; the LLM call itself
+        # nests as a generation under this span via the gateway.
+        set_langfuse_io(
+            span,
+            input={"request": sr_text,
+                   "candidates": [m.catalog_item_id for m in candidates]},
+            output={"verdict": verdict, "chosen": chosen,
+                    "confidence": confidence, "reasoning": reasoning})
         return RerankResult(
             chosen=chosen, chosen_match=chosen_match,
             confidence=confidence, reasoning=reasoning,

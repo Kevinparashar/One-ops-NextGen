@@ -53,6 +53,7 @@ import asyncpg
 import structlog
 from opentelemetry import trace
 
+from oneops.observability import set_langfuse_io
 from oneops.observability.metrics import increment as _metric_inc
 
 _log = structlog.get_logger("oneops.uc08.catalog_search")
@@ -399,6 +400,18 @@ async def find_closest_catalog_items(
                   top1_score=matches[0].cosine_score if matches else None,
                   auto_pick=auto_pick.catalog_item_id if auto_pick else None)
 
+        # Langfuse: surface the catalog query (input) + ranked matches (output)
+        # on this stage so the trace shows what was searched and what scored.
+        set_langfuse_io(
+            span,
+            input={"query": query_text, "cosine_floor": cosine_floor,
+                   "auto_pick_threshold": auto_pick_threshold},
+            output={"matches_total": len(matches),
+                    "above_floor": above_floor,
+                    "auto_pick": auto_pick.catalog_item_id if auto_pick else None,
+                    "matches": [{"id": m.catalog_item_id, "name": m.name,
+                                 "score": round(m.cosine_score, 4)}
+                                for m in matches]})
         return CatalogSearchResult(
             matches=tuple(matches),
             auto_pick=auto_pick,
